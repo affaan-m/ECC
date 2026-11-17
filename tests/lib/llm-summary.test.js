@@ -10,7 +10,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { extractConversationText, getContextRemainingPct, getContextThreshold, getLLMModel, generateSessionSummary } = require('../../scripts/lib/llm-summary');
+const { extractConversationText, isClassifierNotice, getContextRemainingPct, getContextThreshold, getLLMModel, generateSessionSummary } = require('../../scripts/lib/llm-summary');
 
 console.log('=== Testing llm-summary.js ===\n');
 
@@ -154,6 +154,33 @@ test('collapses newlines to spaces', () => {
   assert.ok(result.includes('line one line two'));
 });
 
+// Regression (#3867): the harness notice after a safety-classifier stop is
+// recorded as a user entry; it must not reach the LLM summary input.
+const CLASSIFIER_NOTICE_TEXT = 'Your response above was stopped by a safety classifier — this is not a tool or API error.';
+
+test('drops safety-classifier notices from the LLM input', () => {
+  const p = writeTranscript([userEntry('Refactor the config loader'), userEntry(CLASSIFIER_NOTICE_TEXT), assistantEntry('Done.')]);
+  const result = extractConversationText(p);
+  assert.ok(result.includes('Refactor the config loader'));
+  assert.ok(!result.includes('safety classifier'), `classifier notice must not reach the LLM:\n${result}`);
+});
+
+test('keeps user text pasted after the notice', () => {
+  const text = `${CLASSIFIER_NOTICE_TEXT} Why did this happen?`;
+  assert.ok(extractConversationText(writeTranscript([userEntry(text)])).includes('Why did this happen?'));
+});
+
+test('returns null when the only user turn is a classifier notice', () => {
+  const p = writeTranscript([userEntry(CLASSIFIER_NOTICE_TEXT)]);
+  assert.strictEqual(extractConversationText(p), null);
+});
+
+test('isClassifierNotice matches only the whole notice', () => {
+  assert.strictEqual(isClassifierNotice(CLASSIFIER_NOTICE_TEXT), true);
+  assert.strictEqual(isClassifierNotice(`${CLASSIFIER_NOTICE_TEXT} Why did this happen?`), false);
+  assert.strictEqual(isClassifierNotice('Why did I see "Your response above was stopped by a safety classifier"?'), false);
+});
+
 // --- getContextRemainingPct ---
 console.log('\ngetContextRemainingPct:');
 
@@ -167,11 +194,55 @@ test('returns null for transcript with no usage data', () => {
 });
 
 test('returns numeric percentage for transcript with usage data', () => {
-  const p = writeTranscript([assistantEntry('ok')]);
+  const parsed = JSON.parse(assistantEntry('ok'));
+  const entry = { ...parsed, message: { ...parsed.message, model: 'claude-opus-4-5[1m]' } };
+  const p = writeTranscript([JSON.stringify(entry)]);
   const pct = getContextRemainingPct(p);
   assert.ok(typeof pct === 'number');
   assert.ok(pct >= 0 && pct <= 100);
 });
+
+for (const [label, model, nativeBudget, explicitWindow, expected, tokens = 330000] of [
+  ['inferred window uses native compaction budget conservatively', 'unknown-model', '400000', '', 18],
+  ['unknown capacity without a budget stays unknown', 'unknown-model', '', '', null],
+  ['summary precedes native compaction even with confirmed model capacity', 'claude-opus-4-5[1m]', '400000', '', 18],
+  ['explicit ECC window remains authoritative', 'claude-opus-4-5[1m]', '786432', '400000', 18],
+  ['invalid compaction budget does not certify an inferred window', 'unknown-model', 'invalid', '', null],
+  ['native budget cannot exceed confirmed model capacity', 'claude-opus-4-5[1m]', '2000000', '', 67],
+  ['explicit capacity does not defer a smaller native compaction budget', 'claude-opus-4-5[1m]', '400000', '1000000', 18],
+  ['native 786k compaction receives a timely summary on a 1M model', 'claude-opus-4-5[1m]', '786432', '', 10, 710000],
+  ['confirmed capacity remains usable without a native budget', 'claude-opus-4-5[1m]', '', '', 67],
+  ['known model family also respects the earlier native budget', 'claude-fable-5', '400000', '', 18],
+  ['unknown capacity rejects a numeric native prefix', 'unknown-model', '200000tokens', '', null, 180000],
+  ['unknown capacity rejects a fractional native budget', 'unknown-model', '200000.5', '', null, 180000],
+  ['unknown capacity rejects an unsafe native integer', 'unknown-model', '9007199254740992', '', null, 180000],
+  ['invalid explicit prefix does not override a valid native budget', 'unknown-model', '400000', '200000tokens', 55, 180000],
+]) {
+  test(label, () => {
+    const keys = ['ECC_CONTEXT_WINDOW_TOKENS', 'CLAUDE_CODE_AUTO_COMPACT_WINDOW'];
+    const previous = keys.map(key => process.env[key]);
+    try {
+      process.env.ECC_CONTEXT_WINDOW_TOKENS = explicitWindow;
+      process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = nativeBudget;
+      const parsed = JSON.parse(assistantEntry('preserve context'));
+      const entry = {
+        ...parsed,
+        message: { ...parsed.message, model, usage: { ...parsed.message.usage, input_tokens: tokens } },
+      };
+      assert.strictEqual(getContextRemainingPct(writeTranscript([JSON.stringify(entry)])), expected);
+      if (model.includes('[1m]') || model === 'claude-fable-5') {
+        const { resolveContextWindowTokens } = require('../../scripts/lib/transcript-context');
+        assert.strictEqual(resolveContextWindowTokens(tokens, model), explicitWindow ? Number(explicitWindow) : 1000000,
+          'summary scheduling must not change model capacity resolution');
+      }
+    } finally {
+      keys.forEach((key, index) => {
+        if (previous[index] === undefined) delete process.env[key];
+        else process.env[key] = previous[index];
+      });
+    }
+  });
+}
 
 // --- generateSessionSummary ---
 console.log('\ngenerateSessionSummary:');
@@ -183,6 +254,21 @@ test('returns null when ECC_SKIP_LLM_SUMMARY is set', () => {
   assert.strictEqual(generateSessionSummary(p), null);
   if (orig !== undefined) process.env.ECC_SKIP_LLM_SUMMARY = orig;
   else delete process.env.ECC_SKIP_LLM_SUMMARY;
+});
+
+test('reports the explicit recursion guard as a deliberate skip', () => {
+  const orig = process.env.ECC_SKIP_LLM_SUMMARY;
+  process.env.ECC_SKIP_LLM_SUMMARY = '1';
+  try {
+    const skipped = [];
+    assert.strictEqual(generateSessionSummary('/nonexistent.jsonl', {
+      onSkip: reason => skipped.push(reason)
+    }), null);
+    assert.deepStrictEqual(skipped, ['ECC_SKIP_LLM_SUMMARY']);
+  } finally {
+    if (orig !== undefined) process.env.ECC_SKIP_LLM_SUMMARY = orig;
+    else delete process.env.ECC_SKIP_LLM_SUMMARY;
+  }
 });
 
 test('returns null for missing transcript (no conversation to summarize)', () => {
@@ -201,6 +287,58 @@ test('marks the spawned summarizer so its Stop hook cannot create resume state',
 });
 
 // --- Results ---
+// Execute the real helper with a controlled clock and child-process boundary.
+// These cases never invoke Claude or use the developer's authentication.
+function summaryProbe(deadline, now = 100000, spawnResult = { status: 0, stdout: 'summary' }) {
+  const vm = require('vm');
+  const source = fs.readFileSync(path.join(__dirname, '../../scripts/lib/llm-summary.js'), 'utf8');
+  const calls = [];
+  const env = deadline === undefined ? {} : { ECC_HOOK_DEADLINE_MS: String(deadline) };
+  const sandbox = {
+    module: { exports: {} },
+    process: { env, platform: process.platform },
+    Date: { now: () => now },
+    require: name => name === 'child_process'
+      ? { spawnSync: (...args) => { calls.push(args); return spawnResult; } }
+      : require(name)
+  };
+  vm.runInNewContext(source, sandbox, { filename: path.join(__dirname, '../../scripts/lib/llm-summary.js') });
+  const skipped = [];
+  const result = sandbox.module.exports.generateSessionSummary(
+    writeTranscript([userEntry('Preserve mechanical resume state')]),
+    { onSkip: reason => skipped.push(reason) }
+  );
+  return { calls, skipped, result };
+}
+
+test('limits summarizer to remaining hook budget minus persistence reserve', () => {
+  const probe = summaryProbe(105000);
+  assert.strictEqual(probe.result, 'summary');
+  assert.strictEqual(probe.calls[0][2].timeout, 4000);
+  assert.strictEqual(probe.skipped.length, 0);
+});
+
+test('retains the standalone timeout and caps longer inherited budgets', () => {
+  assert.strictEqual(summaryProbe(undefined).calls[0][2].timeout, 90000);
+  assert.strictEqual(summaryProbe(300000).calls[0][2].timeout, 90000);
+});
+
+for (const deadline of [99999, 100000, 100999, 101000, '', -1, 'invalid', 'Infinity', '1.5', Number.MAX_SAFE_INTEGER + 1]) {
+  test(`skips summarizer with exhausted or invalid deadline ${deadline}`, () => {
+    const probe = summaryProbe(deadline);
+    assert.strictEqual(probe.result, null);
+    assert.strictEqual(probe.calls.length, 0, 'No child should start without a safe budget');
+    assert.strictEqual(probe.skipped.length, 1, 'Skip must be distinguishable from Claude failure');
+  });
+}
+
+test('keeps process failures distinct from deliberate budget skips', () => {
+  const probe = summaryProbe(105000, 100000, { status: 1, stdout: '' });
+  assert.strictEqual(probe.result, null);
+  assert.strictEqual(probe.calls.length, 1);
+  assert.strictEqual(probe.skipped.length, 0);
+});
+
 console.log('\n=== Test Results ===');
 console.log(`Passed: ${passed}`);
 console.log(`Failed: ${failed}`);

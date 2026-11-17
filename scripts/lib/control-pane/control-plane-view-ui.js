@@ -26,8 +26,8 @@ function renderControlPlaneViewHtml() {
   header nav { margin-left: auto; font-size: 12px; }
   header nav a { color: #8b949e; margin-left: 12px; text-decoration: none; }
   header nav a:hover { color: #e6edf3; }
-  #wrap { display: grid; grid-template-columns: 1fr 360px; height: calc(100vh - 49px); }
-  #stage { position: relative; border-right: 1px solid #1f2630; }
+  #wrap { display: grid; grid-template-columns: 1fr 360px; grid-template-rows: minmax(0, 1fr); height: calc(100vh - 49px); }
+  #stage { position: relative; height: 100%; min-height: 0; border-right: 1px solid #1f2630; }
   canvas { width: 100%; height: 100%; display: block; }
   #side { padding: 12px 14px; overflow-y: auto; }
   #side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #8b949e; margin: 14px 0 8px; }
@@ -49,7 +49,9 @@ function renderControlPlaneViewHtml() {
   .empty { color: #6e7681; font-size: 12px; }
   #legend { position: absolute; left: 12px; bottom: 12px; font-size: 11px; color: #8b949e; background: rgba(11,14,20,.7); padding: 6px 8px; border-radius: 6px; }
   #meta { position: absolute; right: 12px; top: 12px; font-size: 11px; color: #8b949e; background: rgba(11,14,20,.7); padding: 6px 8px; border-radius: 6px; text-align: right; }
-  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+  .shape { display: inline-block; width: 12px; margin-right: 5px; text-align: center; font-weight: 700; }
+  /* Off-screen, not display:none, so assistive tech still reads the node. */
+  .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; clip: rect(0 0 0 0); clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -60,13 +62,14 @@ function renderControlPlaneViewHtml() {
   </header>
   <div id="wrap">
     <div id="stage">
-      <canvas id="c"></canvas>
+      <canvas id="c" role="img" aria-label="Control-plane projection. See the Lanes panel for a text alternative.">Control-plane projection; see the Lanes panel for per-task risk.</canvas>
       <div id="meta"></div>
       <div id="legend">
-        <div><span class="dot" style="background:#3fb950"></span>clear</div>
-        <div><span class="dot" style="background:#e3b341"></span>traffic advisory (transmit)</div>
-        <div><span class="dot" style="background:#ff7b72"></span>resolution advisory (steer)</div>
+        <div><span class="shape" style="color:#2ea043">●</span>clear</div>
+        <div><span class="shape" style="color:#e3b341">■</span>traffic advisory (transmit)</div>
+        <div><span class="shape" style="color:#ff7b72">▲</span>resolution advisory (steer)</div>
       </div>
+      <div id="announce" class="sr" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
     <div id="side">
       <h2>Events</h2>
@@ -80,6 +83,9 @@ function renderControlPlaneViewHtml() {
   var canvas = document.getElementById('c');
   var ctx = canvas.getContext('2d');
   var view = { tasks: [], lanes: [], pairs: [], events: [], projection: { agents: [] }, thresholds: { ta: 0.35, ra: 0.7 } };
+  // Last message handed to the live region, so a poll that changes nothing
+  // stays silent.
+  var lastSpoken = null;
 
   function resize() {
     var r = canvas.parentElement.getBoundingClientRect();
@@ -91,10 +97,35 @@ function renderControlPlaneViewHtml() {
   }
   window.addEventListener('resize', resize);
 
+  // The previous clear/resolution palette had similar relative luminance.
+  // Separate luminance values plus redundant shapes and text reduce reliance
+  // on hue; palette math alone does not establish a user's visual experience.
+  function riskLevel(risk) {
+    if (risk >= view.thresholds.ra) return 'resolution';
+    if (risk >= view.thresholds.ta) return 'traffic';
+    return 'clear';
+  }
+
   function riskColor(risk) {
     if (risk >= view.thresholds.ra) return '#ff7b72';
     if (risk >= view.thresholds.ta) return '#e3b341';
-    return '#3fb950';
+    return '#2ea043';
+  }
+
+  // Shape is the second, non-colour channel: circle / square / triangle.
+  function drawRiskMarker(x, y, radius, level) {
+    ctx.beginPath();
+    if (level === 'resolution') {
+      ctx.moveTo(x, y - radius);
+      ctx.lineTo(x + radius, y + radius);
+      ctx.lineTo(x - radius, y + radius);
+      ctx.closePath();
+    } else if (level === 'traffic') {
+      ctx.rect(x - radius, y - radius, radius * 2, radius * 2);
+    } else {
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+    }
+    ctx.fill();
   }
 
   // Fit the projected points into the canvas with a margin. The PCA scores
@@ -142,8 +173,9 @@ function renderControlPlaneViewHtml() {
       var t = taskById[a.agentId] || {};
       var files = (t.workingSet && t.workingSet.fileCount) || 1;
       var radius = 6 + Math.sqrt(files) * 3;
-      ctx.fillStyle = riskColor(a.maxRisk || 0);
-      ctx.beginPath(); ctx.arc(p[0], p[1], radius, 0, Math.PI * 2); ctx.fill();
+      var risk = a.maxRisk || 0;
+      ctx.fillStyle = riskColor(risk);
+      drawRiskMarker(p[0], p[1], radius, riskLevel(risk));
       ctx.fillStyle = '#c9d1d9';
       ctx.font = '11px -apple-system, system-ui, sans-serif';
       ctx.fillText(String(a.agentId).slice(0, 18), p[0] + radius + 4, p[1] + 3);
@@ -198,12 +230,48 @@ function renderControlPlaneViewHtml() {
         var st = document.createElement('span'); st.textContent = t.harness + ' / ' + t.state + ' / ' + (t.workingSet.fileCount || 0) + ' files';
         var risk = document.createElement('span'); risk.className = 'risk';
         risk.style.color = riskColor(t.projection.maxRisk || 0);
-        risk.textContent = t.projection.point ? Math.round((t.projection.maxRisk || 0) * 100) + '%' : 'no pair';
+        risk.textContent = (t.projection.point
+          ? Math.round((t.projection.maxRisk || 0) * 100) + '% - ' + riskLevel(t.projection.maxRisk || 0)
+          : 'no pair');
         row.appendChild(idEl); row.appendChild(st); row.appendChild(risk);
         el.appendChild(row);
       });
       box.appendChild(el);
     });
+  }
+
+  // Wording shared by the canvas label and the live region so an outage reads
+  // the same way however the operator reaches it.
+  var UNAVAILABLE = 'Control-plane data is unavailable. Advisories and steering are unknown.';
+  // Polls are not sequenced, so a slow request can settle out of order. Only
+  // the newest poll that has already settled may update the view: a success
+  // from a superseded poll would show older counts, and a failure from a
+  // superseded poll would erase newer counts. Anchoring to the last settled
+  // poll rather than the last started one also lets a failure land while a
+  // newer poll is still pending, instead of leaving stale guidance on screen.
+  var settledPoll = 0;
+  // Monotonic id handed to each poll as it starts.
+  var pollSeq = 0;
+  // A poll that never answers must not stay pending forever, or the last
+  // steering guidance stays on screen indefinitely.
+  var TIMEOUT_MS = 10000;
+
+  // Polling runs every few seconds, so only speak when the advisory and
+  // steering counts actually move. Repeating an unchanged summary would talk
+  // over the operator without telling them anything new.
+  function announce(message) {
+    if (message === lastSpoken) return;
+    lastSpoken = message;
+    document.getElementById('announce').textContent = message;
+  }
+
+  function unavailable() {
+    document.getElementById('status').textContent = 'offline';
+    // The last guidance is now stale, so replace it rather than leaving the
+    // live region claiming the airspace is clear. The canvas label goes with
+    // it, or it would still report the last successful counts.
+    canvas.setAttribute('aria-label', UNAVAILABLE);
+    announce(UNAVAILABLE);
   }
 
   function apply(data) {
@@ -213,22 +281,68 @@ function renderControlPlaneViewHtml() {
         !Number.isFinite(data.thresholds.ta) || !Number.isFinite(data.thresholds.ra)) {
       throw new Error('Invalid control-plane view');
     }
+    var previous = view;
+    var drawStarted = false;
     view = Object.assign({}, data);
-    renderEvents(); renderLanes(); draw();
+    try {
+      renderEvents(); renderLanes();
+      drawStarted = true;
+      draw();
+    } catch (error) {
+      view = previous;
+      try {
+        renderEvents(); renderLanes();
+        if (drawStarted) draw();
+      } catch (_) {
+        // Keep the accepted model even if the DOM cannot be restored.
+      }
+      throw error;
+    }
     var c = view.counts || {};
+    var summary = (c.tasks || 0) + ' tasks in ' + (c.lanes || 0) + ' lanes, ' +
+      (c.advisories || 0) + ' advisories, ' + (c.resolutions || 0) + ' steering. ' +
+      'See the Lanes panel for per-task risk.';
+    canvas.setAttribute('aria-label', summary);
     document.getElementById('status').textContent =
       (c.tasks || 0) + ' tasks in ' + (c.lanes || 0) + ' lanes | ' + (c.agents || 0) + ' with edits | ' +
       (c.advisories || 0) + ' advisories (' + (c.resolutions || 0) + ' steering)' +
       (view.inventory && view.inventory.status !== 'ok' ? ' | inventory ' + view.inventory.status : '');
+
+    announce((c.advisories || 0) + ' advisories, ' +
+      (c.resolutions || 0) + ' steering. ' +
+      ((c.resolutions || 0) > 0 ? 'Steering is required.' : 'No steering is required.'));
   }
 
   function poll() {
-    fetch('/api/control-plane').then(function (r) {
+    var token = ++pollSeq;
+    var timer = null;
+    var controller = new AbortController();
+    // Reject on a timer so a hung request cannot keep the previous guidance on
+    // screen forever. The abort is what wakes this poll up, so a timeout is
+    // reported as an outage rather than swallowed.
+    timer = setTimeout(function () { controller.abort(); }, TIMEOUT_MS);
+    // Claim before rendering or reporting failure: two JSON bodies may settle
+    // in the same turn, before a later cleanup continuation can run. Equality
+    // lets a render failure report unavailable for the token that just claimed.
+    function claim() {
+      if (token < settledPoll) return false;
+      settledPoll = token;
+      return true;
+    }
+    function settle() {
+      clearTimeout(timer);
+    }
+    fetch('/api/control-plane', { signal: controller.signal }).then(function (r) {
       if (!r.ok) throw new Error('Control-plane request failed');
       return r.json();
-    }).then(apply).catch(function () {
-      document.getElementById('status').textContent = 'offline';
-    });
+    }).then(function (data) {
+      // A newer poll already owns the view, so do not resurrect older counts.
+      if (!claim()) return;
+      apply(data);
+    }).catch(function () {
+      if (!claim()) return;
+      unavailable();
+    }).then(settle, settle);
   }
 
   resize();

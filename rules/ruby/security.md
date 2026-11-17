@@ -48,4 +48,6 @@ bundle exec brakeman --no-progress
 
 ## Reference
 
+See skill: `rails-security` for Rails-specific security implementation patterns.
+
 See skill: `security-review` for secure-by-default review patterns.

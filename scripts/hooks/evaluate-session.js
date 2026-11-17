@@ -19,8 +19,22 @@ const {
   ensureDir,
   readFile,
   countInFile,
-  log
+  log,
+  output
 } = require('../lib/utils');
+const { resolveHookSessionId } = require('../lib/hook-session');
+const {
+  resolveProjectContext,
+  getAliasContexts,
+  listSessionLeases,
+  getHomunculusDir,
+  resolveSessionId
+} = require('../lib/observer-sessions');
+
+// Marker that records a delivered Stop nudge, one per session, in the
+// observer data directory. A marker is what makes delivery once-per-session: a later
+// user stop in the same session must not block again.
+const DELIVERY_MARKER_PREFIX = 'claude-continuous-learning-delivered-';
 
 // Read hook input from stdin (Claude Code provides transcript_path via stdin JSON)
 const MAX_STDIN = 1024 * 1024;
@@ -42,10 +56,12 @@ process.stdin.on('end', () => {
 });
 
 async function main() {
-  // Parse stdin JSON to get transcript_path
+  // Parse stdin JSON once; the parsed payload is reused by the delivery
+  // gates below (event name, stop_hook_active, cwd).
+  let input = null;
   let transcriptPath = null;
   try {
-    const input = JSON.parse(stdinData);
+    input = JSON.parse(stdinData);
     transcriptPath = input.transcript_path;
   } catch {
     // Fallback: try env var for backwards compatibility
@@ -59,6 +75,10 @@ async function main() {
   // Default configuration
   let minSessionLength = 10;
   let learnedSkillsPath = getLearnedSkillsDir();
+  // Delivery to the model is explicitly opt-in and off by default: a Stop
+  // hook that blocks the stop is user-visible behavior, so it must never
+  // turn on silently.
+  let stopNudgeOptIn = false;
 
   // Load config if exists
   const configContent = readFile(configFile);
@@ -66,6 +86,7 @@ async function main() {
     try {
       const config = JSON.parse(configContent);
       minSessionLength = config.min_session_length ?? 10;
+      stopNudgeOptIn = config.stop_nudge_opt_in === true;
 
       if (config.learned_skills_path) {
         // Handle ~ in path
@@ -92,9 +113,124 @@ async function main() {
     process.exit(0);
   }
 
-  // Signal to Claude that session should be evaluated for extractable patterns
+  // Signal to Claude that session should be evaluated for extractable patterns.
+  // The log lines below go to stderr (the debug log) only. Whether the
+  // model ever sees the signal is decided by deliverStopNudge, which fails
+  // closed: any gate miss means stderr only, exit 0, no stdout.
   log(`[ContinuousLearning] Session has ${messageCount} messages - evaluate for extractable patterns`);
   log(`[ContinuousLearning] Save learned skills to: ${learnedSkillsPath}`);
 
+  deliverStopNudge({ input, stdinData, messageCount, learnedSkillsPath, stopNudgeOptIn });
+
   process.exit(0);
+}
+
+/**
+ * Deliver the evaluation signal to the model, or deliver nothing.
+ *
+ * A Stop hook reaches the model only through the native Stop contract:
+ * decision "block" + reason, which continues the turn with the reason as
+ * context. Plain stdout text is not a delivery channel on Stop, so nothing
+ * else is ever written to stdout here. Every gate fails closed.
+ */
+function deliverStopNudge({ input, stdinData, messageCount, learnedSkillsPath, stopNudgeOptIn }) {
+  if (!stopNudgeOptIn) {
+    log('[ContinuousLearning] Stop nudge opt-in is off, skipping delivery');
+    return;
+  }
+  // A payload that names a different event means this script is running
+  // under the wrong registration; an absent field is tolerated (older
+  // harnesses omit it), a mismatched one is not.
+  if (input && input.hook_event_name && input.hook_event_name !== 'Stop') {
+    log(`[ContinuousLearning] Skipping delivery: hook event is ${input.hook_event_name}, not Stop`);
+    return;
+  }
+  // Stop-loop protection: when a previous Stop already continued this stop,
+  // the hook is re-firing and must pass through, never block again.
+  if (input && input.stop_hook_active === true) {
+    log('[ContinuousLearning] Skipping delivery: Stop hook already fired for this stop');
+    return;
+  }
+  // The payload session id identifies the harness conversation; env ids are
+  // only fallbacks, never preferred over it.
+  const sessionId = resolveSessionId(resolveHookSessionId(stdinData));
+  if (!sessionId) {
+    log('[ContinuousLearning] Skipping delivery: no session id available');
+    return;
+  }
+  if (!hasRegisteredSessionLease(input, sessionId)) {
+    log('[ContinuousLearning] Skipping delivery: no SessionStart lease for this session');
+    return;
+  }
+  if (!claimDeliveryMarker(sessionId)) return;
+  output({
+    decision: 'block',
+    reason: `[ContinuousLearning] Session has ${messageCount} messages - evaluate for extractable patterns. Save learned skills to: ${learnedSkillsPath}`
+  });
+}
+
+function claimDeliveryMarker(sessionId) {
+  // resolveSessionId sanitized the filename before this function is called.
+  const markerRoot = getHomunculusDir();
+  // Claim the marker atomically: 'wx' fails when a nudge was already
+  // delivered (EEXIST) and closes the check-then-create gap. Any other
+  // write failure fails closed: without a marker, a later Stop would stay
+  // eligible, so skipping delivery is the only shape that keeps the
+  // once-per-session promise. stop_hook_active bounds only the re-fired
+  // Stop for one turn, not later turns, so it cannot stand in for the
+  // marker.
+  try {
+    fs.mkdirSync(markerRoot, { recursive: true, mode: 0o700 });
+    const canonicalRoot = fs.realpathSync(markerRoot);
+    const rootStat = fs.lstatSync(canonicalRoot);
+    if (!rootStat.isDirectory()
+      || (typeof process.getuid === 'function' && rootStat.uid !== process.getuid())
+      || (process.platform !== 'win32' && (rootStat.mode & 0o022) !== 0)) {
+      throw new Error('observer root is not owned or permits shared writes');
+    }
+    const markerDir = path.join(canonicalRoot, 'delivery-markers');
+    fs.mkdirSync(markerDir, { recursive: true, mode: 0o700 });
+    const stat = fs.lstatSync(markerDir);
+    if (!stat.isDirectory() || stat.isSymbolicLink()
+      || (process.platform !== 'win32' && ((stat.mode & 0o077) !== 0
+        || (typeof process.getuid === 'function' && stat.uid !== process.getuid())))) {
+      throw new Error('delivery marker directory is not private');
+    }
+    const markerFile = path.join(markerDir, `${DELIVERY_MARKER_PREFIX}${sessionId}`);
+    try {
+      fs.writeFileSync(markerFile, `${new Date().toISOString()}\n`, { flag: 'wx', mode: 0o600 });
+    } catch (err) {
+      if (err.code === 'EEXIST') {
+        log('[ContinuousLearning] Stop nudge already delivered for this session, skipping');
+      } else {
+        log(`[ContinuousLearning] Warning: could not record delivery marker, skipping delivery: ${err.message}`);
+      }
+      return false;
+    }
+  } catch (err) {
+    log(`[ContinuousLearning] Warning: could not record delivery marker, skipping delivery: ${err.message}`);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * The registered-native-lifecycle check: the session must hold a lease
+ * written by SessionStart under the ECC project context (including alias
+ * contexts for roots that moved mid-session). A Stop payload for a session
+ * that never went through SessionStart is not a registered ECC session,
+ * and its nudge must not reach the model.
+ */
+function hasRegisteredSessionLease(input, sessionId) {
+  try {
+    const cwd = (input && typeof input.cwd === 'string' && input.cwd) || process.cwd();
+    const context = resolveProjectContext(cwd);
+    const contexts = [context, ...getAliasContexts(context)];
+    return contexts.some(ctx =>
+      listSessionLeases(ctx).some(file => path.basename(file) === `${sessionId}.json`)
+    );
+  } catch (err) {
+    log(`[ContinuousLearning] Session lease check failed: ${err.message}`);
+    return false;
+  }
 }

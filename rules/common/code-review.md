@@ -100,6 +100,8 @@ Use these agents for code review:
 - Missing error handling - handle explicitly
 - Mutation patterns - prefer immutable operations
 - Missing tests - add test coverage
+- Symptom-level bug fix - check the function's other callers; a guard in the
+  shared function beats a guard repeated in each caller
 
 ### Performance
 

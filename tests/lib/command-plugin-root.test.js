@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const assert = require('assert');
+const { spawnSync } = require('child_process');
+const { resolveWindowsBashCandidates } = require('../../scripts/lib/windows-bash');
 const { INLINE_RESOLVE } = require('../../scripts/lib/resolve-ecc-root');
 
 // Sentinel ECC skill that resolveEccRoot() requires alongside the script tree
@@ -101,6 +103,211 @@ test('resolveEccRoot module covers current and legacy marketplace plugin roots',
 
   assert.ok(!INLINE_RESOLVE.includes('\\"'), 'Inline resolver should not require escaped double quotes');
   assert.ok(INLINE_RESOLVE.includes("scripts','lib','resolve-ecc-root"));
+});
+
+for (const name of ['auto-update', 'instinct-status', 'skill-health', 'skill-host-compat']) {
+  const doc = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', `${name}.md`), 'utf8');
+  const assignments = doc.split('\n').filter(line => line.startsWith('ECC_ROOT='));
+  for (const [index, assignment] of assignments.entries()) {
+    test(`${name} declared resolver ${index + 1} executes selected and explicit roots`, () => {
+      const root = path.resolve(__dirname, '../..');
+      const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-command-profile-'));
+      try {
+        const selected = { ...process.env, HOME: temp, USERPROFILE: temp, CLAUDE_CONFIG_DIR: root };
+        delete selected.CLAUDE_PLUGIN_ROOT;
+        for (const env of [selected, { ...selected, CLAUDE_PLUGIN_ROOT: root }, { ...selected, CLAUDE_PLUGIN_ROOT: ' \t ' }, { ...selected, CLAUDE_PLUGIN_ROOT: ` ${root} ` }]) {
+          const [bash] = resolveWindowsBashCandidates(['bash.exe', 'bash'], { env });
+          const shell = process.platform === 'win32' ? bash : 'bash';
+          assert.ok(shell, 'A native Git Bash executable is required');
+          const result = spawnSync(shell, ['-s'],
+            { input: assignment + '\nprintf "%s" "$ECC_ROOT"\n', env, cwd: temp, encoding: 'utf8' });
+          assert.strictEqual(result.status, 0, result.stderr);
+          assert.strictEqual(result.stderr, '');
+          assert.strictEqual(result.stdout, root);
+        }
+      } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+    });
+  }
+}
+for (const broken of [false, true]) {
+  test(`auto-update legacy-only cache ${broken ? 'rejects corrupt current cache before follow-up' : 'runs the actual selected updater'}`, () => {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-legacy-update-'));
+    try {
+      const root = path.join(temp, 'plugins/cache/everything-claude-code/vendor/1.0.0');
+      fs.mkdirSync(path.join(root, 'scripts/lib'), { recursive: true });
+      fs.mkdirSync(path.join(root, ECC_SKILL_SENTINEL), { recursive: true });
+      fs.copyFileSync(path.join(__dirname, '../../scripts/lib/resolve-ecc-root.js'), path.join(root, 'scripts/lib/resolve-ecc-root.js'));
+      fs.writeFileSync(path.join(root, 'scripts/lib/utils.js'), '// fixture');
+      fs.writeFileSync(path.join(root, 'scripts/auto-update.js'), "console.log('UPDATER:'+__dirname+':'+process.argv.slice(2).join(','))");
+      if (broken) fs.writeFileSync(path.join(temp, 'plugins/cache/ecc'), 'occupied non-directory');
+      const env = { ...process.env, HOME: temp, USERPROFILE: temp, CLAUDE_CONFIG_DIR: temp };
+      delete env.CLAUDE_PLUGIN_ROOT;
+      const [bash] = resolveWindowsBashCandidates(['bash.exe', 'bash'], { env });
+      const shell = process.platform === 'win32' ? bash : 'bash';
+      const doc = fs.readFileSync(path.join(__dirname, '../../commands/auto-update.md'), 'utf8');
+      const assignment = doc.split('\n').find(line => line.startsWith('ECC_ROOT='));
+      const followup = broken ? 'node -e "console.log(\'FOLLOWUP_INVOKED\')"' : 'node "$ECC_ROOT/scripts/auto-update.js" --dry-run';
+      const result = spawnSync(shell, ['-s'], { input: assignment + '\n' + followup + '\n', env, cwd: temp, encoding: 'utf8' });
+      const { resolveEccRoot } = require('../../scripts/lib/resolve-ecc-root');
+      const options = { envRoot: '', configDir: temp, probe: path.join('scripts', 'auto-update.js') };
+      if (broken) {
+        assert.equal(result.status, 1);assert.match(result.stderr, /ENOTDIR/);assert.equal(result.stdout, '');
+        assert.throws(() => resolveEccRoot(options), error => error.code === 'ENOTDIR');
+      } else {
+        assert.equal(result.status, 0, result.stderr);assert.equal(result.stdout.trim(), `UPDATER:${fs.realpathSync(path.join(root, 'scripts'))}:--dry-run`);
+        assert.equal(resolveEccRoot(options), root);
+      }
+    } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+  });
+}
+for (const level of ['slug', 'org']) {
+  test(`actual command skips non-directory cache children at ${level} level`, () => {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-stray-cache-'));
+    try {
+      const root = path.join(temp, 'plugins/cache/everything-claude-code/vendor/1.0.0');
+      fs.mkdirSync(path.join(root, 'scripts/lib'), { recursive: true });
+      fs.mkdirSync(path.join(root, ECC_SKILL_SENTINEL), { recursive: true });
+      fs.copyFileSync(path.join(__dirname, '../../scripts/lib/resolve-ecc-root.js'), path.join(root, 'scripts/lib/resolve-ecc-root.js'));
+      fs.writeFileSync(path.join(root, 'scripts/lib/utils.js'), '// fixture');
+      fs.writeFileSync(path.join(root, 'scripts/auto-update.js'), "console.log('UPDATER:'+__dirname)");
+      const cache = path.join(temp, 'plugins/cache/ecc');
+      const strayDir = level === 'slug' ? cache : path.join(cache, 'vendor');
+      fs.mkdirSync(strayDir, { recursive: true });
+      fs.writeFileSync(path.join(strayDir, 'stray.txt'), 'preserve');
+      const env = { ...process.env, HOME: temp, USERPROFILE: temp, CLAUDE_CONFIG_DIR: temp };
+      delete env.CLAUDE_PLUGIN_ROOT;
+      const [bash] = resolveWindowsBashCandidates(['bash.exe', 'bash'], { env });
+      const shell = process.platform === 'win32' ? bash : 'bash';
+      const assignment = fs.readFileSync(path.join(__dirname, '../../commands/auto-update.md'), 'utf8').split('\n').find(line => line.startsWith('ECC_ROOT='));
+      const result = spawnSync(shell, ['-s'], { input: assignment + '\nnode "$ECC_ROOT/scripts/auto-update.js"\n', env, cwd: temp, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout.trim(), `UPDATER:${fs.realpathSync(path.join(root, 'scripts'))}`);
+      assert.equal(fs.readFileSync(path.join(strayDir, 'stray.txt'), 'utf8'), 'preserve');
+    } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+  });
+}
+// Regression: on WSL, CLAUDE_CONFIG_DIR may carry a Windows path (e.g.
+// C:\Users\name\.claude). Every inline resolver that reads CLAUDE_CONFIG_DIR
+// must include the /proc/version → /mnt/… conversion so hooks and commands
+// resolve to the correct mount instead of treating the Windows path as
+// relative. The source INLINE_RESOLVE, command .md files, and hooks.json /
+// codex-hooks.json must all carry the same conversion block.
+function countHooksWithWslConversion(filePath) {
+  const allowedFilePaths = new Set([
+    path.resolve(__dirname, '..', '..', 'hooks', 'hooks.json'),
+    path.resolve(__dirname, '..', '..', 'hooks', 'codex-hooks.json'),
+  ]);
+  const resolvedPath = path.resolve(filePath);
+  assert.ok(allowedFilePaths.has(resolvedPath), `Unexpected hook file path: ${filePath}`);
+  const config = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+  const events = config.hooks || {};
+  let checked = 0;
+  for (const entries of Object.values(events)) {
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      if (!entry.hooks) continue;
+      for (const hook of entry.hooks) {
+        if (typeof hook.command !== 'string') continue;
+        if (hook.command.includes('CLAUDE_CONFIG_DIR')) {
+          assert.ok(
+            hook.command.includes('proc/version') && hook.command.includes('microsoft'),
+            `${path.basename(filePath)} hook command with CLAUDE_CONFIG_DIR must include WSL path conversion`
+          );
+          checked++;
+        }
+      }
+    }
+  }
+  return checked;
+}
+
+test('hooks.json inline resolvers include WSL path conversion for CLAUDE_CONFIG_DIR', () => {
+  const checked = countHooksWithWslConversion(path.join(__dirname, '..', '..', 'hooks', 'hooks.json'));
+  assert.ok(checked > 0, 'Expected at least one hooks.json resolver with CLAUDE_CONFIG_DIR');
+});
+
+test('codex-hooks.json inline resolver includes WSL path conversion for CLAUDE_CONFIG_DIR', () => {
+  const checked = countHooksWithWslConversion(path.join(__dirname, '..', '..', 'hooks', 'codex-hooks.json'));
+  // Assert at least one resolver with WSL conversion exists. An exact count would break
+  // when a second hook with CLAUDE_CONFIG_DIR is added; checking the required behavior
+  // (all such hooks carry the conversion block) is enforced by countHooksWithWslConversion.
+  assert.ok(checked >= 1, 'Expected at least one codex-hooks.json resolver with CLAUDE_CONFIG_DIR WSL conversion');
+});
+
+test('inline resolver copies in commands and hooks match canonical buildInlineResolve', () => {
+  const { INLINE_RESOLVE, buildInlineResolve } = require('../../scripts/lib/resolve-ecc-root');
+  const { INLINE_WSL_CONVERSION } = require('../../scripts/lib/install-targets/helpers');
+  assert.ok(
+    INLINE_RESOLVE.includes(INLINE_WSL_CONVERSION),
+    'INLINE_RESOLVE must embed canonical INLINE_WSL_CONVERSION from helpers.js'
+  );
+
+  for (const cmdName of ['instinct-status', 'sessions', 'skill-health', 'skill-host-compat']) {
+    const cmdDoc = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', `${cmdName}.md`), 'utf8');
+    const matches = cmdDoc.match(/\(function\(\)\{var p=require\(.+?return d\}\)\(\)/g) || [];
+    assert.ok(matches.length > 0, `Expected inline resolver in commands/${cmdName}.md`);
+    for (const match of matches) {
+      assert.strictEqual(match, INLINE_RESOLVE, `commands/${cmdName}.md inline resolver drifted from canonical INLINE_RESOLVE`);
+    }
+  }
+
+  const autoUpdateDoc = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'auto-update.md'), 'utf8');
+  const autoUpdateMatches = autoUpdateDoc.match(/\(function\(\)\{var p=require\(.+?return d\}\)\(\)/g) || [];
+  assert.strictEqual(autoUpdateMatches.length, 1, 'Expected 1 inline resolver in commands/auto-update.md');
+  assert.strictEqual(
+    autoUpdateMatches[0],
+    buildInlineResolve({ probe: 'scripts/auto-update.js' }),
+    'commands/auto-update.md inline resolver drifted from canonical buildInlineResolve'
+  );
+
+  for (const hookFile of ['hooks.json', 'codex-hooks.json']) {
+    const config = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'hooks', hookFile), 'utf8'));
+    let verified = 0;
+    for (const entries of Object.values(config.hooks || {})) {
+      if (!Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        for (const hook of entry.hooks || []) {
+          if (typeof hook.command === 'string' && hook.command.includes('CLAUDE_CONFIG_DIR')) {
+            const m = hook.command.match(/const r=(\(function\(\)\{.*?\}\)\(\))/);
+            assert.ok(m, `Could not extract inline resolver from ${hookFile}`);
+            assert.strictEqual(m[1], INLINE_RESOLVE, `${hookFile} inline resolver drifted from canonical INLINE_RESOLVE`);
+            verified++;
+          }
+        }
+      }
+    }
+    assert.ok(verified > 0, `Expected at least one verified resolver in ${hookFile}`);
+  }
+});
+
+// On native Windows, Claude Code runs each hook as `bash.exe -c "<command>"` through the
+// Windows command line, and that extra unescape layer collapses backslashes. A regex such as
+// `/\\/g` then becomes `/\/g` and every hook fails with a SyntaxError (#3746). The inline
+// resolver must therefore contain no backslash at all.
+test('inline resolver and hook node -e programs contain no backslashes', () => {
+  const { buildInlineResolve } = require('../../scripts/lib/resolve-ecc-root');
+  assert.ok(!INLINE_RESOLVE.includes('\\'), 'INLINE_RESOLVE must not contain a backslash');
+  assert.ok(
+    !buildInlineResolve({ probe: 'scripts/auto-update.js' }).includes('\\'),
+    'buildInlineResolve({ probe }) must not contain a backslash'
+  );
+
+  for (const hookFile of ['hooks.json', 'codex-hooks.json']) {
+    const config = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'hooks', hookFile), 'utf8'));
+    let checked = 0;
+    for (const entries of Object.values(config.hooks || {})) {
+      if (!Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        for (const hook of entry.hooks || []) {
+          if (typeof hook.command !== 'string' || !hook.command.startsWith('node -e "')) continue;
+          const program = hook.command.slice('node -e "'.length, hook.command.indexOf('"', 'node -e "'.length));
+          assert.ok(!program.includes('\\'), `${hookFile} node -e program must not contain a backslash: ${program.slice(0, 80)}`);
+          checked++;
+        }
+      }
+    }
+    assert.ok(checked > 0, `Expected at least one node -e hook command in ${hookFile}`);
+  }
 });
 
 console.log(`Passed: ${passed}`);

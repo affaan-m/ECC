@@ -147,6 +147,9 @@ const MIGRATIONS = [
 ];
 
 function ensureMigrationTable(db) {
+  if (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'").get()) {
+    return;
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version INTEGER PRIMARY KEY,

@@ -96,7 +96,7 @@ cp -r rules/php ~/.claude/rules/php
 
 `common/coding-style.md` 建议将不可变性作为默认原则。语言特定的 `golang/coding-style.md` 可以覆盖这一点：
 
-> 符合 Go 语言习惯的做法是使用指针接收器进行结构体修改——关于通用原则请参阅 [common/coding-style.md](../../../common/coding-style.md)，但此处更推荐符合 Go 语言习惯的修改方式。
+> 符合 Go 语言习惯的做法是使用指针接收器进行结构体修改——关于通用原则请参阅 [common/coding-style.md](common/coding-style.md)，但此处更推荐符合 Go 语言习惯的修改方式。
 
 ### 带有覆盖说明的通用规则
 

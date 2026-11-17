@@ -604,9 +604,10 @@ async function runTests() {
   if (
     await test('CLI browser opener handles spawn errors', async () => {
       const source = fs.readFileSync(SCRIPT, 'utf8');
-
-      assert.match(source, /child\.on\('error'/);
-      assert.match(source, /child\.unref\(\)/);
+      const helper = fs.readFileSync(path.join(path.dirname(SCRIPT), 'lib/platform-launch.js'), 'utf8');
+      assert.match(source, /require\('\.\/lib\/platform-launch'\)/);
+      assert.match(helper, /child\.on\('error'/);
+      assert.match(helper, /child\.unref\(\)/);
     })
   )
     passed++;
@@ -696,6 +697,12 @@ async function runTests() {
           assert.strictEqual(claim.item.owner, 'alice');
           assert.strictEqual(claim.item.status, 'running');
           assert.strictEqual(claim.item.metadata.assigneeKind, 'human');
+
+          const repeated = await post(app, 'wi-1/claim', { owner: 'alice', as: 'agent' }).then(r => r.json());
+          assert.deepStrictEqual(repeated.item, claim.item, 'same-owner retries must preserve the original claim');
+          const takeover = await post(app, 'wi-1/claim', { owner: 'bob' });
+          assert.strictEqual(takeover.status, 400, 'another owner must be rejected');
+          assert.match(JSON.stringify(await takeover.json()), /already owned/i);
 
           const move = await post(app, 'wi-2/move', { lane: 'blocked' }).then(r => r.json());
           assert.strictEqual(move.ok, true);

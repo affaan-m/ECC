@@ -1,6 +1,6 @@
 # Claude Code'un Her Şeyine Dair Kısa Kılavuz
 
-![Header: Anthropic Hackathon Winner - Tips & Tricks for Claude Code](../assets/images/shortform/00-header.png)
+![Header: Anthropic Hackathon Winner - Tips & Tricks for Claude Code](../../assets/images/shortform/00-header.png)
 
 ---
 
@@ -16,7 +16,7 @@ Skill'ler, belirli kapsamlar ve iş akışlarıyla sınırlandırılmış kurall
 
 Opus 4.5 ile uzun bir kodlama oturumundan sonra ölü kodu ve gevşek .md dosyalarını temizlemek mi istiyorsunuz? `/refactor-clean` çalıştırın. Test mi gerekli? `/tdd`, `/e2e`, `/test-coverage`. Skill'ler ayrıca codemap'leri de içerebilir - Claude'un keşfe context harcamadan kod tabanınızda hızlıca gezinmesi için bir yöntem.
 
-![Terminal showing chained commands](../assets/images/shortform/02-chaining-commands.jpeg)
+![Terminal showing chained commands](../../assets/images/shortform/02-chaining-commands.jpeg)
 *Command'ları zincirleme*
 
 Command'lar, slash command'lar aracılığıyla yürütülen skill'lerdir. Örtüşürler ancak farklı şekilde saklanırlar:
@@ -66,7 +66,7 @@ Hook'lar, belirli olaylarda tetiklenen otomasyonlardır. Skill'lerin aksine, ara
 }
 ```
 
-![PostToolUse hook feedback](../assets/images/shortform/03-posttooluse-hook.png)
+![PostToolUse hook feedback](../../assets/images/shortform/03-posttooluse-hook.png)
 *PostToolUse hook çalıştırırken Claude Code'da aldığınız geri bildirimin örneği*
 
 **Pro ipucu:** JSON'u manuel yazmak yerine hook'ları konuşarak oluşturmak için `hookify` plugin'ini kullanın. `/hookify` çalıştırın ve ne istediğinizi açıklayın.
@@ -129,7 +129,7 @@ MCP'ler Claude'u doğrudan harici hizmetlere bağlar. API'lerin yerini tutmaz - 
 
 **Örnek:** Supabase MCP, Claude'un belirli verileri çekmesine, SQL'i kopyala-yapıştır olmadan doğrudan upstream çalıştırmasına izin verir. Veritabanları, dağıtım platformları vb. için de aynı.
 
-![Supabase MCP listing tables](../assets/images/shortform/04-supabase-mcp.jpeg)
+![Supabase MCP listing tables](../../assets/images/shortform/04-supabase-mcp.jpeg)
 *Supabase MCP'nin public şemasındaki tabloları listeleyen örneği*
 
 **Claude'da Chrome:** Claude'un tarayıcınızı özerk olarak kontrol etmesine izin veren yerleşik bir plugin MCP'sidir - işlerin nasıl çalıştığını görmek için etrafta tıklar.
@@ -138,7 +138,7 @@ MCP'ler Claude'u doğrudan harici hizmetlere bağlar. API'lerin yerini tutmaz - 
 
 MCP'lerle seçici olun. Tüm MCP'leri kullanıcı yapılandırmasında tutarım ancak **kullanılmayan her şeyi devre dışı bırakırım**. `/plugins`'e gidin ve aşağı kaydırın veya `/mcp` çalıştırın.
 
-![/plugins interface](../assets/images/shortform/05-plugins-interface.jpeg)
+![/plugins interface](../../assets/images/shortform/05-plugins-interface.jpeg)
 */plugins kullanarak MCP'lere giderek şu anda hangi MCP'lerin yüklü olduğunu ve durumlarını görme*
 
 Sıkıştırmadan önce 200k context window'unuz, çok fazla araç etkinleştirilmişse sadece 70k olabilir. Performans önemli ölçüde düşer.
@@ -168,7 +168,7 @@ claude plugin marketplace add https://github.com/mixedbread-ai/mgrep
 # Claude'u açın, /plugins çalıştırın, yeni marketplace'i bulun, oradan yükleyin
 ```
 
-![Marketplaces tab showing mgrep](../assets/images/shortform/06-marketplaces-mgrep.jpeg)
+![Marketplaces tab showing mgrep](../../assets/images/shortform/06-marketplaces-mgrep.jpeg)
 *Yeni yüklenen Mixedbread-Grep marketplace'i gösterme*
 
 **LSP Plugin'leri**, Claude Code'u sık sık editör dışında çalıştırıyorsanız özellikle kullanışlıdır. Language Server Protocol, Claude'a IDE açık olmadan gerçek zamanlı tip kontrolü, tanıma gitme ve akıllı tamamlamalar verir.
@@ -239,7 +239,7 @@ mgrep --web "Next.js 15 app router changes"  # Web araması
 
 PR'larınızda GitHub Actions ile kod incelemesi kurun. Claude yapılandırıldığında PR'ları otomatik olarak inceleyebilir.
 
-![Claude bot approving a PR](../assets/images/shortform/08-github-pr-review.jpeg)
+![Claude bot approving a PR](../../assets/images/shortform/08-github-pr-review.jpeg)
 *Claude bir bug düzeltme PR'ını onaylıyor*
 
 ### Sandboxing
@@ -264,7 +264,7 @@ Ben [Zed](https://zed.dev) kullanıyorum - Rust ile yazılmış, bu nedenle ger�
 - **Minimal Kaynak Kullanımı** - Ağır işlemler sırasında Claude ile RAM/CPU için rekabet etmez. Opus çalıştırırken önemli
 - **Vim Modu** - Bu sizin tarzınızsa tam vim keybinding'leri
 
-![Zed Editor with custom commands](../assets/images/shortform/09-zed-editor.jpeg)
+![Zed Editor with custom commands](../../assets/images/shortform/09-zed-editor.jpeg)
 *CMD+Shift+R kullanarak özel komutlar açılır menüsü olan Zed Editor. Following modu sağ altta hedef işareti olarak gösterilmiş.*
 
 **Editörden Bağımsız İpuçları:**
@@ -279,7 +279,7 @@ Ben [Zed](https://zed.dev) kullanıyorum - Rust ile yazılmış, bu nedenle ger�
 
 Bu da geçerli bir seçimdir ve Claude Code ile iyi çalışır. LSP işlevselliğini etkinleştiren `\ide` ile editörünüzle otomatik senkronizasyon ile terminal formatında kullanabilirsiniz (artık plugin'lerle biraz gereksiz). Veya Editor ile daha entegre olan ve eşleşen bir UI'ya sahip extension'ı tercih edebilirsiniz.
 
-![VS Code Claude Code Extension](../assets/images/shortform/10-vscode-extension.jpeg)
+![VS Code Claude Code Extension](../../assets/images/shortform/10-vscode-extension.jpeg)
 *VS Code extension, doğrudan IDE'nize entegre edilmiş Claude Code için native bir grafik arayüz sağlar.*
 
 ---
@@ -363,7 +363,7 @@ Bu anahtar - 14 MCP yapılandırılmış ancak proje başına sadece ~5-6'sı et
 
 Kullanıcı, dizin, kirli göstergeli git branch, kalan context %, model, zaman ve todo sayısını gösterir:
 
-![Custom status line](../assets/images/shortform/11-statusline.jpeg)
+![Custom status line](../../assets/images/shortform/11-statusline.jpeg)
 *Mac root dizinimde örnek statusline*
 
 ```
@@ -420,7 +420,7 @@ affoon:~ ctx:65% Opus 4.5 19:52
 - [Interactive Mode](https://code.claude.com/docs/en/interactive-mode)
 - [Memory Sistemi](https://code.claude.com/docs/en/memory)
 - [Subagent'lar](https://code.claude.com/docs/en/sub-agents)
-- [MCP Genel Bakış](https://code.claude.com/docs/en/mcp-overview)
+- [MCP Genel Bakış](https://code.claude.com/docs/en/mcp)
 
 ---
 

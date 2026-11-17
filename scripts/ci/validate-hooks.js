@@ -82,6 +82,93 @@ function isNonEmptyStringArray(value) {
   return Array.isArray(value) && value.length > 0 && value.every(item => isNonEmptyString(item));
 }
 
+function isStringRecord(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    && Object.values(value).every(item => typeof item === 'string');
+}
+
+const INLINE_ESCAPES = { '\\': '\\', '"': '"', n: '\n', t: '\t' };
+
+/** Unescape a shell double-quoted `node -e` body in one pass, so `\\n` stays a literal backslash and n. */
+function unescapeInlineJs(source) {
+  return source.replace(/\\(["\\nt])/g, (match, ch) => INLINE_ESCAPES[ch]);
+}
+
+/**
+ * Compile the inline program of a `node -e "..."` command so a typo in
+ * hooks.json fails validation instead of every hook invocation.
+ * @returns {boolean} true if errors were found
+ */
+function validateInlineJs(command, label) {
+  const nodeEMatch = command.match(/^node -e "((?:[^"\\]|\\.)*)"(?:\s|$)/s);
+  if (!nodeEMatch) return false;
+  try {
+    new vm.Script(unescapeInlineJs(nodeEMatch[1]));
+    return false;
+  } catch (syntaxErr) {
+    console.error(`ERROR: ${label} has invalid inline JS: ${syntaxErr.message}`);
+    return true;
+  }
+}
+
+/** @returns {boolean} true if errors were found */
+function validateCommandHook(hook, label) {
+  let hasErrors = false;
+
+  if ('async' in hook && typeof hook.async !== 'boolean') {
+    console.error(`ERROR: ${label} 'async' must be a boolean`);
+    hasErrors = true;
+  }
+
+  if (!isNonEmptyString(hook.command) && !isNonEmptyStringArray(hook.command)) {
+    console.error(`ERROR: ${label} missing or invalid 'command' field`);
+    hasErrors = true;
+  } else if (typeof hook.command === 'string' && validateInlineJs(hook.command, label)) {
+    hasErrors = true;
+  }
+
+  return hasErrors;
+}
+
+/** @returns {boolean} true if errors were found */
+function validateHttpHook(hook, label) {
+  let hasErrors = false;
+
+  if (!isNonEmptyString(hook.url)) {
+    console.error(`ERROR: ${label} missing or invalid 'url' field`);
+    hasErrors = true;
+  }
+
+  if ('headers' in hook && !isStringRecord(hook.headers)) {
+    console.error(`ERROR: ${label} 'headers' must be an object with string values`);
+    hasErrors = true;
+  }
+
+  if ('allowedEnvVars' in hook && (!Array.isArray(hook.allowedEnvVars) || !hook.allowedEnvVars.every(value => isNonEmptyString(value)))) {
+    console.error(`ERROR: ${label} 'allowedEnvVars' must be an array of strings`);
+    hasErrors = true;
+  }
+
+  return hasErrors;
+}
+
+/** prompt and agent hooks share one shape. @returns {boolean} true if errors were found */
+function validatePromptHook(hook, label) {
+  let hasErrors = false;
+
+  if (!isNonEmptyString(hook.prompt)) {
+    console.error(`ERROR: ${label} missing or invalid 'prompt' field`);
+    hasErrors = true;
+  }
+
+  if ('model' in hook && !isNonEmptyString(hook.model)) {
+    console.error(`ERROR: ${label} 'model' must be a non-empty string`);
+    hasErrors = true;
+  }
+
+  return hasErrors;
+}
+
 /**
  * Validate a single hook entry has required fields and valid inline JS
  * @param {object} hook - Hook object with type and command fields
@@ -105,27 +192,7 @@ function validateHookEntry(hook, label) {
   }
 
   if (hook.type === 'command') {
-    if ('async' in hook && typeof hook.async !== 'boolean') {
-      console.error(`ERROR: ${label} 'async' must be a boolean`);
-      hasErrors = true;
-    }
-
-    if (!isNonEmptyString(hook.command) && !isNonEmptyStringArray(hook.command)) {
-      console.error(`ERROR: ${label} missing or invalid 'command' field`);
-      hasErrors = true;
-    } else if (typeof hook.command === 'string') {
-      const nodeEMatch = hook.command.match(/^node -e "((?:[^"\\]|\\.)*)"(?:\s|$)/s);
-      if (nodeEMatch) {
-        try {
-          new vm.Script(nodeEMatch[1].replace(/\\\\/g, '\\').replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\t/g, '\t'));
-        } catch (syntaxErr) {
-          console.error(`ERROR: ${label} has invalid inline JS: ${syntaxErr.message}`);
-          hasErrors = true;
-        }
-      }
-    }
-
-    return hasErrors;
+    return validateCommandHook(hook, label) || hasErrors;
   }
 
   if ('async' in hook) {
@@ -134,35 +201,10 @@ function validateHookEntry(hook, label) {
   }
 
   if (hook.type === 'http') {
-    if (!isNonEmptyString(hook.url)) {
-      console.error(`ERROR: ${label} missing or invalid 'url' field`);
-      hasErrors = true;
-    }
-
-    if ('headers' in hook && (typeof hook.headers !== 'object' || hook.headers === null || Array.isArray(hook.headers) || !Object.values(hook.headers).every(value => typeof value === 'string'))) {
-      console.error(`ERROR: ${label} 'headers' must be an object with string values`);
-      hasErrors = true;
-    }
-
-    if ('allowedEnvVars' in hook && (!Array.isArray(hook.allowedEnvVars) || !hook.allowedEnvVars.every(value => isNonEmptyString(value)))) {
-      console.error(`ERROR: ${label} 'allowedEnvVars' must be an array of strings`);
-      hasErrors = true;
-    }
-
-    return hasErrors;
+    return validateHttpHook(hook, label) || hasErrors;
   }
 
-  if (!isNonEmptyString(hook.prompt)) {
-    console.error(`ERROR: ${label} missing or invalid 'prompt' field`);
-    hasErrors = true;
-  }
-
-  if ('model' in hook && !isNonEmptyString(hook.model)) {
-    console.error(`ERROR: ${label} 'model' must be a non-empty string`);
-    hasErrors = true;
-  }
-
-  return hasErrors;
+  return validatePromptHook(hook, label) || hasErrors;
 }
 
 /**
@@ -237,7 +279,15 @@ function validateAgainstSchema(document, schemaPath, label) {
   return true;
 }
 
-function validateHooks() {
+function isObjectFormat(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function isValidMatcherValue(value) {
+  return typeof value === 'string' || (typeof value === 'object' && value !== null);
+}
+
+function readHooksFile() {
   if (!fs.existsSync(HOOKS_FILE)) {
     console.log('No hooks.json found, skipping validation');
     process.exit(0);
@@ -250,45 +300,193 @@ function validateHooks() {
     console.error(`ERROR: Invalid JSON in hooks.json: ${e.message}`);
     process.exit(1);
   }
+  return data;
+}
 
-  // Without a sidecar, hooks.json keeps its legacy inline ids. With one, the
-  // sidecar is the sole owner of id/description and hooks.json must stay
-  // within Claude Code's schema.
-  let metadata = null;
-  const metadataPath = metadataPathFor(HOOKS_FILE);
-  if (fs.existsSync(metadataPath)) {
+/**
+ * Load and check the hooks.metadata.json sidecar, if present.
+ *
+ * Without a sidecar, hooks.json keeps its legacy inline ids. With one, the
+ * sidecar is the sole owner of id/description and hooks.json must stay
+ * within Claude Code's schema. Exits the process on any sidecar error.
+ *
+ * @returns {object|null} parsed (and possibly refreshed) metadata, or null
+ */
+function loadMetadata(data, metadataPath) {
+  if (!fs.existsSync(metadataPath)) {
+    return null;
+  }
+
+  let metadata;
+  try {
+    metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
+  } catch (e) {
+    console.error(`ERROR: Invalid JSON in ${METADATA_FILENAME}: ${e.message}`);
+    process.exit(1);
+  }
+
+  if (validateHarnessCompatibility(data)) {
+    process.exit(1);
+  }
+
+  if (UPDATE_FINGERPRINTS) {
     try {
-      metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
-    } catch (e) {
-      console.error(`ERROR: Invalid JSON in ${METADATA_FILENAME}: ${e.message}`);
+      metadata = withRefreshedFingerprints(data, metadata);
+    } catch (error) {
+      console.error(`ERROR: ${error.message}`);
       process.exit(1);
     }
+  }
 
-    if (validateHarnessCompatibility(data)) {
-      process.exit(1);
+  if (validateAgainstSchema(metadata, METADATA_SCHEMA_PATH, METADATA_FILENAME)) {
+    process.exit(1);
+  }
+
+  const mismatches = findMetadataMismatches(data, metadata);
+  if (mismatches.length > 0) {
+    for (const mismatch of mismatches) {
+      console.error(`ERROR: ${mismatch}`);
+    }
+    process.exit(1);
+  }
+
+  return metadata;
+}
+
+/**
+ * Validate each hook entry of one matcher.
+ * @returns {boolean} true if errors were found
+ */
+function validateHookEntries(entries, label) {
+  let hasErrors = false;
+  for (let j = 0; j < entries.length; j++) {
+    if (validateHookEntry(entries[j], `${label}.hooks[${j}]`)) {
+      hasErrors = true;
+    }
+  }
+  return hasErrors;
+}
+
+/**
+ * Validate one matcher of the object format. `ids` tracks stable ids when the
+ * document requires them, and is null otherwise.
+ * @returns {boolean} true if errors were found
+ */
+function validateObjectMatcher(eventType, index, matcher, ids) {
+  const matcherLabel = `${eventType}[${index}]`;
+  let hasErrors = false;
+
+  if (ids && !isNonEmptyString(matcher.id)) {
+    console.error(`ERROR: ${matcherLabel} missing or invalid 'id' field`);
+    hasErrors = true;
+  } else if (ids && ids.has(matcher.id)) {
+    console.error(
+      `ERROR: ${matcherLabel} has duplicate id '${matcher.id}' (already used by ${ids.get(matcher.id)})`
+    );
+    hasErrors = true;
+  } else if (ids) {
+    ids.set(matcher.id, matcherLabel);
+  }
+
+  if (!('matcher' in matcher) && !EVENTS_WITHOUT_MATCHER.has(eventType)) {
+    console.error(`ERROR: ${matcherLabel} missing 'matcher' field`);
+    hasErrors = true;
+  } else if ('matcher' in matcher && !isValidMatcherValue(matcher.matcher)) {
+    console.error(`ERROR: ${matcherLabel} has invalid 'matcher' field`);
+    hasErrors = true;
+  }
+
+  if (!matcher.hooks || !Array.isArray(matcher.hooks) || matcher.hooks.length === 0) {
+    console.error(`ERROR: ${matcherLabel} missing 'hooks' array`);
+    hasErrors = true;
+  } else if (validateHookEntries(matcher.hooks, matcherLabel)) {
+    hasErrors = true;
+  }
+
+  return hasErrors;
+}
+
+/**
+ * Object format: { EventType: [matchers] }
+ * @returns {{ hasErrors: boolean, totalMatchers: number }}
+ */
+function validateObjectFormat(hooks, requiresStableIds) {
+  const ids = requiresStableIds ? new Map() : null;
+  let hasErrors = false;
+  let totalMatchers = 0;
+
+  for (const [eventType, matchers] of Object.entries(hooks)) {
+    if (!VALID_EVENTS.includes(eventType)) {
+      console.error(`ERROR: Invalid event type: ${eventType}`);
+      hasErrors = true;
+      continue;
     }
 
-    if (UPDATE_FINGERPRINTS) {
-      try {
-        metadata = withRefreshedFingerprints(data, metadata);
-      } catch (error) {
-        console.error(`ERROR: ${error.message}`);
-        process.exit(1);
+    if (!Array.isArray(matchers)) {
+      console.error(`ERROR: ${eventType} must be an array`);
+      hasErrors = true;
+      continue;
+    }
+
+    for (let i = 0; i < matchers.length; i++) {
+      const matcher = matchers[i];
+      if (typeof matcher !== 'object' || matcher === null) {
+        console.error(`ERROR: ${eventType}[${i}] is not an object`);
+        hasErrors = true;
+        continue;
       }
-    }
-
-    if (validateAgainstSchema(metadata, METADATA_SCHEMA_PATH, METADATA_FILENAME)) {
-      process.exit(1);
-    }
-
-    const mismatches = findMetadataMismatches(data, metadata);
-    if (mismatches.length > 0) {
-      for (const mismatch of mismatches) {
-        console.error(`ERROR: ${mismatch}`);
+      if (validateObjectMatcher(eventType, i, matcher, ids)) {
+        hasErrors = true;
       }
-      process.exit(1);
+      totalMatchers++;
     }
+  }
 
+  return { hasErrors, totalMatchers };
+}
+
+/** @returns {boolean} true if errors were found */
+function validateLegacyHook(hook, index) {
+  let hasErrors = false;
+
+  if (!('matcher' in hook)) {
+    console.error(`ERROR: Hook ${index} missing 'matcher' field`);
+    hasErrors = true;
+  } else if (!isValidMatcherValue(hook.matcher)) {
+    console.error(`ERROR: Hook ${index} has invalid 'matcher' field`);
+    hasErrors = true;
+  }
+
+  if (!hook.hooks || !Array.isArray(hook.hooks)) {
+    console.error(`ERROR: Hook ${index} missing 'hooks' array`);
+    hasErrors = true;
+  } else if (validateHookEntries(hook.hooks, `Hook ${index}`)) {
+    hasErrors = true;
+  }
+
+  return hasErrors;
+}
+
+/**
+ * Array format (legacy): [{ matcher, hooks }]
+ * @returns {{ hasErrors: boolean, totalMatchers: number }}
+ */
+function validateArrayFormat(hooks) {
+  let hasErrors = false;
+  for (let i = 0; i < hooks.length; i++) {
+    if (validateLegacyHook(hooks[i], i)) {
+      hasErrors = true;
+    }
+  }
+  return { hasErrors, totalMatchers: hooks.length };
+}
+
+function validateHooks() {
+  let data = readHooksFile();
+
+  const metadataPath = metadataPathFor(HOOKS_FILE);
+  const metadata = loadMetadata(data, metadataPath);
+  if (metadata) {
     // Validate the merged view so the id/description rules below still apply.
     data = applyHooksMetadata(data, metadata);
   }
@@ -300,103 +498,19 @@ function validateHooks() {
 
   // Support both object format { hooks: {...} } and array format
   const hooks = data.hooks || data;
-  const requiresStableIds = Boolean(
-    data
-    && typeof data === 'object'
-    && !Array.isArray(data)
-    && data.hooks
-    && typeof data.hooks === 'object'
-    && !Array.isArray(data.hooks)
-  );
-  let hasErrors = false;
-  let totalMatchers = 0;
-  const matcherIdLocations = new Map();
+  const requiresStableIds = isObjectFormat(data) && isObjectFormat(data.hooks);
 
+  let result;
   if (typeof hooks === 'object' && !Array.isArray(hooks)) {
-    // Object format: { EventType: [matchers] }
-    for (const [eventType, matchers] of Object.entries(hooks)) {
-      if (!VALID_EVENTS.includes(eventType)) {
-        console.error(`ERROR: Invalid event type: ${eventType}`);
-        hasErrors = true;
-        continue;
-      }
-
-      if (!Array.isArray(matchers)) {
-        console.error(`ERROR: ${eventType} must be an array`);
-        hasErrors = true;
-        continue;
-      }
-
-      for (let i = 0; i < matchers.length; i++) {
-        const matcher = matchers[i];
-        if (typeof matcher !== 'object' || matcher === null) {
-          console.error(`ERROR: ${eventType}[${i}] is not an object`);
-          hasErrors = true;
-          continue;
-        }
-        const matcherLabel = `${eventType}[${i}]`;
-        if (requiresStableIds && !isNonEmptyString(matcher.id)) {
-          console.error(`ERROR: ${matcherLabel} missing or invalid 'id' field`);
-          hasErrors = true;
-        } else if (requiresStableIds && matcherIdLocations.has(matcher.id)) {
-          console.error(
-            `ERROR: ${matcherLabel} has duplicate id '${matcher.id}' (already used by ${matcherIdLocations.get(matcher.id)})`
-          );
-          hasErrors = true;
-        } else if (requiresStableIds) {
-          matcherIdLocations.set(matcher.id, matcherLabel);
-        }
-        if (!('matcher' in matcher) && !EVENTS_WITHOUT_MATCHER.has(eventType)) {
-          console.error(`ERROR: ${matcherLabel} missing 'matcher' field`);
-          hasErrors = true;
-        } else if ('matcher' in matcher && typeof matcher.matcher !== 'string' && (typeof matcher.matcher !== 'object' || matcher.matcher === null)) {
-          console.error(`ERROR: ${matcherLabel} has invalid 'matcher' field`);
-          hasErrors = true;
-        }
-        if (!matcher.hooks || !Array.isArray(matcher.hooks) || matcher.hooks.length === 0) {
-          console.error(`ERROR: ${matcherLabel} missing 'hooks' array`);
-          hasErrors = true;
-        } else {
-          // Validate each hook entry
-          for (let j = 0; j < matcher.hooks.length; j++) {
-            if (validateHookEntry(matcher.hooks[j], `${matcherLabel}.hooks[${j}]`)) {
-              hasErrors = true;
-            }
-          }
-        }
-        totalMatchers++;
-      }
-    }
+    result = validateObjectFormat(hooks, requiresStableIds);
   } else if (Array.isArray(hooks)) {
-    // Array format (legacy)
-    for (let i = 0; i < hooks.length; i++) {
-      const hook = hooks[i];
-      if (!('matcher' in hook)) {
-        console.error(`ERROR: Hook ${i} missing 'matcher' field`);
-        hasErrors = true;
-      } else if (typeof hook.matcher !== 'string' && (typeof hook.matcher !== 'object' || hook.matcher === null)) {
-        console.error(`ERROR: Hook ${i} has invalid 'matcher' field`);
-        hasErrors = true;
-      }
-      if (!hook.hooks || !Array.isArray(hook.hooks)) {
-        console.error(`ERROR: Hook ${i} missing 'hooks' array`);
-        hasErrors = true;
-      } else {
-        // Validate each hook entry
-        for (let j = 0; j < hook.hooks.length; j++) {
-          if (validateHookEntry(hook.hooks[j], `Hook ${i}.hooks[${j}]`)) {
-            hasErrors = true;
-          }
-        }
-      }
-      totalMatchers++;
-    }
+    result = validateArrayFormat(hooks);
   } else {
     console.error('ERROR: hooks.json must be an object or array');
     process.exit(1);
   }
 
-  if (hasErrors) {
+  if (result.hasErrors) {
     process.exit(1);
   }
 
@@ -405,7 +519,7 @@ function validateHooks() {
     console.log(`Updated fingerprints in ${METADATA_FILENAME}`);
   }
 
-  console.log(`Validated ${totalMatchers} hook matchers`);
+  console.log(`Validated ${result.totalMatchers} hook matchers`);
 }
 
 validateHooks();

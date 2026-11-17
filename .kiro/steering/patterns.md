@@ -1,5 +1,5 @@
 ---
-inclusion: auto
+inclusion: always
 name: patterns
 description: Common design patterns including repository pattern, API response format, and skeleton project approach
 ---

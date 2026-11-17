@@ -17,9 +17,6 @@
     "skills/strategic-compact/SKILL.md",
     "skills/eval-harness/SKILL.md"
   ],
-  "plugin": [
-    "./plugins"
-  ],
   "skills": {
     "paths": [
       "../skills"
@@ -281,6 +278,17 @@
       "description": "Expert Python code reviewer specializing in PEP 8 compliance, Pythonic idioms, type hints, security, and performance.",
       "mode": "subagent",
       "prompt": "{file:prompts/agents/python-reviewer.txt}",
+      "tools": {
+        "read": true,
+        "bash": true,
+        "write": false,
+        "edit": false
+      }
+    },
+    "ruby-reviewer": {
+      "description": "Expert Ruby and Rails code reviewer specializing in idiomatic Ruby, Active Record query safety, Rails security defaults, and RSpec/Minitest quality.",
+      "mode": "subagent",
+      "prompt": "{file:prompts/agents/ruby-reviewer.txt}",
       "tools": {
         "read": true,
         "bash": true,

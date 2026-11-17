@@ -7,8 +7,13 @@ const {
   normalizeRelativePath,
   planClaudeHooksOperations,
 } = require('./helpers');
+const { getClaudeSettingsPath } = require('../install/claude-settings');
 
 const CLAUDE_ECC_NAMESPACE = 'ecc';
+const CLAUDE_PROJECT_COMMONJS_PACKAGE = 'manifests/install-assets/claude-project-scripts-package.json';
+// config-health ships its own SessionStart hook; see claude-home.js for why
+// this is not part of hooks/hooks.json.
+const CONFIG_HEALTH_HOOKS_CONFIG_PATH = 'manifests/install-assets/config-health-hooks.json';
 
 function getClaudeManagedDestinationPath(adapter, sourceRelativePath, input) {
   const normalizedSourcePath = normalizeRelativePath(sourceRelativePath);
@@ -63,9 +68,9 @@ module.exports = createInstallTargetAdapter({
       homeDir: input.homeDir,
     };
 
-    return modules.flatMap(module => {
+    const operations = modules.flatMap(module => {
       const paths = Array.isArray(module.paths) ? module.paths : [];
-      return paths
+      const moduleOperations = paths
         .filter(p => !isForeignPlatformPath(p, 'claude'))
         .flatMap(sourceRelativePath => {
           if (
@@ -93,6 +98,46 @@ module.exports = createInstallTargetAdapter({
 
           return [adapter.createScaffoldOperation(module.id, sourceRelativePath, planningInput)];
         });
+
+      // The skill promises a SessionStart hook by default. Copying the skill
+      // and the script is not that promise: without this settings merge the
+      // installed monitor is never invoked by an ordinary session. PreToolUse
+      // stays opt-in and is deliberately absent from this config.
+      const withModuleHooks = module.id === 'config-health'
+        ? [...moduleOperations, createRemappedOperation(
+          adapter,
+          module.id,
+          CONFIG_HEALTH_HOOKS_CONFIG_PATH,
+          getClaudeSettingsPath(adapter.resolveRoot(planningInput)),
+          { kind: 'update-claude-settings', strategy: 'merge-hook-ids' }
+        )]
+        : moduleOperations;
+
+      if (module.id !== 'hooks-runtime') {
+        return withModuleHooks;
+      }
+
+      return [
+        ...['hooks', 'lib'].map(directory => createRemappedOperation(
+          adapter,
+          module.id,
+          CLAUDE_PROJECT_COMMONJS_PACKAGE,
+          path.join(adapter.resolveRoot(planningInput), 'scripts', directory, 'package.json'),
+          { strategy: 'preserve-relative-path' }
+        )),
+        ...withModuleHooks,
+      ];
     });
+    if (!operations.some(operation => operation.moduleId === 'commands-core'
+      && normalizeRelativePath(operation.sourceRelativePath).startsWith('scripts/'))) return operations;
+    // Standalone command entries and their helpers need the same scope even
+    // when hooks are excluded. Reuse the shared boundary asset and owner.
+    return [...operations, createRemappedOperation(
+      adapter,
+      'commands-core',
+      'manifests/install-assets/commonjs-scripts-package.json',
+      path.join(adapter.resolveRoot(planningInput), 'scripts', 'package.json'),
+      { strategy: 'preserve-relative-path' }
+    )];
   },
 });

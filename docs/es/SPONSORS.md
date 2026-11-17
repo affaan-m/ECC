@@ -18,9 +18,14 @@ Gracias a todos los que financian el trabajo de código abierto de ECC. Tu patro
 
 | Patrocinador | Desde |
 |---------|-------|
-| [Mike Morgan](https://github.com/mikejmorgan-ai) | 2026 |
 
 *[Conviértete en patrocinador Team](https://github.com/sponsors/affaan-m) para obtener un logo pequeño y 5 asientos de ECC Pro.*
+
+## Patrocinadores anteriores
+
+| Patrocinador | Período activo |
+|---------|---------------|
+| [Mike Morgan](https://github.com/mikejmorgan-ai) (inactivo) | 2026 |
 
 ## Patrocinadores Pro — $50/mes
 

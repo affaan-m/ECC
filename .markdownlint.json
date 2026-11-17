@@ -1,6 +1,7 @@
 {
   "globs": ["**/*.md", "!**/node_modules/**"],
   "default": true,
+  "MD010": { "code_blocks": false },
   "MD009": { "br_spaces": 2, "strict": false },
   "MD013": false,
   "MD033": false,

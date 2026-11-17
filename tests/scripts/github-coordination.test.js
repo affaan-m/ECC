@@ -94,6 +94,28 @@ async function runTests() {
   let failed = 0;
 
   if (
+    await test('rejects malformed issue numbers during argument parsing', async () => {
+      const { parseArgs } = require(SCRIPT);
+
+      for (const argv of [
+        ['node', 'github-coordination.js', 'claim', '42oops', '--repo', 'example/project'],
+        ['node', 'github-coordination.js', 'claim', '--issue', '42.9', '--repo', 'example/project'],
+        ['node', 'github-coordination.js', 'claim', '--issue', '4e2', '--repo', 'example/project'],
+        ['node', 'github-coordination.js', 'claim', '--issue', '9007199254740993', '--repo', 'example/project'],
+        ['node', 'github-coordination.js', 'claim', '--limit', '42.9', '--repo', 'example/project'],
+      ]) {
+        assert.throws(() => parseArgs(argv), /Invalid issue number/);
+      }
+
+      const valid = parseArgs(['node', 'github-coordination.js', 'claim', '7', '--repo', 'example/project']);
+      assert.strictEqual(valid.issueNumber, 7);
+      assert.strictEqual(valid.limit, 100);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     await test('claims an epic issue, updates GitHub state, and caches a work item', async () => {
       const rootDir = createTempDir('github-coordination-claim-');
       const dbPath = path.join(rootDir, 'state.db');

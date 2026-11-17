@@ -133,6 +133,7 @@ function determineInstallCwd(record, repoRoot) {
 // install-apply.js if its package.json identifies it as ECC — otherwise a
 // cloned project that ships a nested `evil/{package.json,scripts/install-apply.js}`
 // could drive auto-update into executing attacker code (GHSA-hfpv-w6mp-5g95).
+// 'everything-claude-code' is the legacy 1.x package name, kept for existing checkouts.
 const ECC_PACKAGE_NAMES = new Set(['ecc-universal', 'everything-claude-code']);
 
 function validateRepoRoot(repoRoot) {
@@ -173,9 +174,10 @@ function runExternalCommand(command, args, options = {}) {
     throw result.error;
   }
 
-  if (typeof result.status === 'number' && result.status !== 0) {
+  if (result.status !== 0) {
     const errorOutput = (result.stderr || result.stdout || '').trim();
-    throw new Error(`${command} ${args.join(' ')} failed${errorOutput ? `: ${errorOutput}` : ''}`);
+    const failure = result.signal ? `was terminated by ${result.signal}` : 'failed';
+    throw new Error(`${command} ${args.join(' ')} ${failure}${errorOutput ? `: ${errorOutput}` : ''}`);
   }
 
   return result;

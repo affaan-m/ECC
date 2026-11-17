@@ -39,7 +39,7 @@ for (const adapter of listInstallTargetAdapters()) {
     const nativeTarget = ['codex', 'gemini', 'opencode'].includes(adapter.target);
     const resolved = createManifestInstallPlan({
       ...context, target: adapter.target,
-      moduleIds: [nativeTarget ? 'platform-configs' : 'rules-core'],
+      moduleIds: [adapter.target === 'copilot' ? 'agents-core' : nativeTarget ? 'platform-configs' : 'rules-core'],
       // This test exercises ownership of source files, not plugin compilation.
       exemptValidationCodes: ['opencode-plugin-not-built'],
     });

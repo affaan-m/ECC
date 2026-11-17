@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { withoutShadowingClaude } = require('../lib/helpers/windows-test-env');
 const repoRoot = path.join(__dirname, '..', '..');
 const setupScript = path.join(repoRoot, 'scripts', 'setup.js');
 const eccScript = path.join(repoRoot, 'scripts', 'ecc.js');
@@ -62,7 +63,7 @@ function runSetup(fixture, args, options = {}) {
     HOME: fixture.homeDir,
     USERPROFILE: fixture.homeDir,
     CLAUDE_CONFIG_DIR: fixture.configDir,
-    PATH: options.path || `${fixture.binDir}${path.delimiter}${process.env.PATH || ''}`,
+    PATH: options.path || `${fixture.binDir}${path.delimiter}${withoutShadowingClaude(process.env.PATH)}`,
     ECC_TEST_CLAUDE_STATE: fixture.statePath,
     ECC_TEST_CLAUDE_CALLS: fixture.callsPath,
     ...options.env,
@@ -78,6 +79,35 @@ function runSetup(fixture, args, options = {}) {
 function quoteShellArgument(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
+
+// Answer only after the PTY displays a prompt. Fixed-delay pipes can deliver
+// blank defaults and EOF before the wizard creates its readline interface.
+function driveInteractiveTerminal() {
+  const { spawn } = require('child_process');
+  const { pseudoTerminalCommand, answers } = JSON.parse(process.argv[1]);
+  // Node pipes are sockets on macOS; script requires a real pipe for stdin.
+  const child = spawn('sh', ['-c', `cat | ${pseudoTerminalCommand}`], { stdio: ['pipe', 'pipe', 'pipe'] });
+  let pending = '';
+  let answerIndex = 0;
+  child.stdout.on('data', chunk => {
+    process.stdout.write(chunk);
+    pending += chunk.toString('utf8');
+    const prompt = /Choose(?: \[\d+\])?: |\[y\/N\] /.exec(pending);
+    if (!prompt) return;
+    pending = pending.slice(prompt.index + prompt[0].length);
+    if (answerIndex >= answers.length) { child.stdin.end(); return; }
+    const answer = answers[answerIndex++];
+    child.stdin.write(answer === '\u0004' ? answer : `${answer}\n`);
+    if (answerIndex === answers.length) child.stdin.end();
+  });
+  child.stderr.on('data', chunk => process.stderr.write(chunk));
+  child.stdin.on('error', error => {
+    if (error.code !== 'EPIPE') { process.stderr.write(error.message); process.exitCode = 1; }
+  });
+  child.on('error', error => { process.stderr.write(error.message); process.exitCode = 1; });
+  child.on('close', code => { process.exitCode = code ?? 1; });
+}
+
 function runInteractiveEccSetup(fixture, options = {}) {
   if (process.platform === 'win32') {
     return null;
@@ -85,12 +115,18 @@ function runInteractiveEccSetup(fixture, options = {}) {
 
   const args = options.args || ['--dry-run'];
   const answers = options.answers || ['3', '3'];
-  const command = [
+  const setupCommand = [
     process.execPath,
     eccScript,
     'setup',
     ...args,
   ];
+  const command = options.delayedStartup
+    ? [process.execPath, '-e', `setTimeout(() => {
+      const result = require('child_process').spawnSync(process.argv[1], process.argv.slice(2), { stdio: 'inherit' });
+      process.exitCode = result.status ?? 1;
+    }, 1250);`, ...setupCommand]
+    : setupCommand;
   const scriptArgs = process.platform === 'darwin'
     ? ['-q', '-e', '/dev/null', ...command]
     : [
@@ -100,16 +136,11 @@ function runInteractiveEccSetup(fixture, options = {}) {
       command.map(quoteShellArgument).join(' '),
       '/dev/null',
     ];
-  const pseudoTerminalCommand = ['script', ...scriptArgs]
-    .map(quoteShellArgument)
-    .join(' ');
-  const answerCommands = answers
-    .map(answer => `sleep 0.5; printf '%s\\n' ${quoteShellArgument(answer)}`)
-    .join('; ');
-
-  return spawnSync('sh', [
-    '-c',
-    `(${answerCommands}; sleep 0.1) | ${pseudoTerminalCommand}`,
+  const pseudoTerminalCommand = ['script', ...scriptArgs].map(quoteShellArgument).join(' ');
+  return spawnSync(process.execPath, [
+    '-e',
+    `(${driveInteractiveTerminal.toString()})();`,
+    JSON.stringify({ pseudoTerminalCommand, answers }),
   ], {
     cwd: fixture.projectRoot,
     env: {
@@ -117,7 +148,7 @@ function runInteractiveEccSetup(fixture, options = {}) {
       HOME: fixture.homeDir,
       USERPROFILE: fixture.homeDir,
       CLAUDE_CONFIG_DIR: fixture.configDir,
-      PATH: `${fixture.binDir}${path.delimiter}${process.env.PATH || ''}`,
+      PATH: `${fixture.binDir}${path.delimiter}${withoutShadowingClaude(process.env.PATH)}`,
       ECC_TEST_CLAUDE_STATE: fixture.statePath,
       ECC_TEST_CLAUDE_CALLS: fixture.callsPath,
     },
@@ -386,8 +417,8 @@ test('setup automatically migrates an existing install to the selected scope and
     const calls = readCalls(fixture);
     assert.ok(calls.some(argv => (
       argv.join(' ') === 'plugin install ecc@ecc --scope user'
-        + ' --config hooks_enabled=true --config hook_profile=minimal'
     )));
+    assert.ok(calls.every(argv => !argv.includes('--config')));
     assert.ok(calls.some(argv => (
       argv.join(' ') === 'plugin uninstall ecc@ecc --scope local --keep-data'
     )));
@@ -615,6 +646,7 @@ test('migration JSON failures retain phase, scopes, and exact recovery', () => {
     assert.strictEqual(payload.error.phase, 'source-uninstall');
     assert.deepStrictEqual([...payload.error.observedScopes].sort(), ['project', 'user']);
     assert.deepStrictEqual(payload.error.recovery, [
+      'claude plugin list --json',
       'claude plugin uninstall ecc@ecc --scope user --keep-data',
       'ecc setup --mode claude-plugin --scope project --move-scope --yes',
     ]);
@@ -914,6 +946,7 @@ test('interactive defaults preserve an existing install scope and hook preferenc
     const result = runInteractiveEccSetup(fixture, {
       args: ['--dry-run'],
       answers: ['', ''],
+      delayedStartup: true,
     });
     assert.ifError(result.error);
     assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);

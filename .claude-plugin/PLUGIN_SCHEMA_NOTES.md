@@ -162,7 +162,7 @@ Keep this field in `.claude-plugin/plugin.json`:
 ```
 
 This explicit empty object prevents Claude plugin installs from auto-loading ECC's root MCP definitions.
-Without the opt-out, strict OpenAI-compatible gateways can reject plugin MCP tool names such as `mcp__plugin_everything-claude-code_github__create_pull_request_review` because they exceed 64 characters.
+Without the opt-out, strict OpenAI-compatible gateways can reject long plugin MCP tool names such as the legacy-install name `mcp__plugin_everything-claude-code_github__create_pull_request_review` because they exceed 64 characters.
 
 Users who want the bundled MCP servers should configure them manually from `.mcp.json` or `mcp-configs/mcp-servers.json`.
 

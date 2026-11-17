@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact|new",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${QODER_PLUGIN_ROOT}/scripts/hooks/plugin-hook-bootstrap.js",
+              "node",
+              "scripts/hooks/session-start-bootstrap.js"
+            ],
+            "timeout": 30,
+            "statusMessage": "Loading ECC session context"
+          }
+        ]
+      }
+    ]
+  }
+}

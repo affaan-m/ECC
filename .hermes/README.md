@@ -1,6 +1,6 @@
 # ECC for Hermes
 
-This directory contains the ECC (Everything Claude Code) configuration for the Hermes harness.
+This directory contains the ECC configuration for the Hermes harness.
 
 ## What is installed
 

@@ -5,7 +5,7 @@
  * Automatically detects the package manager and test framework.
  */
 
-import { tool, type ToolDefinition } from "@opencode-ai/plugin/tool"
+import { tool, type ToolDefinition } from "./tool.ts"
 import * as path from "path"
 import * as fs from "fs"
 
@@ -65,7 +65,7 @@ const runTestsTool: ToolDefinition = tool({
     }
 
     if (pattern) {
-      if (testFramework === "jest" || testFramework === "vitest") {
+      if (testFramework === "jest") {
         testArgs.push("--testPathPattern", pattern)
       } else {
         testArgs.push(pattern)

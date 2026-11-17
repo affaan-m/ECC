@@ -27,11 +27,12 @@ function renderProximityVizHtml() {
   header { display: flex; align-items: baseline; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #1f2630; }
   header h1 { font-size: 15px; margin: 0; }
   header .sub { color: #8b949e; font-size: 12px; }
-  #wrap { display: grid; grid-template-columns: 1fr 320px; height: calc(100vh - 49px); }
-  #stage { position: relative; }
+  #wrap { display: grid; grid-template-columns: 1fr 320px; grid-template-rows: minmax(0, 1fr); height: calc(100vh - 49px); }
+  #stage { position: relative; height: 100%; min-height: 0; }
   canvas { width: 100%; height: 100%; display: block; }
   #side { border-left: 1px solid #1f2630; padding: 12px 14px; overflow-y: auto; }
   #side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #8b949e; margin: 0 0 8px; }
+  #side h2:not(:first-child) { margin-top: 16px; }
   .adv { border: 1px solid #1f2630; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
   .adv.resolution { border-color: #b3402f; }
   .adv.advisory { border-color: #9a6700; }
@@ -41,8 +42,11 @@ function renderProximityVizHtml() {
   .adv .who { color: #c9d1d9; }
   .adv .act { color: #8b949e; font-size: 12px; margin-top: 3px; }
   .empty { color: #6e7681; }
+  .agent-row { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; font-size: 12px; }
+  .agent-row .who { color: #c9d1d9; overflow-wrap: anywhere; }
+  .agent-row .risk { margin-left: auto; color: #8b949e; white-space: nowrap; }
   #legend { position: absolute; left: 12px; bottom: 12px; font-size: 11px; color: #8b949e; background: rgba(11,14,20,.7); padding: 6px 8px; border-radius: 6px; }
-  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+  .shape { display: inline-block; width: 12px; margin-right: 5px; text-align: center; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -53,16 +57,18 @@ function renderProximityVizHtml() {
   </header>
   <div id="wrap">
     <div id="stage">
-      <canvas id="c"></canvas>
+      <canvas id="c" role="img" aria-label="Agent airspace visualization. See the Agents panel for a text alternative.">Agent airspace visualization; see the Agents panel for per-agent risk.</canvas>
       <div id="legend">
-        <div><span class="dot" style="background:#3fb950"></span>clear</div>
-        <div><span class="dot" style="background:#e3b341"></span>traffic advisory (transmit)</div>
-        <div><span class="dot" style="background:#ff7b72"></span>resolution (steer)</div>
+        <div><span class="shape" style="color:#3fb950">●</span>clear</div>
+        <div><span class="shape" style="color:#e3b341">■</span>traffic advisory (transmit)</div>
+        <div><span class="shape" style="color:#ff7b72">▲</span>resolution (steer)</div>
       </div>
     </div>
     <div id="side">
       <h2>Advisories</h2>
       <div id="advisories"><div class="empty">No advisories - airspace clear.</div></div>
+      <h2>Agents</h2>
+      <div id="agents"><div class="empty">No agents.</div></div>
     </div>
   </div>
 <script>
@@ -81,10 +87,31 @@ function renderProximityVizHtml() {
   }
   window.addEventListener('resize', resize);
 
+  function riskLevel(risk) {
+    if (risk >= 0.7) return 'resolution';
+    if (risk >= 0.35) return 'advisory';
+    return 'clear';
+  }
+
   function riskColor(risk) {
     if (risk >= 0.7) return '#ff7b72';
     if (risk >= 0.35) return '#e3b341';
     return '#3fb950';
+  }
+
+  function drawRiskMarker(x, y, radius, level) {
+    ctx.beginPath();
+    if (level === 'resolution') {
+      ctx.moveTo(x, y - radius);
+      ctx.lineTo(x + radius, y + radius);
+      ctx.lineTo(x - radius, y + radius);
+      ctx.closePath();
+    } else if (level === 'advisory') {
+      ctx.rect(x - radius, y - radius, radius * 2, radius * 2);
+    } else {
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+    }
+    ctx.fill();
   }
 
   // 3D to 2D: rotate around Y, simple perspective.
@@ -122,8 +149,9 @@ function renderProximityVizHtml() {
       var ag = state.positions[k];
       var p = pos[ag.agentId];
       var radius = (6 + Math.sqrt(ag.fileCount || 1) * 3) * p[2];
-      ctx.fillStyle = riskColor(state.riskByAgent[ag.agentId] || 0);
-      ctx.beginPath(); ctx.arc(p[0], p[1], radius, 0, Math.PI * 2); ctx.fill();
+      var agentRisk = state.riskByAgent[ag.agentId] || 0;
+      ctx.fillStyle = riskColor(agentRisk);
+      drawRiskMarker(p[0], p[1], radius, riskLevel(agentRisk));
       ctx.fillStyle = '#c9d1d9';
       ctx.font = '11px -apple-system, system-ui, sans-serif';
       ctx.fillText(String(ag.agentId).slice(0, 18), p[0] + radius + 4, p[1] + 3);
@@ -155,6 +183,25 @@ function renderProximityVizHtml() {
     });
   }
 
+  function renderAgents() {
+    var box = document.getElementById('agents');
+    box.textContent = '';
+    if (!state.positions.length) {
+      var empty = document.createElement('div'); empty.className = 'empty';
+      empty.textContent = 'No agents.'; box.appendChild(empty); return;
+    }
+    state.positions.forEach(function (agent) {
+      var risk = state.riskByAgent[agent.agentId] || 0;
+      var row = document.createElement('div'); row.className = 'agent-row';
+      var who = document.createElement('span'); who.className = 'who';
+      who.textContent = String(agent.agentId); row.appendChild(who);
+      var riskText = document.createElement('span'); riskText.className = 'risk';
+      riskText.textContent = Math.round(risk * 100) + '% - ' + riskLevel(risk);
+      row.appendChild(riskText);
+      box.appendChild(row);
+    });
+  }
+
   function applySnapshot(prox) {
     state.positions = prox.positions || [];
     state.links = prox.links || [];
@@ -166,13 +213,20 @@ function renderProximityVizHtml() {
     });
     state.riskByAgent = risk;
     renderAdvisories();
+    renderAgents();
     var c = prox.counts || {};
+    canvas.setAttribute('aria-label',
+      (c.agents || state.positions.length) + ' agents in airspace, ' +
+      (c.advisories || state.advisories.length) + ' advisories. See the Agents panel for per-agent risk.');
     document.getElementById('status').textContent =
       (c.agents || 0) + ' agents - ' + (c.advisories || 0) + ' advisories - ' + (c.resolutions || 0) + ' steering';
   }
 
   function poll() {
-    fetch('/api/proximity').then(function (r) { return r.json(); }).then(function (data) {
+    fetch('/api/proximity').then(function (r) {
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.json();
+    }).then(function (data) {
       applySnapshot(data && data.enabled ? data : (data || {}));
     }).catch(function () {
       document.getElementById('status').textContent = 'offline';

@@ -41,6 +41,8 @@ function test(name, fn) {
 
 function walk(dir, acc = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === '__pycache__' || entry.name === '.pytest_cache'
+      || /\.py[co]$/.test(entry.name)) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       walk(full, acc);

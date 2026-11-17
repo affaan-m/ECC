@@ -123,6 +123,13 @@ function validateInstallManifests() {
       }
     }
 
+    for (const dependency of module.optionalDependencies || []) {
+      if (!module.dependencies.includes(dependency)) {
+        console.error(`ERROR: Module ${module.id} optional dependency ${dependency} is not a declared dependency`);
+        hasErrors = true;
+      }
+    }
+
     for (const relativePath of module.paths) {
       const normalizedPath = normalizeRelativePath(relativePath);
       const absolutePath = path.join(REPO_ROOT, normalizedPath);
