@@ -225,9 +225,9 @@
     },
     "mnemosyne-os": {
       "command": "npx",
-      "args": ["-y", "-p", "@mnemosyne_os/mcp@2.2.0", "mnemosyne-mcp"],
+      "args": ["-y", "-p", "@mnemosyne_os/mcp@2.4.0", "mnemosyne-mcp"],
       "env": { "MNEMO_VAULTS": "YOUR_APPROVED_VAULT_NAMES", "MNEMO_DEFAULT_VAULT": "" },
-      "description": "Opt-in Mnemosyne OS desktop-app memory and dashboard. Replace MNEMO_VAULTS with approved vault names before enabling; the app ingests selected folders into persistent vaults, and memory_ingest can save content for later agents. Vault scope does not restrict session tools, which read local coding-agent transcripts. Review folder and transcript access before enabling. Memory tools use the app at ws://127.0.0.1:7799. Tool results, including private memory and session data, go to the MCP client and its model provider. Not enabled by default."
+      "description": "Opt-in Mnemosyne OS desktop-app memory and dashboard. Replace MNEMO_VAULTS with approved vault names before enabling; the app ingests selected folders into persistent vaults, and memory_ingest can save content for later agents. Vault scope does not restrict session tools, which read local coding-agent transcripts. Review folder and transcript access before enabling. Memory tools use the app at ws://127.0.0.1:7799. Tool results, including private memory and session data, go to the MCP client and its model provider. Version 2.4.0 adds mnemosyne_telegram_send, which uploads a local media or PDF file to the Telegram chat configured in the app, and on macOS mnemosyne_mac_update_install, which downloads the latest GitHub release and replaces the installed app; require client approval for both, or deny them if unused. Not enabled by default."
     }
   },
   "_comments": {

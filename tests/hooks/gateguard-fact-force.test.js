@@ -730,6 +730,51 @@ function runDdRegressionTests() {
         });
       }
     }
+    // #2832: find execs its action argv directly, so a wrapper or a nested
+    // shell there runs rm/Git exactly like a bare `-exec rm {} \;`.
+    const findExecWrappedDestructive = [
+      'find . -exec sudo rm {} \\;',
+      'find . -exec doas rm {} \\;',
+      'find . -exec sudo -u root rm -rf {} \\;',
+      'find . -exec sudo git reset --hard \\;',
+      'find . -execdir sudo rm {} \\;',
+      'find . -ok doas rm {} \\;',
+      'find . -exec timeout 5m rm -rf {} \\;',
+      'find . -exec setsid rm -rf {} +',
+      'find . -exec env FOO=1 rm -rf {} +',
+      'find . -exec nice -n 5 rm -rf {} +',
+      'sudo find . -exec rm {} \\;',
+      'timeout 5 find . -exec rm -rf {} +',
+      "find . -exec sh -c 'rm -rf {}' \\;",
+      'find . -exec bash -c "rm -rf /important/data" \\;',
+      'find . -exec sh -ec "rm -rf {}" +',
+      'find . -exec sh -o errexit -c "rm -rf {}" \\;',
+      'find . -exec sh -c "git reset --hard" \\;',
+      "find . -exec sudo sh -c 'rm -rf {}' \\;",
+      "find . -exec timeout 5 sh -c 'rm -rf {}' \\;",
+      "find . -exec su -c 'rm -rf /important/data' \\;"
+    ];
+    const findExecWrappedPassive = [
+      'find . -exec sudo chmod 644 {} \\;',
+      'find . -exec sudo git status \\;',
+      'find . -exec sudo -l rm -rf {} \\;',
+      'find . -exec echo sudo rm -rf {} \\;',
+      'find . -exec timeout 5 echo rm -rf {} \\;',
+      "find . -exec sh -c 'echo rm -rf {}' \\;",
+      'find . -exec sh -c "npm test" \\;',
+      "find . -name 'sudo rm -rf' -print",
+      'sudo find . -name "*.log" -exec ls {} \\;'
+    ];
+    for (const [commands, expected] of [
+      [findExecWrappedDestructive, ['gateguard.bash-compatible-destructive']],
+      [findExecWrappedPassive, []]
+    ]) {
+      for (const command of commands) {
+        check(`find -exec wrapper classification: ${JSON.stringify(command)}`, () => {
+          assert.deepStrictEqual(hook.classifyDestructiveCommand('Bash', command), expected);
+        });
+      }
+    }
     for (const [command, denied] of [
       ['sudo -u root dd if=input', true],
       ["sh -c 'echo $(dd if=input)'", true],
@@ -738,7 +783,10 @@ function runDdRegressionTests() {
       ['find . -exec echo {} \\; -exec dd if=input \\;', true],
       ['command -pv dd', false],
       ["timeout 2 sh -c 'dd if=input'", true],
-      ['cat /dev/zero | dd of=/dev/sda', true]
+      ['cat /dev/zero | dd of=/dev/sda', true],
+      ['find . -exec sudo rm -rf {} \\;', true],
+      ["find . -exec sh -c 'rm -rf {}' +", true],
+      ['find . -exec sudo chmod 644 {} \\;', false]
     ]) {
       check(`dd hook-input contract: ${command}`, () => {
         fs.rmSync(stateDir, { recursive: true, force: true });

@@ -37,9 +37,14 @@ function readState(plan) {
 for (const adapter of listInstallTargetAdapters()) {
   test(`${adapter.target}: preserve user files through preview, install, reinstall and uninstall`, context => {
     const nativeTarget = ['codex', 'gemini', 'opencode'].includes(adapter.target);
+    const moduleId = adapter.target === 'mistral-vibe'
+      ? 'skill-tdd-workflow'
+      : adapter.target === 'copilot'
+        ? 'agents-core'
+        : (nativeTarget ? 'platform-configs' : 'rules-core');
     const resolved = createManifestInstallPlan({
       ...context, target: adapter.target,
-      moduleIds: [adapter.target === 'copilot' ? 'agents-core' : nativeTarget ? 'platform-configs' : 'rules-core'],
+      moduleIds: [moduleId],
       // This test exercises ownership of source files, not plugin compilation.
       exemptValidationCodes: ['opencode-plugin-not-built'],
     });

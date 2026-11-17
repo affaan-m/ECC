@@ -3437,9 +3437,12 @@ fn read_package_manager_from_package_json(path: &Path) -> Option<&'static str> {
 fn detect_package_manager_from_lockfile(working_dir: &Path) -> Option<&'static str> {
     [
         ("pnpm", "pnpm-lock.yaml"),
+        // Bun 1.2+ writes the text bun.lock by default; keep the legacy binary lockfile.
+        ("bun", "bun.lock"),
         ("bun", "bun.lockb"),
         ("yarn", "yarn.lock"),
         ("npm", "package-lock.json"),
+        ("npm", "npm-shrinkwrap.json"),
     ]
     .into_iter()
     .find_map(|(package_manager, lockfile)| {
@@ -4856,6 +4859,26 @@ mod tests {
             envs.get("CLAUDE_CODE_PACKAGE_MANAGER"),
             Some(&"pnpm".to_string())
         );
+        Ok(())
+    }
+
+    #[test]
+    fn detect_package_manager_from_lockfile_matches_node_lockfile_aliases() -> Result<()> {
+        for (lockfile, expected) in [
+            ("bun.lock", "bun"),
+            ("bun.lockb", "bun"),
+            ("npm-shrinkwrap.json", "npm"),
+        ] {
+            let tempdir = TestDir::new("manager-package-manager-lockfile-alias")?;
+            let repo_root = tempdir.path().join("repo");
+            fs::create_dir_all(&repo_root)?;
+            fs::write(repo_root.join(lockfile), "lockfile\n")?;
+            assert_eq!(
+                detect_package_manager_from_lockfile(&repo_root),
+                Some(expected),
+                "{lockfile} should select {expected}"
+            );
+        }
         Ok(())
     }
 

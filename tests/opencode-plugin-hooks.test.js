@@ -1110,6 +1110,71 @@ async function main() {
       }),
     ],
     [
+      "V2 maps the shell tool id and runs post-edit hooks from completed write/edit calls",
+      async () => withTempProject([], async (projectDir) => {
+        const mod = await loadPlugin()
+        const definition = mod.default
+        fs.mkdirSync(path.join(projectDir, "src"), { recursive: true })
+        fs.writeFileSync(path.join(projectDir, "src", "a.ts"), "console.log('debug')\n")
+
+        const previousProfile = process.env.ECC_HOOK_PROFILE
+        process.env.ECC_HOOK_PROFILE = "strict"
+        resetSpawns()
+        const lines = []
+        const originals = { info: console.info, warn: console.warn, debug: console.debug }
+        console.info = (...args) => lines.push(args.join(" "))
+        console.warn = (...args) => lines.push(args.join(" "))
+        console.debug = () => {}
+        const ctx = createMockV2Context(projectDir)
+        let dispose = async () => {}
+        try {
+          dispose = await definition.setup(ctx)
+
+          // OpenCode 2 names the V1 `bash` tool `shell`.
+          await ctx.state.handlers["tool.execute.before"]({ tool: "shell", id: "s1", input: { command: "git push origin main" } })
+          assert.ok(
+            lines.some((line) => line.includes("Remember to review changes before pushing")),
+            "the git-push reminder must fire for the V2 shell tool",
+          )
+
+          // OpenCode 2 publishes no file.edited event; a completed edit with
+          // V2's `{ path }` input must still run the post-edit hook.
+          lines.length = 0
+          await ctx.state.handlers["tool.execute.after"]({
+            tool: "edit", id: "e1", input: { path: "src/a.ts" }, status: "completed", result: {},
+          })
+          assert.ok(
+            lines.some((line) => line.includes("console.log found in src/a.ts")),
+            "the console.log warning must fire for a completed V2 edit",
+          )
+          assert.ok(
+            spawnCalls.some((call) => call.args.join(" ").includes("prettier")),
+            "the strict-profile formatter must run for a completed V2 edit",
+          )
+
+          // A failed edit must not run the post-edit hook.
+          lines.length = 0
+          resetSpawns()
+          await ctx.state.handlers["tool.execute.after"]({
+            tool: "edit", id: "e2", input: { path: "src/a.ts" }, status: "error", error: { message: "no match" },
+          })
+          assert.ok(
+            !lines.some((line) => line.includes("console.log found")),
+            "a failed V2 edit must not trigger the post-edit hook",
+          )
+          assert.ok(
+            !spawnCalls.some((call) => call.args.join(" ").includes("prettier")),
+            "a failed V2 edit must not run the formatter",
+          )
+        } finally {
+          await dispose()
+          Object.assign(console, originals)
+          restoreEnv({ ECC_HOOK_PROFILE: previousProfile })
+          resetSpawns()
+        }
+      }),
+    ],
+    [
       "setup() rolls back registrations when a later domain fails (T10)",
       async () => withTempProject([], async (projectDir) => {
         const mod = await loadPlugin()

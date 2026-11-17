@@ -295,6 +295,40 @@ if (process.platform !== 'win32') {
 }
 
 if (process.platform !== 'win32') {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-stocktake-order-'));
+  try {
+    const projectSkills = path.join(tempRoot, 'project', '.claude', 'skills');
+    const names = Array.from({ length: 12 }, (_, index) => `skill-${String.fromCharCode(97 + index)}`);
+    for (const name of names) writeSkill(path.join(projectSkills, name), name);
+    const expectedPaths = names.map(name => path.join(projectSkills, name, 'SKILL.md'));
+    const resultsPath = path.join(tempRoot, 'results.json');
+    fs.writeFileSync(resultsPath, JSON.stringify({ evaluated_at: '2099-01-01T00:00:00Z', skills: [] }));
+    const env = {
+      SKILL_STOCKTAKE_GLOBAL_DIR: path.join(tempRoot, 'missing-global'),
+      SKILL_STOCKTAKE_PROJECT_DIR: projectSkills,
+      SKILL_STOCKTAKE_OBSERVATIONS: path.join(tempRoot, 'missing-observations.jsonl'),
+    };
+
+    test('scan keeps sorted discovery order past nine skills', () => {
+      const result = runBash(scanScript, [], env);
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.deepStrictEqual(JSON.parse(result.stdout).skills.map(skill => skill.path), expectedPaths);
+    });
+
+    test('quick diff keeps sorted discovery order past nine skills', () => {
+      const result = runBash(quickDiffScript, [resultsPath], env);
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.deepStrictEqual(JSON.parse(result.stdout).map(skill => skill.path), expectedPaths);
+    });
+  } catch (error) {
+    console.log(`  ✗ ordering fixture setup: ${error.message}`);
+    failed++;
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+if (process.platform !== 'win32') {
   const skillSource = fs.readFileSync(path.join(repoRoot, 'skills', 'skill-stocktake', 'SKILL.md'), 'utf8');
   const inventorySection = skillSource.split('### Phase 1')[1].split('### Phase 2')[0];
   const inventoryBlock = inventorySection.match(/```bash\n([\s\S]*?)\n```/)[1];

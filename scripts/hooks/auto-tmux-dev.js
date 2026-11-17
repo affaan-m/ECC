@@ -27,6 +27,7 @@
 
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { isDevServerCommand } = require('../lib/dev-command');
 
 const MAX_STDIN = 1024 * 1024; // 1MB limit
 let data = '';
@@ -36,20 +37,12 @@ function run(rawInput) {
     const input = typeof rawInput === 'string' ? JSON.parse(rawInput) : rawInput;
     const cmd = input.tool_input?.command || '';
 
-    // Detect dev server commands: npm run dev, pnpm (run) dev, yarn (run) dev,
-    // bun (run) dev. Trailing (?![\w-]) rather than \b: \b treats a hyphen as a
-    // word boundary, so `dev\b` matches the `dev` prefix of distinct scripts
-    // like `dev-build` / `dev-docs` and would wrongly detach those one-shot
-    // scripts into tmux. The lookahead still matches the dev server (`dev`,
-    // `dev:ssr`, ...) but not a `dev-<suffix>` script. The optional `run` on
-    // yarn/bun mirrors the command shapes in pre-bash-dev-server-block.js
-    // DEV_PATTERN so the two hooks agree on what counts as a dev server.
-    // Flexible whitespace (\s+) and leading \b make this byte-identical to
-    // pre-bash-dev-server-block.js DEV_PATTERN, so a tabbed/multi-space command
-    // the blocker catches is also detached here (they agree exactly).
-    const devServerRegex = /\b(npm\s+run\s+dev|pnpm(?:\s+run)?\s+dev|yarn(?:\s+run)?\s+dev|bun(?:\s+run)?\s+dev)(?![\w-])/;
-
-    if (devServerRegex.test(cmd)) {
+    // Detect dev server commands through the shared classifier
+    // (scripts/lib/dev-command.js) rather than a private regex. This hook and
+    // pre-bash-dev-server-block.js must agree exactly — one refuses the command
+    // outside tmux, the other is what puts it in tmux — and two copies of a
+    // regex asking each other to stay identical is how they drift.
+    if (isDevServerCommand(cmd)) {
       // Get session name from current directory basename, sanitize for shell safety
       // e.g., /home/user/Portfolio → "Portfolio", /home/user/my-app-v2 → "my-app-v2"
       const rawName = path.basename(process.cwd());

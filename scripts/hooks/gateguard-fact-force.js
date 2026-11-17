@@ -1051,22 +1051,35 @@ function isDestructiveQuoteAware(raw, depth = 0) {
       if (isDestructiveSqlClient(tokens)) return true;
       if (isDestructiveFindExec(tokens)) return true;
       const argv = unwrapLeadWrappers(tokens, true, true);
-      const base = commandBasename(argv[0]);
-      if (SHELL_WRAPPERS.has(base)) {
-        // `-c`, or a short-option cluster that includes it (`-lc`, `-ec`).
-        const ci = argv.findIndex((arg, i) => i > 0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(arg));
-        if (ci !== -1 && argv[ci + 1] && isDestructiveQuoteAware(argv[ci + 1], depth + 1)) {
-          return true;
-        }
-      }
-      if (base === 'su') {
-        for (const commandLine of suCommandLines(argv)) {
+      // `sudo find . -exec rm {} \;` runs the same actions as a bare find.
+      if (isDestructiveFindExec(argv)) return true;
+      // A shell that find -exec starts runs its -c text like any other.
+      const execShells = findExecArgvs(argv).map(exec => unwrapLeadWrappers(exec, false, true));
+      for (const shellArgv of [argv, ...execShells]) {
+        for (const commandLine of nestedShellCommandLines(shellArgv)) {
           if (isDestructiveQuoteAware(commandLine, depth + 1)) return true;
         }
       }
     }
   }
   return false;
+}
+
+/**
+ * Command text a resolved argv hands to a nested shell: the `-c` operand of
+ * sh/bash/zsh/dash/ksh (also inside a cluster such as `-lc` or `-ec`), or every
+ * command line of `su`.
+ *
+ * @param {string[]} argv
+ * @returns {string[]}
+ */
+function nestedShellCommandLines(argv) {
+  const base = commandBasename(argv[0]);
+  if (SHELL_WRAPPERS.has(base)) {
+    const ci = argv.findIndex((arg, i) => i > 0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(arg));
+    return ci !== -1 && argv[ci + 1] ? [argv[ci + 1]] : [];
+  }
+  return base === 'su' ? suCommandLines(argv) : [];
 }
 
 /**
@@ -1441,8 +1454,19 @@ const FIND_EXEC_ACTIONS = new Set(['-exec', '-execdir', '-ok', '-okdir']);
 function isDestructiveFindExec(command) {
   const quoteAware = Array.isArray(command);
   const tokens = quoteAware ? command : tokenize(String(command || '').trim());
-  if (commandBasename(tokens[0]) !== 'find') return false;
+  return findExecArgvs(tokens).some(argv => isDestructiveFindExecArgv(argv, quoteAware));
+}
 
+/**
+ * The argv of every executable action of one find invocation, or [] when the
+ * tokens are not a find command.
+ *
+ * @param {string[]} tokens
+ * @returns {string[][]}
+ */
+function findExecArgvs(tokens) {
+  if (commandBasename(tokens[0]) !== 'find') return [];
+  const actions = [];
   for (let index = 1; index < tokens.length; index += 1) {
     const action = tokens[index];
     if (action === '-fprintf') {
@@ -1456,9 +1480,9 @@ function isDestructiveFindExec(command) {
     if (!FIND_EXEC_ACTIONS.has(action)) continue;
     const exec = readFindExecArgv(tokens, index + 1, action);
     index = exec.index;
-    if (exec.argv.length && isDestructiveFindExecArgv(exec.argv, quoteAware)) return true;
+    if (exec.argv.length) actions.push(exec.argv);
   }
-  return false;
+  return actions;
 }
 
 // Collect the argv of one find action starting at `start`. Returns the argv
@@ -1479,10 +1503,21 @@ function readFindExecArgv(tokens, start, action) {
 
 function isDestructiveFindExecArgv(argv, quoteAware) {
   // The legacy raw fallback can split quoted prose into apparent actions.
-  // Preserve its old rm/Git coverage, but classify dd only from real argv.
+  // Preserve its old rm/Git coverage, but classify dd and wrappers only from
+  // real argv.
   if (quoteAware && isDestructiveDd(argv, false)) return true;
+  if (isDestructiveFindExecCommand(argv)) return true;
+  if (!quoteAware) return false;
+  // find execs argv directly, so `-exec sudo rm {} \;` and
+  // `-exec timeout 5 rm {} \;` run rm just as `-exec rm {} \;` does (#2832).
+  // Shell builtins do not apply: find never runs `command` or `exec` itself.
+  const resolved = unwrapLeadWrappers(argv, false, true);
+  return resolved.length > 0 && isDestructiveFindExecCommand(resolved);
+}
+
+// Preserve main's existing find rm/rmdir/unlink and git-reset handling.
+function isDestructiveFindExecCommand(argv) {
   const baseCmd = commandBasename(argv[0]);
-  // Preserve main's existing rm/rmdir/unlink and git-reset handling.
   if (baseCmd === 'rm' || baseCmd === 'rmdir' || baseCmd === 'unlink') return true;
   if (baseCmd !== 'git') return false;
   const sub = findGitSubcommand(argv);

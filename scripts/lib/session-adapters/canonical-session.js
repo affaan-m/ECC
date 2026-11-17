@@ -3,6 +3,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { readFileWithSharingRetry, writeFileAtomic } = require('../atomic-write');
 
 const SESSION_SCHEMA_VERSION = 'ecc.session.v1';
 const SESSION_RECORDING_SCHEMA_VERSION = 'ecc.session.recording.v1';
@@ -290,7 +291,7 @@ function readExistingRecording(filePath) {
   }
 
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return JSON.parse(readFileWithSharingRetry(filePath, 'utf8'));
   } catch {
     return null;
   }
@@ -319,8 +320,10 @@ function writeFallbackSessionRecording(snapshot, options = {}) {
       : [{ recordedAt, snapshot }]
   };
 
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2) + '\n', 'utf8');
+  writeFileAtomic(filePath, JSON.stringify(payload, null, 2) + '\n', {
+    mode: 0o666,
+    preserveExistingMode: true
+  });
 
   return {
     backend: 'json-file',
