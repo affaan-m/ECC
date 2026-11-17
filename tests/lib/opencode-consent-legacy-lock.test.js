@@ -16,6 +16,7 @@ const { repairInstalledStates, buildDoctorReport } = load(require.resolve('../..
 const { createInstallState, readInstallState, writeInstallState } = require('../../scripts/lib/install-state');
 const { withOpenCodeInstallLocks } = load(require.resolve('../../scripts/lib/install/opencode-install-lock'));
 const { removeVerifiedLegacyFile } = require('../../scripts/lib/install/opencode-legacy-migration');
+const { trySymlink } = require('./helpers/symlink-support');
 
 const SOURCE_RELATIVE_PATH = path.join('skills', 'skill-comply', 'SKILL.md');
 const SKILL_CONTENT = '---\nname: skill-comply\ndescription: Synthetic migration fixture.\n---\n\n# Inert fixture\n';
@@ -237,7 +238,8 @@ function runTests() {
       if (unrelated === 'file') fs.writeFileSync(value.legacyRoot, 'user file');
       else if (unrelated === 'symlink') {
         fs.mkdirSync(value.canonicalRoot, { recursive: true });
-        fs.symlinkSync(value.canonicalRoot, value.legacyRoot, process.platform === 'win32' ? 'junction' : 'dir');
+        if (!trySymlink(value.canonicalRoot, value.legacyRoot,
+          process.platform === 'win32' ? 'junction' : 'dir')) return;
       } else {
         fs.mkdirSync(value.legacyRoot, { recursive: true });
         if (unrelated === 'malformed-state') fs.writeFileSync(value.legacyStatePath, '{malformed');
@@ -380,7 +382,7 @@ function runTests() {
       if (defect === 'missing-digest') delete state.operations[2].contentSha256;
       if (defect === 'source-mismatch') fs.writeFileSync(source, 'different trusted source\n');
       if (defect === 'source-missing') fs.unlinkSync(source);
-      if (defect === 'symlink') { fs.unlinkSync(plugin); fs.symlinkSync(source, plugin); }
+      if (defect === 'symlink') { fs.unlinkSync(plugin); if (!trySymlink(source, plugin)) return; }
       if (defect === 'unrecorded-alias') fs.copyFileSync(source, path.join(value.legacyRoot, 'plugins/index.js'));
       if (defect === 'merge-json') state.operations[1].kind = 'merge-json';
       writeInstallState(value.legacyStatePath, state);

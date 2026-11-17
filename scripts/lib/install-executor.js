@@ -556,7 +556,9 @@ function createLegacyCompatInstallPlan(options = {}) {
     requestModuleIds: [],
     requestIncludeComponentIds: includeComponentIds,
     requestExcludeComponentIds: excludeComponentIds,
-    mode: 'legacy-compat'
+    mode: 'legacy-compat',
+    trust: options.trust === true,
+    consent: options.consent || {},
   });
 }
 

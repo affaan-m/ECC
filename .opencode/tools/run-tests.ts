@@ -65,7 +65,7 @@ const runTestsTool: ToolDefinition = tool({
     }
 
     if (pattern) {
-      if (testFramework === "jest" || testFramework === "vitest") {
+      if (testFramework === "jest") {
         testArgs.push("--testPathPattern", pattern)
       } else {
         testArgs.push(pattern)

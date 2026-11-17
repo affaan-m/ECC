@@ -7,6 +7,15 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { test } = require('node:test');
 
+test('packaged benchmark optimization links resolve within the curated profile', () => {
+  const file = path.join(__dirname, '../../pi/core/skills/benchmark-optimization-loop/SKILL.md');
+  const source = fs.readFileSync(file, 'utf8');
+  for (const [, target] of source.matchAll(/\]\(([^)]+)\)/g)) {
+    if (/^https:\/\//.test(target)) continue;
+    assert.ok(fs.existsSync(path.resolve(path.dirname(file), target)), `Missing packaged reference: ${target}`);
+  }
+});
+
 test('Pi generation stays byte-identical after local Python execution creates caches', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-pi-cache-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

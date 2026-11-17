@@ -89,7 +89,7 @@ ALWAYS write tests first, then implement code to make tests pass.
 
 Do not assume `npm test`. The commands in the steps and examples below use `<test>`, `<test-watch>`, and `<coverage>` as placeholders for the project's actual runner. Resolve them once before starting:
 
-1. **Run the package-manager detector** (ships with ECC):
+1. **Resolve the package manager.** When the ECC checkout is separate from the project under test, keep the working directory at the project root and run the ECC detector by its absolute path:
 
    ```bash
    # Use the configured plugin root or standalone install (~/.claude or
@@ -103,6 +103,10 @@ Do not assume `npm test`. The commands in the steps and examples below use `<tes
    The resolution lines use the configured plugin root or standalone install and stop when the selected root lacks the helper. For an ECC checkout you have reviewed and authorized, explicitly set `CLAUDE_PLUGIN_ROOT` to its absolute path first. Project marker files do not establish executable trust. Keep the working directory at the project under test, and keep paths quoted because install locations may contain spaces.
 
    It resolves the package manager (npm / pnpm / yarn / bun) from, in order: `CLAUDE_PACKAGE_MANAGER`, `.claude/package-manager.json`, the `package.json` `packageManager` field, the lockfile, then global config.
+
+   The detector reads project settings from the current working directory, so running it from the ECC checkout can select ECC's manager instead of the project's.
+
+   The standalone `pi/core` profile does not include that repository script. In that profile, resolve from project settings in this order: `CLAUDE_PACKAGE_MANAGER`, `.claude/package-manager.json`, the `package.json` `packageManager` field, a lockfile, then `~/.claude/package-manager.json`; default to npm if none is set. Supported managers are npm, pnpm, yarn, and bun.
 
 2. **Distinguish the package manager from the test runner — they are not the same.** A project can use Bun to install dependencies yet still run Jest or Vitest. Inspect `package.json` `scripts.test` and the test files:
    - `scripts.test` invokes `jest` / `vitest` -> run through the detected PM (`npm test`, `pnpm test`, `yarn test`, or `bun run test`).

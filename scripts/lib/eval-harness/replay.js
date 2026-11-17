@@ -86,6 +86,7 @@ class FixtureStore {
 /**
  * tools: { name: { effect_class, determinism: 'deterministic'|'nondeterministic', impl(args) } }
  * options: { mode: 'record'|'replay', store: FixtureStore, maxEffectClass: 'SE2', onCall(entry) }
+ * Record calls return a Promise only when the implementation returns a thenable.
  */
 function createReplayer(tools, options = {}) {
   const mode = options.mode || 'replay';
@@ -136,10 +137,20 @@ function createReplayer(tools, options = {}) {
         emit({ tool: name, mode, status: 'replayed', fixture_key: record.key, args_hash: record.args_hash, response_hash: record.response_hash });
         return record.response;
       }
+      // Keep fixture identity at invocation time, even if the caller or the
+      // implementation changes a nested argument before an async result settles.
+      const invocationArgs = JSON.parse(canonicalJson(args));
       const response = tool.impl(args);
-      const record = store.put(name, args, response);
-      emit({ tool: name, mode, status: 'recorded', fixture_key: record.key, args_hash: record.args_hash, response_hash: record.response_hash });
-      return response;
+      const recordResponse = (resolved) => {
+        const record = store.put(name, invocationArgs, resolved);
+        emit({ tool: name, mode, status: 'recorded', fixture_key: record.key, args_hash: record.args_hash, response_hash: record.response_hash });
+        return resolved;
+      };
+      // Persist settled values, never the Promise object or a failed request.
+      if (response && typeof response.then === 'function') {
+        return Promise.resolve(response).then(recordResponse);
+      }
+      return recordResponse(response);
     },
   };
 }

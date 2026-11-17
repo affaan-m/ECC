@@ -47,6 +47,9 @@ export const PACKAGE_MANAGERS: Record<PackageManagerName, PackageManagerConfig>;
 /** Priority order for lock file detection */
 export const DETECTION_PRIORITY: PackageManagerName[];
 
+/** Check whether a value is a supported package manager name */
+export function isSupportedPackageManager(name: unknown): name is PackageManagerName;
+
 export interface GetPackageManagerOptions {
   /** Project directory to detect from (default: process.cwd()) */
   projectDir?: string;

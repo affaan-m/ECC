@@ -271,7 +271,7 @@ class TestSetupSandboxSkipsShellBuiltins:
             _setup_sandbox(tmp_path, scenario)
 
         # git init runs once; "cd subdir" must NOT be passed to subprocess
-        assert ["git", "init"] in called_args
+        assert any(args[0] == "git" and args[-1] == "init" for args in called_args)
         assert ["cd", "subdir"] not in called_args
 
     def test_skips_pushd_popd(self, tmp_path):
@@ -339,10 +339,15 @@ def _run_setup(sandbox: Path, *commands: str) -> list[list[str]]:
         called.append(list(args))
         return subprocess.CompletedProcess(args=args, returncode=0)
 
-    with patch("scripts.runner.subprocess.run", side_effect=fake_run):
+    # Trusted baseline/origin Git has its own real fixtures. Isolate the
+    # generated setup commands so these hostile-argv assertions stay exact.
+    with (
+        patch("scripts.runner.subprocess.run", side_effect=fake_run),
+        patch("scripts.runner._git", return_value=subprocess.CompletedProcess([], 0)) as fixture_git,
+    ):
         _setup_sandbox(sandbox, _FakeScenario(id="confine", setup_commands=commands))
-    assert called[0] == ["git", "init"]
-    return called[1:]
+    assert fixture_git.call_args_list[0].args == (sandbox, "init")
+    return called
 
 
 class TestSetupCommandConfinement:
@@ -832,3 +837,139 @@ class TestRunScenarioErrorIncludesStdoutTail:
 
         # Stdout marker MUST appear in the error message
         assert diagnostic_marker in str(excinfo.value)
+
+
+@dataclass(frozen=True)
+class _FileScenario:
+    id: str
+    prompt: str = "do nothing"
+    setup_commands: tuple[str, ...] = ()
+    files: tuple[tuple[str, str], ...] = ()
+
+
+class TestSandboxResources:
+    """Files the prompt references must exist in the sandbox.
+
+    Regression: setup_commands run without a shell, so a generated scenario
+    could not write file content. Prompts that named a plan or fixture file
+    ran against an empty sandbox and every step scored 0%.
+    """
+
+    def test_writes_scenario_files(self, tmp_path):
+        scenario = _FileScenario(
+            id="f1",
+            files=((".claude/plans/x.plan.md", "# plan\n"), ("src/a.py", "x = 1\n")),
+        )
+        _setup_sandbox(tmp_path, scenario)
+
+        assert (tmp_path / ".claude/plans/x.plan.md").read_text() == "# plan\n"
+        assert (tmp_path / "src/a.py").read_text() == "x = 1\n"
+
+    @pytest.mark.parametrize("bad", ["../escape.txt", "/abs/escape.txt"])
+    def test_rejects_paths_outside_sandbox(self, tmp_path, bad):
+        scenario = _FileScenario(id="f2", files=((bad, "x"),))
+        sandbox = tmp_path / "box"
+        with pytest.raises(ValueError):
+            _setup_sandbox(sandbox, scenario)
+        assert not (tmp_path / "escape.txt").exists()
+
+    def test_copies_fixtures_dir(self, tmp_path):
+        fixtures = tmp_path / "fx"
+        (fixtures / ".claude/plans").mkdir(parents=True)
+        (fixtures / ".claude/plans/p.plan.md").write_text("plan")
+        sandbox = tmp_path / "box"
+
+        _setup_sandbox(sandbox, _FileScenario(id="f3"), fixtures_dir=fixtures)
+
+        assert (sandbox / ".claude/plans/p.plan.md").read_text() == "plan"
+
+    def test_commits_resources_so_tree_is_clean(self, tmp_path):
+        scenario = _FileScenario(id="f4", files=(("a.txt", "a"),))
+        _setup_sandbox(tmp_path, scenario)
+
+        log = subprocess.run(
+            ["git", "log", "--oneline"], cwd=tmp_path, capture_output=True, text=True
+        )
+        status = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=tmp_path, capture_output=True, text=True
+        )
+        assert log.stdout.strip() != ""
+        assert status.stdout.strip() == ""
+
+
+class TestSandboxRemoteAndGh:
+    """Skills that push or open PRs need an origin and a gh binary."""
+
+    def test_origin_is_local_bare_repo_with_baseline_pushed(self, tmp_path):
+        sandbox = tmp_path / "box"
+        _setup_sandbox(sandbox, _FileScenario(id="r1", files=(("a.txt", "a"),)))
+
+        url = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=sandbox, capture_output=True, text=True,
+        ).stdout.strip()
+        assert Path(url).is_dir()
+        heads = subprocess.run(
+            ["git", "ls-remote", "--heads", "origin"],
+            cwd=sandbox, capture_output=True, text=True,
+        ).stdout
+        assert heads.strip() != ""
+
+    def test_resetup_replaces_stale_origin(self, tmp_path):
+        sandbox = tmp_path / "box"
+        _setup_sandbox(sandbox, _FileScenario(id="r2"))
+        _setup_sandbox(sandbox, _FileScenario(id="r2"))  # must not raise
+
+    def test_gh_stub_fakes_pr_create(self, tmp_path):
+        from scripts.runner import _install_gh_stub
+
+        bin_dir = _install_gh_stub(tmp_path)
+        out = subprocess.run(
+            [str(bin_dir / "gh"), "pr", "create", "--title", "x"],
+            capture_output=True, text=True,
+        )
+        assert out.returncode == 0
+        assert "/pull/" in out.stdout
+
+    def test_origin_default_branch_is_resolvable(self, tmp_path):
+        """merge-default style scripts read refs/remotes/origin/HEAD."""
+        sandbox = tmp_path / "box"
+        _setup_sandbox(sandbox, _FileScenario(id="r3"))
+
+        out = subprocess.run(
+            ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+            cwd=sandbox, capture_output=True, text=True,
+        )
+        assert out.returncode == 0
+        assert out.stdout.startswith("refs/remotes/origin/")
+
+
+class TestRunScenarioTimeout:
+    """A scenario that outlives its timeout keeps the partial trace.
+
+    Regression: TimeoutExpired escaped run_scenario and aborted the whole
+    run, discarding every scenario already graded. Agents that get further
+    (nested claude -p, PR flows) legitimately take longer than 300 s.
+    """
+
+    def test_timeout_returns_partial_observations(self, monkeypatch):
+        scenario = _FakeScenario(id="to1", prompt="slow task")
+        monkeypatch.setattr("scripts.runner._setup_sandbox", lambda *a, **kw: None)
+        partial = (
+            '{"type":"assistant","message":{"content":[{"type":"tool_use",'
+            '"id":"t1","name":"Bash","input":{"command":"ls"}}]}}\n'
+            '{"type":"user","message":{"content":[{"type":"tool_result",'
+            '"tool_use_id":"t1","content":"ok"}]}}\n'
+        )
+
+        def fake_run(*args, **kwargs):
+            if args and args[0] and args[0][0] == "claude":
+                raise subprocess.TimeoutExpired(
+                    cmd="claude", timeout=1, output=partial.encode()
+                )
+            return subprocess.CompletedProcess(args=args, returncode=0)
+
+        with patch("scripts.runner.subprocess.run", side_effect=fake_run):
+            run = run_scenario(scenario, model="haiku")
+
+        assert [o.tool for o in run.observations] == ["Bash"]

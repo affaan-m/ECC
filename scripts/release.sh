@@ -14,6 +14,8 @@ AGENT_YAML="agent.yaml"
 VERSION_FILE="VERSION"
 PLUGIN_JSON=".claude-plugin/plugin.json"
 MARKETPLACE_JSON=".claude-plugin/marketplace.json"
+GROK_PLUGIN_JSON=".grok-plugin/plugin.json"
+GROK_MARKETPLACE_JSON=".grok-plugin/marketplace.json"
 CODEX_MARKETPLACE_JSON=".agents/plugins/marketplace.json"
 CODEX_PLUGIN_JSON=".codex-plugin/plugin.json"
 QODER_PLUGIN_JSON=".qoder-plugin/plugin.json"
@@ -61,7 +63,7 @@ if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
 fi
 
 # Verify versioned manifests exist
-for FILE in "$ROOT_PACKAGE_JSON" "$PACKAGE_LOCK_JSON" "$ROOT_AGENTS_MD" "$TR_AGENTS_MD" "$ZH_CN_AGENTS_MD" "$AGENT_YAML" "$VERSION_FILE" "$PLUGIN_JSON" "$MARKETPLACE_JSON" "$CODEX_MARKETPLACE_JSON" "$CODEX_PLUGIN_JSON" "$QODER_PLUGIN_JSON" "$OPENCODE_PACKAGE_JSON" "$OPENCODE_PACKAGE_LOCK_JSON" "$OPENCODE_ECC_HOOKS_PLUGIN" "$README_FILE" "$ROOT_ZH_CN_README_FILE" "$TR_README_FILE" "$PT_BR_README_FILE" "$ZH_CN_README_FILE" "$SELECTIVE_INSTALL_ARCHITECTURE_DOC"; do
+for FILE in "$ROOT_PACKAGE_JSON" "$PACKAGE_LOCK_JSON" "$ROOT_AGENTS_MD" "$TR_AGENTS_MD" "$ZH_CN_AGENTS_MD" "$AGENT_YAML" "$VERSION_FILE" "$PLUGIN_JSON" "$MARKETPLACE_JSON" "$GROK_PLUGIN_JSON" "$GROK_MARKETPLACE_JSON" "$CODEX_MARKETPLACE_JSON" "$CODEX_PLUGIN_JSON" "$QODER_PLUGIN_JSON" "$OPENCODE_PACKAGE_JSON" "$OPENCODE_PACKAGE_LOCK_JSON" "$OPENCODE_ECC_HOOKS_PLUGIN" "$README_FILE" "$ROOT_ZH_CN_README_FILE" "$TR_README_FILE" "$PT_BR_README_FILE" "$ZH_CN_README_FILE" "$SELECTIVE_INSTALL_ARCHITECTURE_DOC"; do
   if [[ ! -f "$FILE" ]]; then
     echo "Error: $FILE not found"
     exit 1
@@ -305,6 +307,8 @@ update_agent_yaml_version
 update_version_file
 update_version "$PLUGIN_JSON" "s|\"version\": *\"[^\"]*\"|\"version\": \"$VERSION\"|"
 update_marketplace_plugin_version "$MARKETPLACE_JSON"
+update_version "$GROK_PLUGIN_JSON" "s|\"version\": *\"[^\"]*\"|\"version\": \"$VERSION\"|"
+update_marketplace_plugin_version "$GROK_MARKETPLACE_JSON"
 update_codex_marketplace_version
 update_version "$CODEX_PLUGIN_JSON" "s|\"version\": *\"[^\"]*\"|\"version\": \"$VERSION\"|"
 update_version "$QODER_PLUGIN_JSON" "s|\"version\": *\"[^\"]*\"|\"version\": \"$VERSION\"|"
@@ -330,10 +334,30 @@ node scripts/build-opencode.js
 node tests/scripts/build-opencode.test.js
 node tests/plugin-manifest.test.js
 
-# Stage, commit, explicitly sign an annotated tag, and push. Signing failure
-# stops here under set -e; no personal tag.gpgSign default is assumed.
-git add "$ROOT_PACKAGE_JSON" "$PACKAGE_LOCK_JSON" "$ROOT_AGENTS_MD" "$TR_AGENTS_MD" "$ZH_CN_AGENTS_MD" "$AGENT_YAML" "$VERSION_FILE" "$PLUGIN_JSON" "$MARKETPLACE_JSON" "$CODEX_MARKETPLACE_JSON" "$CODEX_PLUGIN_JSON" "$QODER_PLUGIN_JSON" "$CODEX_MARKETPLACE_PLUGIN_JSON" "$OPENCODE_PACKAGE_JSON" "$OPENCODE_PACKAGE_LOCK_JSON" "$OPENCODE_ECC_HOOKS_PLUGIN" "$README_FILE" "$ROOT_ZH_CN_README_FILE" "$TR_README_FILE" "$PT_BR_README_FILE" "$ZH_CN_README_FILE" "$SELECTIVE_INSTALL_ARCHITECTURE_DOC"
+# Stage, commit, tag, and push
+git add "$ROOT_PACKAGE_JSON" "$PACKAGE_LOCK_JSON" "$ROOT_AGENTS_MD" "$TR_AGENTS_MD" "$ZH_CN_AGENTS_MD" "$AGENT_YAML" "$VERSION_FILE" "$PLUGIN_JSON" "$MARKETPLACE_JSON" "$GROK_PLUGIN_JSON" "$GROK_MARKETPLACE_JSON" "$CODEX_MARKETPLACE_JSON" "$CODEX_PLUGIN_JSON" "$QODER_PLUGIN_JSON" "$CODEX_MARKETPLACE_PLUGIN_JSON" "$OPENCODE_PACKAGE_JSON" "$OPENCODE_PACKAGE_LOCK_JSON" "$OPENCODE_ECC_HOOKS_PLUGIN" "$README_FILE" "$ROOT_ZH_CN_README_FILE" "$TR_README_FILE" "$PT_BR_README_FILE" "$ZH_CN_README_FILE" "$SELECTIVE_INSTALL_ARCHITECTURE_DOC"
 git commit -m "chore: bump plugin version to $VERSION"
+
+# The source commit cannot contain its own SHA. Commit the release first,
+# then update the catalog and tag the pin-only commit.
+GROK_SOURCE_SHA=$(git rev-parse HEAD)
+node -e '
+  const fs = require("fs");
+  const file = process.argv[1];
+  const sha = process.argv[2];
+  const marketplace = JSON.parse(fs.readFileSync(file, "utf8"));
+  const plugin = marketplace.plugins && marketplace.plugins.find(entry => entry && entry.name === "ecc");
+  if (!plugin || !plugin.source || typeof plugin.source !== "object") {
+    console.error(`Error: could not find ecc Grok source in ${file}`);
+    process.exit(1);
+  }
+  plugin.source.sha = sha;
+  fs.writeFileSync(file, `${JSON.stringify(marketplace, null, 2)}\n`);
+' "$GROK_MARKETPLACE_JSON" "$GROK_SOURCE_SHA"
+node scripts/ci/validate-grok-pin.js --release
+git add "$GROK_MARKETPLACE_JSON"
+git commit -m "chore: pin Grok marketplace to release source"
+node scripts/ci/validate-grok-pin.js --release
 git tag -s "v$VERSION" -m "Release v$VERSION"
 git push origin main "v$VERSION"
 

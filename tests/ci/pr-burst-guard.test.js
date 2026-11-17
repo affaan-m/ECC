@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { evaluate, moderate, githubAPI, listPages, strongestWindow, capExcess } = require('../../scripts/ci/pr-burst-guard');
 
-const policy = { windowMinutes: 20, closeAbove: 5, blockAbove: 10, maxOpen: 10, deniedUserIDs: [999], notify: ['maintainer'] };
+const policy = { windowMinutes: 20, closeAbove: 5, blockAbove: 10, maxOpen: 10,
+  deniedUserIDs: [999], notify: ['maintainer'] };
 const start = Date.parse('2026-10-14T19:00:00Z');
 const pull = (number, extra = {}) => ({ number, user: { id: 42, login: 'contributor' },
   created_at: new Date(start + number * 1000).toISOString(), state: 'open', ...extra });
@@ -16,7 +17,8 @@ function fixture(n, options = {}) {
   const api = async (method, route, body) => {
     calls.push({ method, route, body });
     if (route === '/repos/owner/repo') return { owner: { login: 'owner', type: 'User' } };
-    if (route.endsWith(`/pulls/${n}`)) return rows.find(p => p.number === n);
+    const pullNumber = route.match(/\/pulls\/(\d+)$/);
+    if (pullNumber && method === 'GET') return rows.find(p => p.number === Number(pullNumber[1]));
     if (route.includes('/collaborators/')) return { permission: options.permission || 'read' };
     if (route.includes('/pulls?')) return rows.filter(p => !route.includes('state=open') || p.state === 'open').slice().reverse();
     if (route.includes('/issues?')) return issue ? [issue] : [];
@@ -99,10 +101,11 @@ test('wrong personal identity never blocks and records the failure', async () =>
   assert.match((await moderate(f.args)).blockStatus, /owner identity/);
 });
 
-test('write/admin collaborators bypass; actor identity cannot exempt an outsider', async () => {
+test('write/admin collaborators bypass burst moderation; actor identity cannot exempt an outsider', async () => {
   for (const permission of ['write', 'maintain', 'admin']) {
-    const f = fixture(11, { permission });
-    assert.equal((await moderate(f.args)).exempt, true);
+    const f = fixture(10, { permission });
+    const result = await moderate(f.args);
+    assert.equal(result.burstExempt, true);
     assert.equal(f.calls.filter(c => ['POST', 'PATCH', 'PUT'].includes(c.method)).length, 0);
   }
   const f = fixture(6, { actor: 'owner' });
@@ -183,14 +186,62 @@ test('closure failure still creates an alert with enforcement errors', async () 
 const spread = (n, extra = {}) => Array.from({ length: n }, (_, i) => pull(i + 1,
   { created_at: new Date(start + i * 3600000).toISOString(), ...extra }));
 
-test('open-PR cap keeps the oldest ten open and closes the rest, newest first', () => {
+test('open-PR cap closes only the triggering excess PR', () => {
+  assert.deepEqual(capExcess(spread(10), spread(10)[9], policy).capExcess, []);
+  assert.deepEqual(capExcess(spread(11), spread(11)[10], policy).capExcess.map(p => p.number), [11]);
   const result = capExcess(spread(12), spread(12)[11], policy);
   assert.equal(result.openCount, 12);
-  assert.deepEqual(result.capExcess.map(p => p.number), [11, 12]);
+  assert.deepEqual(result.capExcess.map(p => p.number), [12]);
+  const grandfathered = capExcess(spread(21), spread(21)[20], policy);
+  assert.equal(grandfathered.openCount, 21);
+  assert.deepEqual(grandfathered.capExcess.map(p => p.number), [21]);
+  assert.deepEqual(capExcess(spread(11), spread(11)[0], policy, new Set(), 'reopened')
+    .capExcess.map(p => p.number), [1]);
   const closed = spread(12).map((p, i) => i < 3 ? { ...p, state: 'closed' } : p);
   assert.equal(capExcess(closed, closed[11], policy).openCount, 9);
-  assert.equal(capExcess(spread(12), spread(12)[11], policy, new Set([11, 12])).capExcess.length, 0);
+  assert.deepEqual(capExcess(spread(12), spread(12)[11], policy, new Set([12])).capExcess, []);
   assert.equal(capExcess(spread(12, { user: { id: 7, login: 'other' } }), pull(1), policy).openCount, 1);
+});
+
+test('a delayed opened event reconciles newer excess PRs without touching older PRs', () => {
+  const rows = spread(25);
+  const result = capExcess(rows, rows[20], policy);
+  assert.deepEqual(result.capExcess.map(pr => pr.number), [21, 22, 23, 24, 25]);
+  const closedTrigger = { ...rows[20], state: 'closed' };
+  assert.deepEqual(capExcess(rows.filter(pr => pr.number !== 21), closedTrigger, policy)
+    .capExcess.map(pr => pr.number), [22, 23, 24, 25]);
+  assert.deepEqual(capExcess(rows, rows[20], policy, new Set([21]))
+    .capExcess.map(pr => pr.number), [22, 23, 24, 25]);
+  assert.deepEqual(capExcess(rows, rows[0], policy, new Set(), 'reopened')
+    .capExcess.map(pr => pr.number), [1]);
+});
+
+test('a new PR over twenty existing open PRs is the only cap closure and gets a comment', async () => {
+  const f = fixture(21, { rows: spread(21) });
+  const result = await moderate(f.args);
+  assert.deepEqual(result.capExcess.map(p => p.number), [21]);
+  assert.deepEqual(f.calls.filter(c => c.method === 'PATCH' && c.route.includes('/pulls/')).map(c => c.route),
+    ['/repos/owner/repo/pulls/21']);
+  const comment = f.calls.find(c => c.method === 'POST' && c.route.endsWith('/issues/21/comments'));
+  assert.match(comment.body.body, /21 open pull requests.*limit of 10/);
+});
+
+test('reopening an older PR over the cap closes that PR without touching its peers', async () => {
+  const f = fixture(11, { rows: spread(11), action: 'reopened' });
+  f.args.number = 1;
+  const result = await moderate(f.args);
+  assert.deepEqual(result.capExcess.map(p => p.number), [1]);
+  assert.deepEqual(f.calls.filter(c => c.method === 'PATCH' && c.route.includes('/pulls/')).map(c => c.route),
+    ['/repos/owner/repo/pulls/1']);
+});
+
+test('an older allowed PR stays open while its newer excess peers are closed', async () => {
+  const f = fixture(12, { rows: spread(12) });
+  f.args.number = 10;
+  const result = await moderate(f.args);
+  assert.deepEqual(result.capExcess.map(pr => pr.number), [11, 12]);
+  assert.deepEqual(f.calls.filter(c => c.method === 'PATCH').map(c => c.route),
+    ['/repos/owner/repo/pulls/11', '/repos/owner/repo/pulls/12']);
 });
 
 test('cap closes with an explanatory comment, no lock, no maintainer alert, and never comments twice', async () => {
@@ -221,17 +272,28 @@ test('cap counts open PRs after burst closures, so one run never closes a PR twi
   assert.equal(result.count, 6);
   assert.deepEqual(result.excess.map(p => p.number), [15]);
   assert.equal(result.openCount, 14);
-  assert.deepEqual(result.capExcess.map(p => p.number), [11, 12, 13, 14]);
+  assert.deepEqual(result.capExcess, []);
   assert.equal(f.calls.filter(c => c.method === 'PATCH' && c.route.endsWith('/pulls/15')).length, 1);
+  assert.equal(f.calls.filter(c => c.method === 'PATCH' && c.route.includes('/pulls/')).length, 1);
 });
 
-test('cap dry run reports the excess without mutating; collaborators are exempt from the cap', async () => {
+test('cap dry run reports the excess without mutating', async () => {
   const f = fixture(12, { rows: spread(12), dryRun: true });
-  assert.deepEqual((await moderate(f.args)).capExcess.map(p => p.number), [11, 12]);
+  assert.deepEqual((await moderate(f.args)).capExcess.map(p => p.number), [12]);
   assert(f.calls.every(c => c.method === 'GET'));
-  const w = fixture(12, { rows: spread(12), permission: 'write' });
-  assert.equal((await moderate(w.args)).exempt, true);
-  assert.equal(w.calls.filter(c => c.method !== 'GET').length, 0);
+});
+
+test('cap applies to every author while collaborators remain exempt from burst enforcement', async () => {
+  for (const permission of ['write', 'maintain', 'admin']) {
+    const f = fixture(21, { rows: spread(21), permission });
+    const result = await moderate(f.args);
+    assert.equal(result.burstExempt, true);
+    assert.deepEqual(result.capExcess.map(p => p.number), [21]);
+    assert.deepEqual(f.calls.filter(c => c.method === 'PATCH').map(c => c.route),
+      ['/repos/owner/repo/pulls/21']);
+    assert(f.calls.some(c => c.method === 'POST' && c.route.endsWith('/issues/21/comments')));
+    assert.equal(f.calls.filter(c => c.method === 'PUT').length, 0);
+  }
 });
 
 test('policy requires a positive integer maxOpen', () => {

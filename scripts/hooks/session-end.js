@@ -12,7 +12,7 @@
 const path = require('path');
 const fs = require('fs');
 const { getSessionsDir, getDateString, getTimeString, getSessionIdShort, sanitizeSessionId, getProjectName, getRepoIdentity, ensureDir, readFile, writeFile, runCommand, stripAnsi, log } = require('../lib/utils');
-const { generateSessionSummary, getContextRemainingPct, getContextThreshold } = require('../lib/llm-summary');
+const { generateSessionSummary, getContextRemainingPct, getContextThreshold, isClassifierNotice } = require('../lib/llm-summary');
 
 const SUMMARY_START_MARKER = '<!-- ECC:SUMMARY:START -->';
 const SUMMARY_END_MARKER = '<!-- ECC:SUMMARY:END -->';
@@ -38,7 +38,7 @@ function userMessageText(entry) {
   // `isMeta` is also used for genuine channel- and plugin-originated
   // human prompts. Exclude known structured noise instead of
   // discarding every metadata-marked user turn.
-  return HARNESS_NOISE.test(cleaned) ? '' : cleaned;
+  return HARNESS_NOISE.test(cleaned) || isClassifierNotice(cleaned) ? '' : cleaned;
 }
 
 /**
