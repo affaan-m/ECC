@@ -64,7 +64,13 @@ class ClaudeProvider(LLMProvider):
     def generate(self, input: LLMInput) -> LLMOutput:
         try:
             model = input.model or self.default_model
-            system_parts = [msg.content for msg in input.messages if msg.role == Role.SYSTEM]
+            system_parts: list[str] = []
+            for message in input.messages:
+                if message.role != Role.SYSTEM:
+                    continue
+                if not isinstance(message.content, str):
+                    raise TypeError("System messages must contain text")
+                system_parts.append(message.content)
             api_messages = [
                 msg.to_dict() for msg in input.messages if msg.role not in (Role.SYSTEM,)
             ]
@@ -130,9 +136,10 @@ class ClaudeProvider(LLMProvider):
             )
         except Exception as e:
             msg = str(e)
-            if "401" in msg or "authentication" in msg.lower():
+            status_code = getattr(e, "status_code", None)
+            if status_code == 401:
                 raise AuthenticationError(msg, provider=ProviderType.CLAUDE) from e
-            if "429" in msg or "rate_limit" in msg.lower():
+            if status_code == 429:
                 raise RateLimitError(msg, provider=ProviderType.CLAUDE) from e
             if "context" in msg.lower() and "length" in msg.lower():
                 raise ContextLengthError(msg, provider=ProviderType.CLAUDE) from e

@@ -438,8 +438,8 @@ function runTests() {
 
   // Test session ids below are already sanitized-safe (lowercase, digits,
   // hyphens), so the delivery marker filename is a plain concatenation.
-  function deliveryMarkerPath(sessionId) {
-    return path.join(os.tmpdir(), `claude-continuous-learning-delivered-${sessionId}`);
+  function deliveryMarkerPath(homunculusDir, sessionId) {
+    return path.join(homunculusDir, 'delivery-markers', `claude-continuous-learning-delivered-${sessionId}`);
   }
 
   function runEvaluatePayload(payload, extraEnv = {}, dropKeys = []) {
@@ -544,7 +544,7 @@ function runTests() {
     const transcript = createTranscript(testDir, 12);
     const homunculusDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-delivery-home-'));
     const sessionId = 'delivery-ok-1';
-    const marker = deliveryMarkerPath(sessionId);
+    const marker = deliveryMarkerPath(homunculusDir, sessionId);
     try {
       fs.rmSync(marker, { force: true });
       registerLeaseFor(testDir, homunculusDir, sessionId);
@@ -553,6 +553,12 @@ function runTests() {
         stopPayload(transcript, sessionId, testDir), env
       ));
       assert.strictEqual(first.code, 0);
+      const markerStat = fs.statSync(marker);
+      assert.ok(markerStat.isFile());
+      if (process.platform !== 'win32') {
+        assert.strictEqual(markerStat.mode & 0o777, 0o600);
+        assert.strictEqual(fs.statSync(path.dirname(marker)).mode & 0o777, 0o700);
+      }
       let parsed;
       try {
         parsed = JSON.parse(first.stdout);
@@ -579,6 +585,30 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('refuses an observer root writable by other users', () => {
+    if (process.platform === 'win32') return;
+    const testDir = createTestDir();
+    const transcript = createTranscript(testDir, 12);
+    const homunculusDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-delivery-home-'));
+    const sessionId = 'delivery-unsafe-root-1';
+    try {
+      registerLeaseFor(testDir, homunculusDir, sessionId);
+      fs.chmodSync(homunculusDir, 0o777);
+      const result = withOptInConfig(true, () => runEvaluatePayload(
+        stopPayload(transcript, sessionId, testDir),
+        { CLV2_HOMUNCULUS_DIR: homunculusDir, CLAUDE_PROJECT_DIR: testDir }
+      ));
+      assert.strictEqual(result.stdout, '', 'shared-write root must fail closed');
+      assert.ok(result.stderr.includes('could not record delivery marker'));
+      assert.ok(!fs.existsSync(deliveryMarkerPath(homunculusDir, sessionId)));
+      assert.strictEqual(fs.statSync(homunculusDir).mode & 0o777, 0o777);
+    } finally {
+      fs.chmodSync(homunculusDir, 0o700);
+      cleanupTestDir(testDir);
+      fs.rmSync(homunculusDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('delivers the full Stop JSON even when stdout writes are asynchronous', () => {
     // Regression: the Stop JSON was written with console.log and main()
     // called process.exit(0) immediately after, so when stdout is a pipe
@@ -590,7 +620,7 @@ function runTests() {
     const transcript = createTranscript(testDir, 12);
     const homunculusDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-delivery-home-'));
     const sessionId = 'delivery-flush-1';
-    const marker = deliveryMarkerPath(sessionId);
+    const marker = deliveryMarkerPath(homunculusDir, sessionId);
     const preloadPath = path.join(testDir, 'async-stdout-preload.js');
     fs.writeFileSync(preloadPath, [
       '// Test-only preload: defer every stdout write to the next macrotask,',
@@ -643,22 +673,20 @@ function runTests() {
     const transcript = createTranscript(testDir, 12);
     const homunculusDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-delivery-home-'));
     const sessionId = 'delivery-marker-fail-1';
-    const marker = deliveryMarkerPath(sessionId);
-    // A regular file as TMPDIR makes the marker path uncreatable (ENOTDIR)
-    // even as root, so the write fails while no marker exists.
-    const notADir = path.join(testDir, 'not-a-dir');
+    const marker = deliveryMarkerPath(homunculusDir, sessionId);
+    const notADir = path.dirname(marker);
     try {
       fs.rmSync(marker, { force: true });
-      fs.writeFileSync(notADir, 'not a directory\n');
       registerLeaseFor(testDir, homunculusDir, sessionId);
+      fs.writeFileSync(notADir, 'not a directory\n');
       const result = withOptInConfig(true, () => runEvaluatePayload(
         stopPayload(transcript, sessionId, testDir),
-        { CLV2_HOMUNCULUS_DIR: homunculusDir, CLAUDE_PROJECT_DIR: testDir, TMPDIR: notADir, TEMP: notADir, TMP: notADir }
+        { CLV2_HOMUNCULUS_DIR: homunculusDir, CLAUDE_PROJECT_DIR: testDir }
       ));
       assert.strictEqual(result.stdout, '', 'A failed marker write must fail closed, never deliver');
       assert.ok(result.stderr.includes('could not record delivery marker'), 'Marker failure must be logged');
     } finally {
-      fs.rmSync(marker, { force: true });
+      fs.rmSync(notADir, { force: true });
       cleanupTestDir(testDir);
       fs.rmSync(homunculusDir, { recursive: true, force: true });
     }
@@ -685,7 +713,7 @@ function runTests() {
     const transcript = createTranscript(testDir, 12);
     const homunculusDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-delivery-home-'));
     const sessionId = 'delivery-loop-1';
-    const marker = deliveryMarkerPath(sessionId);
+    const marker = deliveryMarkerPath(homunculusDir, sessionId);
     try {
       fs.rmSync(marker, { force: true });
       registerLeaseFor(testDir, homunculusDir, sessionId);

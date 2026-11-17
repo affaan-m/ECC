@@ -49,6 +49,30 @@ function runTests() {
       assert.ok(result.stderr.includes('BLOCKED'), `Expected stderr to contain BLOCKED, got: ${result.stderr}`);
     }) ? passed++ : failed++);
 
+    (test('blocks dev launch after an ANSI-C escaped apostrophe', () => {
+      for (const command of ["export x=$'it\\'s here'; npm run dev", "export x=$'it\\'s here'\nnpm run dev"]) {
+        const result = runScript(command);
+        assert.strictEqual(result.code, 2, `Expected exit code 2 for ${command}, got ${result.code}`);
+      }
+    }) ? passed++ : failed++);
+
+    (test('blocks dev launch after a $$ that a quote follows', () => {
+      for (const command of ["echo $$'\\'; npm run dev", "cat <<$$'EOF'\nbody\n$$EOF\nnpm run dev"]) {
+        const result = runScript(command);
+        assert.strictEqual(result.code, 2, `Expected exit code 2 for ${JSON.stringify(command)}, got ${result.code}`);
+      }
+    }) ? passed++ : failed++);
+
+    (test('allows a dev command quoted after a $$', () => {
+      const result = runScript("echo $$'; npm run dev'");
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('allows a dev command mentioned inside an ANSI-C quoted string', () => {
+      const result = runScript("echo $'x\\' && npm run dev'");
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+    }) ? passed++ : failed++);
+
     (test('blocks pnpm dev (exit code 2)', () => {
       const result = runScript('pnpm dev');
       assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
@@ -266,6 +290,78 @@ function runTests() {
       assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
     }) ? passed++ : failed++);
   }
+
+  // --- Newlines ---
+
+  if (!isWindows) {
+    (test('blocks a dev server after a single-quoted backslash and a separator', () => {
+      for (const command of ["echo 'x\\'; npm run dev", "echo 'x\\'\nnpm run dev"]) {
+        const result = runScript(command);
+        assert.strictEqual(result.code, 2, `Expected exit code 2 for ${JSON.stringify(command)}, got ${result.code}`);
+      }
+    }) ? passed++ : failed++);
+
+    (test('blocks a dev server started on a later line of a multi-line command', () => {
+      const result = runScript('cd app\nnpm run dev');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('blocks a dev server after a here-document with an ANSI-C quoted delimiter', () => {
+      const result = runScript("cat <<$'EOF'\ntext\nEOF\nnpm run dev");
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('blocks a dev server after a here-document with an escaped quote in its delimiter', () => {
+      const command = 'cat <<E"F\\"O"\nEF"O\nnpm run dev';
+      const result = runScript(command);
+      assert.strictEqual(result.code, 2, `Expected exit code 2 for ${JSON.stringify(command)}, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('blocks a dev server started by a substitution in a here-document body', () => {
+      for (const command of ["npm --version <<EOF\n'$(npm run dev)'\nEOF", "cat <<EOF\n'$(npm run dev)'\nEOF"]) {
+        const result = runScript(command);
+        assert.strictEqual(result.code, 2, `Expected exit code 2 for ${JSON.stringify(command)}, got ${result.code}`);
+      }
+    }) ? passed++ : failed++);
+
+    (test('blocks a dev command in a substitution with a very long body', () => {
+      const command = `echo "$(npm run dev; ${'true; '.repeat(150000)})"`;
+      const result = runScript(command);
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
+
+    (test('blocks nested dev commands in expanded here-document substitutions', () => {
+      for (const command of [
+        'cat <<EOF\n\'$(echo "$(npm run dev)")\'\nEOF',
+        "cat <<EOF\n'$( (npm run dev) )'\nEOF",
+      ]) {
+        const result = runScript(command);
+        assert.strictEqual(result.code, 2, `Expected exit code 2 for ${JSON.stringify(command)}, got ${result.code}`);
+      }
+      const quoted = "cat <<'EOF'\n'$(echo \"$(npm run dev)\")'\nEOF";
+      assert.strictEqual(runScript(quoted).code, 0, 'quoted here-document must remain literal');
+    }) ? passed++ : failed++);
+  }
+
+  (test('allows a here-document that only mentions a dev server', () => {
+    const result = runScript('cat <<EOF > README.md\nStart it with:\nnpm run dev\nEOF');
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+  }) ? passed++ : failed++);
+
+  (test('allows a here-document body that follows an operator', () => {
+    const result = runScript('cat <<EOF &&\nnpm run dev\nEOF\necho done');
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+  }) ? passed++ : failed++);
+
+  (test('allows a here-document body whose ANSI-C quoted delimiter has an escape', () => {
+    const result = runScript("cat <<$'E\\x4fF'\nE\\x4fF\nnpm run dev\nEOF");
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+  }) ? passed++ : failed++);
+
+  (test('allows a here-document body fed to a package manager command', () => {
+    const result = runScript('npm --version <<EOF && cat\nnpm run dev\nEOF');
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+  }) ? passed++ : failed++);
 
   // --- Edge cases ---
 

@@ -31,6 +31,15 @@ Never scroll inside a slide.
 | Code slide | 8-10 lines maximum |
 | Quote slide | 1 quote + attribution |
 | Image slide | 1 image, ideally under 60vh |
+| Single-slide / One-pager | Dense multi-region grid (left / center / right / bottom band), category-colored cards, scaled via `cqw` |
+
+### Single-Slide / One-Pager Architecture Mode
+
+When a request asks for a single slide, one-pager, or whole-system overview on a single screen:
+
+1. **Scalable 16:9 Viewport Panel:** Set `container-type: inline-size` on the slide and size internal typography and spacing with container-query width units (`cqw`), ensuring the entire system diagram scales harmoniously without viewport overflow or internal scrolling.
+2. **Multi-Region Spatial Grid:** Structure cards across a 3-column or 4-band grid (`left: ingestion/inputs`, `center: core processing/engine`, `right: outputs/integrations`, `bottom: infrastructure/telemetry`). Color-code regions by category.
+3. **Keep the slide readable and fitted:** Use container or media queries to rearrange regions only when the full slide still fits its viewport without scrolling. Keep the existing text and density limits. If a single column would overflow or require unreadably small type, simplify the content or ask which detail to remove instead of shrinking everything to fit.
 
 ## Mandatory Base CSS
 

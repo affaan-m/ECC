@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { trySymlink } = require('./helpers/symlink-support');
 
 const {
   MAX_DIAGNOSTICS,
@@ -276,7 +277,7 @@ test('never follows a pre-existing destination symlink during create-only public
     fs.mkdirSync(notes, { recursive: true });
     fs.writeFileSync(outside, 'outside sentinel');
     const destination = path.join(notes, 'mem_20260726_01kexample.md');
-    fs.symlinkSync(outside, destination);
+    if (!trySymlink(outside, destination)) return;
 
     assert.throws(
       () => saveMemory(
@@ -355,8 +356,9 @@ test('rejects a vault path that traverses a symlink before creating directories'
   const fixture = createFixture();
   const outside = path.join(fixture.root, 'outside');
   fs.mkdirSync(outside);
-  fs.symlinkSync(outside, path.join(fixture.projectRoot, '.ecc'));
   try {
+    // Inside the cleanup scope, so a refusal still removes the fixture.
+    if (!trySymlink(outside, path.join(fixture.projectRoot, '.ecc'))) return;
     assert.throws(
       () => saveMemory(
         { title: 'Escaped note', body: 'must stay in the project' },
@@ -377,11 +379,58 @@ test('rejects a symlinked ancestor when roots come back from initializeVault', (
   try {
     const initialized = initializeVault({ roots: fixture.roots, scopes: ['project'] });
     fs.rmSync(path.join(fixture.projectRoot, '.ecc'), { recursive: true, force: true });
-    fs.symlinkSync(outside, path.join(fixture.projectRoot, '.ecc'));
+    if (!trySymlink(outside, path.join(fixture.projectRoot, '.ecc'))) return;
 
     assert.throws(
       () => saveMemory(
         { title: 'Escaped note', body: 'must stay in the project' },
+        { ...fixedOptions(fixture.roots), roots: initialized.roots }
+      ),
+      /symlink|outside|trusted/i
+    );
+    assert.strictEqual(fs.existsSync(path.join(outside, 'memory')), false);
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+// Native symlink cases above remain mandatory; junction fixtures add Windows coverage.
+test('rejects a vault path that traverses a junction before creating directories', () => {
+  const fixture = createFixture();
+  const outside = path.join(fixture.root, 'outside');
+  const linkedAncestor = path.join(fixture.projectRoot, '.ecc');
+  try {
+    fs.mkdirSync(outside);
+    fs.symlinkSync(outside, linkedAncestor, process.platform === 'win32' ? 'junction' : 'dir');
+    assert.ok(fs.lstatSync(linkedAncestor).isSymbolicLink());
+    assert.strictEqual(fs.realpathSync(linkedAncestor), fs.realpathSync(outside));
+    assert.throws(
+      () => saveMemory(
+        { title: 'Escaped note', body: 'must stay in the project' },
+        fixedOptions(fixture.roots)
+      ),
+      /symlink/i
+    );
+    assert.strictEqual(fs.existsSync(path.join(outside, 'memory')), false);
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('rejects a junction ancestor when roots come back from initializeVault', () => {
+  const fixture = createFixture();
+  const outside = path.join(fixture.root, 'outside');
+  const linkedAncestor = path.join(fixture.projectRoot, '.ecc');
+  try {
+    fs.mkdirSync(outside);
+    const initialized = initializeVault({ roots: fixture.roots, scopes: ['project'] });
+    fs.rmSync(linkedAncestor, { recursive: true, force: true });
+    fs.symlinkSync(outside, linkedAncestor, process.platform === 'win32' ? 'junction' : 'dir');
+    assert.ok(fs.lstatSync(linkedAncestor).isSymbolicLink());
+    assert.strictEqual(fs.realpathSync(linkedAncestor), fs.realpathSync(outside));
+    assert.throws(
+      () => saveMemory(
+        { title: 'Escaped note', body: 'must not be written' },
         { ...fixedOptions(fixture.roots), roots: initialized.roots }
       ),
       /symlink|outside|trusted/i
@@ -468,6 +517,20 @@ test('rejects traversal IDs, oversized bodies, NUL bytes, and suspected secrets'
   }
 });
 
+test('rejects GitHub user-to-server (ghu_) tokens as suspected secrets', () => {
+  const fixture = createFixture();
+  try {
+    const token = `ghu_${'b2'.repeat(18)}`;
+    assert.deepStrictEqual(findPotentialSecrets(`token ${token}`), ['GitHub token']);
+    assert.throws(
+      () => saveMemory({ title: 'App token', body: `token ${token}` }, fixedOptions(fixture.roots)),
+      /suspected secret/i
+    );
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
 test('quarantines imported secrets and metadata that disagrees with its vault location', () => {
   const fixture = createFixture();
   try {
@@ -512,6 +575,45 @@ test('quarantines imported secrets and metadata that disagrees with its vault lo
       }),
       { code: 'ECC_MEMORY_INCOMPLETE' }
     );
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('detects secrets that start right after a newline or tab in the body', () => {
+  const fixture = createFixture();
+  try {
+    const savedToken = `ghp_${'c3'.repeat(12)}`;
+    assert.throws(
+      () => saveMemory({ title: 'Newline secret', body: `first line\n${savedToken}` }, fixedOptions(fixture.roots)),
+      /suspected secret/i
+    );
+    assert.throws(
+      () => saveMemory({ title: 'Tab secret', body: `key:\t${savedToken}` }, fixedOptions(fixture.roots)),
+      /suspected secret/i
+    );
+
+    const notes = path.join(fixture.roots.project, 'notes');
+    fs.mkdirSync(notes, { recursive: true });
+    const importedToken = `npm_${'d4'.repeat(12)}`;
+    fs.writeFileSync(
+      path.join(notes, 'newline-secret.md'),
+      serializeMemoryDocument(baseMemory({
+        id: 'mem_20260726_newline_secret',
+        kind: 'note',
+        links: [],
+        body: `Imported token:\n${importedToken}`,
+      }))
+    );
+    const report = doctorMemoryVault({
+      roots: fixture.roots,
+      scopes: ['project'],
+    });
+    assert.deepStrictEqual(
+      report.invalidFiles.map(item => item.code),
+      ['suspected-secret']
+    );
+    assert.strictEqual(JSON.stringify(report).includes(importedToken), false);
   } finally {
     fs.rmSync(fixture.root, { recursive: true, force: true });
   }
@@ -564,8 +666,9 @@ test('opens regular text files without following a stable symlink', () => {
   const link = path.join(root, 'link.md');
   try {
     fs.writeFileSync(target, 'safe');
-    fs.symlinkSync(target, link);
+    // This reads only the target, so it must run even where the link is refused.
     assert.strictEqual(readRegularTextFile(target, { maxBytes: 16 }), 'safe');
+    if (!trySymlink(target, link)) return;
     assert.throws(
       () => readRegularTextFile(link, { maxBytes: 16 }),
       /non-symlink|symbolic link|symlink/i

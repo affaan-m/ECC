@@ -19,7 +19,6 @@ const {
   ensureDir,
   readFile,
   countInFile,
-  getTempDir,
   log
 } = require('../lib/utils');
 const { resolveHookSessionId } = require('../lib/hook-session');
@@ -27,12 +26,12 @@ const {
   resolveProjectContext,
   getAliasContexts,
   listSessionLeases,
+  getHomunculusDir,
   resolveSessionId
 } = require('../lib/observer-sessions');
 
-// Marker that records a delivered Stop nudge, one per session, in the OS
-// temp dir (same per-session temp-file pattern as suggest-compact's
-// counters). A marker is what makes delivery once-per-session: a later
+// Marker that records a delivered Stop nudge, one per session, in the
+// observer data directory. A marker is what makes delivery once-per-session: a later
 // user stop in the same session must not block again.
 const DELIVERY_MARKER_PREFIX = 'claude-continuous-learning-delivered-';
 
@@ -168,9 +167,20 @@ function deliverStopNudge({ input, stdinData, messageCount, learnedSkillsPath, s
     log('[ContinuousLearning] Skipping delivery: no SessionStart lease for this session');
     return false;
   }
-  // The session id is sanitized upstream by resolveSessionId, so the
-  // marker filename cannot traverse out of the temp dir.
-  const markerFile = path.join(getTempDir(), `${DELIVERY_MARKER_PREFIX}${sessionId}`);
+  if (!claimDeliveryMarker(sessionId)) return false;
+  // Write the Stop JSON with a flush callback and exit from it: a plain
+  // console.log followed by process.exit(0) can truncate the payload when
+  // stdout is a pipe, because the write is asynchronous.
+  process.stdout.write(`${JSON.stringify({
+    decision: 'block',
+    reason: `[ContinuousLearning] Session has ${messageCount} messages - evaluate for extractable patterns. Save learned skills to: ${learnedSkillsPath}`
+  })}\n`, () => process.exit(0));
+  return true;
+}
+
+function claimDeliveryMarker(sessionId) {
+  // resolveSessionId sanitized the filename before this function is called.
+  const markerRoot = getHomunculusDir();
   // Claim the marker atomically: 'wx' fails when a nudge was already
   // delivered (EEXIST) and closes the check-then-create gap. Any other
   // write failure fails closed: without a marker, a later Stop would stay
@@ -179,22 +189,37 @@ function deliverStopNudge({ input, stdinData, messageCount, learnedSkillsPath, s
   // Stop for one turn, not later turns, so it cannot stand in for the
   // marker.
   try {
-    fs.writeFileSync(markerFile, `${new Date().toISOString()}\n`, { flag: 'wx' });
-  } catch (err) {
-    if (err.code === 'EEXIST') {
-      log('[ContinuousLearning] Stop nudge already delivered for this session, skipping');
-    } else {
-      log(`[ContinuousLearning] Warning: could not record delivery marker, skipping delivery: ${err.message}`);
+    fs.mkdirSync(markerRoot, { recursive: true, mode: 0o700 });
+    const canonicalRoot = fs.realpathSync(markerRoot);
+    const rootStat = fs.lstatSync(canonicalRoot);
+    if (!rootStat.isDirectory()
+      || (typeof process.getuid === 'function' && rootStat.uid !== process.getuid())
+      || (process.platform !== 'win32' && (rootStat.mode & 0o022) !== 0)) {
+      throw new Error('observer root is not owned or permits shared writes');
     }
+    const markerDir = path.join(canonicalRoot, 'delivery-markers');
+    fs.mkdirSync(markerDir, { recursive: true, mode: 0o700 });
+    const stat = fs.lstatSync(markerDir);
+    if (!stat.isDirectory() || stat.isSymbolicLink()
+      || (process.platform !== 'win32' && ((stat.mode & 0o077) !== 0
+        || (typeof process.getuid === 'function' && stat.uid !== process.getuid())))) {
+      throw new Error('delivery marker directory is not private');
+    }
+    const markerFile = path.join(markerDir, `${DELIVERY_MARKER_PREFIX}${sessionId}`);
+    try {
+      fs.writeFileSync(markerFile, `${new Date().toISOString()}\n`, { flag: 'wx', mode: 0o600 });
+    } catch (err) {
+      if (err.code === 'EEXIST') {
+        log('[ContinuousLearning] Stop nudge already delivered for this session, skipping');
+      } else {
+        log(`[ContinuousLearning] Warning: could not record delivery marker, skipping delivery: ${err.message}`);
+      }
+      return false;
+    }
+  } catch (err) {
+    log(`[ContinuousLearning] Warning: could not record delivery marker, skipping delivery: ${err.message}`);
     return false;
   }
-  // Write the Stop JSON with a flush callback and exit from it: a plain
-  // console.log followed by process.exit(0) can truncate the payload when
-  // stdout is a pipe, because the write is asynchronous.
-  process.stdout.write(`${JSON.stringify({
-    decision: 'block',
-    reason: `[ContinuousLearning] Session has ${messageCount} messages - evaluate for extractable patterns. Save learned skills to: ${learnedSkillsPath}`
-  })}\n`, () => process.exit(0));
   return true;
 }
 

@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "runAt": "2026-10-21T03:31:36.225Z",
+  "status": "passed",
+  "testedPrHead": "1ad6fbc88e9ff67a36c2f21fee87e5c1cffa39e1",
+  "marketplaceCatalog": {
+    "repository": "Misty-Star/ecc-grok-marketplace-smoke-20261021-a1d6fbc8",
+    "url": "https://github.com/Misty-Star/ecc-grok-marketplace-smoke-20261021-a1d6fbc8.git",
+    "visibility": "public",
+    "defaultBranch": "main",
+    "catalogCommit": "1359f376f59205168a3e513bc33a451bb9d53383",
+    "entryName": "ecc-grok-marketplace-smoke",
+    "entrySourceUrl": "https://github.com/Misty-Star/ECC.git",
+    "entrySourceSha": "1ad6fbc88e9ff67a36c2f21fee87e5c1cffa39e1"
+  },
+  "runtime": {
+    "grok": "grok 1.0.62 (1474f9cbdd91)",
+    "node": "v24.21.0",
+    "platform": "linux",
+    "arch": "x64",
+    "grokExecutableSha256": "2a46d9e4d7ebd7a9cff7f95716714b19dad5f21dd2a497822400b1fb128969aa"
+  },
+  "isolation": {
+    "freshHome": true,
+    "credentialsPassedToGrok": false,
+    "proxyVariablesPassed": true
+  },
+  "marketplaceFetch": {
+    "add": {
+      "command": [
+        "grok",
+        "plugin",
+        "marketplace",
+        "add",
+        "https://github.com/Misty-Star/ecc-grok-marketplace-smoke-20261021-a1d6fbc8.git"
+      ],
+      "exitCode": 0,
+      "output": "Added marketplace source: ecc-grok-marketplace-smoke-20261021-a1d6fbc8 (https://github.com/Misty-Star/ecc-grok-marketplace-smoke-20261021-a1d6fbc8.git)"
+    },
+    "list": [
+      {
+        "name": "ecc-grok-marketplace-smoke-20261021-a1d6fbc8",
+        "kind": "git",
+        "source": {
+          "url": "https://github.com/Misty-Star/ecc-grok-marketplace-smoke-20261021-a1d6fbc8.git",
+          "branch": null
+        }
+      }
+    ],
+    "availablePlugins": [
+      {
+        "name": "ecc",
+        "version": "2.2.3",
+        "marketplace": "ecc-grok-marketplace-smoke-20261021-a1d6fbc8",
+        "status": "available",
+        "hasHooks": false,
+        "hasMcp": false
+      }
+    ]
+  },
+  "install": {
+    "command": [
+      "grok",
+      "plugin",
+      "install",
+      "ecc@ecc-grok-marketplace-smoke-20261021-a1d6fbc8",
+      "--trust"
+    ],
+    "exitCode": 0,
+    "output": "Installed 1 plugin(s) from ecc-grok-marketplace-smoke-20261021-a1d6fbc8: ecc",
+    "source": {
+      "url": "https://github.com/Misty-Star/ECC.git",
+      "sha": "1ad6fbc88e9ff67a36c2f21fee87e5c1cffa39e1",
+      "gitRef": "1ad6fbc88e9ff67a36c2f21fee87e5c1cffa39e1"
+    },
+    "version": "2.2.3",
+    "installedSnapshotIsSymlink": false,
+    "fullEccCheckoutVerified": true,
+    "manifest": {
+      "hooks": "",
+      "mcpServers": ""
+    },
+    "nativeInspect": {
+      "pluginEnabled": true,
+      "eccSkills": 397,
+      "hooks": 0,
+      "mcpServers": 0,
+      "commandsExitCode": 0
+    }
+  },
+  "cleanup": {
+    "marketplaceRemoval": {
+      "command": [
+        "grok",
+        "plugin",
+        "marketplace",
+        "remove",
+        "ecc-grok-marketplace-smoke-20261021-a1d6fbc8"
+      ],
+      "exitCode": 0,
+      "output": "Removed marketplace source and uninstalled 1 plugin(s): ecc-8b713e06"
+    },
+    "installedPluginsAfterRemoval": [],
+    "marketplacesAfterRemoval": [],
+    "eccDiscoveryAfterRemoval": {
+      "plugins": 0,
+      "skills": 0,
+      "hooks": 0,
+      "mcpServers": 0
+    },
+    "publicTestRepositoryDeleted": true,
+    "temporaryHomeDeleted": true
+  }
+}

@@ -128,6 +128,44 @@ def test_openai_provider_serializes_tools_for_chat_completions():
 
 
 @pytest.mark.unit
+def test_openai_provider_preserves_structured_user_content() -> None:
+    provider = OpenAIProvider(api_key="test")
+    client = _OpenAIClient()
+    provider.client = client
+    content = [
+        {"type": "text", "text": "Describe this image."},
+        {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
+    ]
+
+    provider.generate(LLMInput(messages=[Message(role=Role.USER, content=content)]))
+
+    assert client.completions.params["messages"] == [
+        {"role": "user", "content": content}
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("role", [Role.SYSTEM, Role.TOOL])
+def test_openai_provider_rejects_structured_text_only_roles(role: Role) -> None:
+    provider = OpenAIProvider(api_key="test")
+    provider.client = _OpenAIClient()
+    message_options = {"tool_call_id": "call_1"} if role == Role.TOOL else {}
+
+    with pytest.raises(TypeError, match="must contain text"):
+        provider.generate(
+            LLMInput(
+                messages=[
+                    Message(
+                        role=role,
+                        content=[{"type": "text", "text": "invalid"}],
+                        **message_options,
+                    )
+                ]
+            )
+        )
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     "provider_type",
     [OpenAIProvider, AstraflowProvider, AtlasProvider],

@@ -546,8 +546,41 @@ impl StateStore {
         self.ensure_harness_eval_columns()?;
         self.ensure_harness_candidate_aliases()?;
         self.ensure_session_board_columns()?;
-        self.refresh_session_board_meta()?;
+        // Session and handoff mutations already refresh the board. Rebuilding all
+        // historical rows on every CLI invocation (including read-only status)
+        // turns a large state store into an expensive write-heavy startup path.
+        if self.session_board_needs_bootstrap()? {
+            self.refresh_session_board_meta()?;
+        }
         Ok(())
+    }
+
+    fn session_board_needs_bootstrap(&self) -> Result<bool> {
+        // Use indexed existence probes, not per-session writes. Old databases
+        // with a missing/orphaned board row or a stale state lane still reconcile.
+        let needs_rebuild: i64 = self.conn.query_row(
+            "SELECT EXISTS (
+                SELECT 1 FROM sessions AS s
+                LEFT JOIN session_board AS b ON b.session_id = s.id
+                WHERE b.session_id IS NULL
+                   OR b.lane != CASE s.state
+                       WHEN 'pending' THEN 'Inbox'
+                       WHEN 'running' THEN 'In Progress'
+                       WHEN 'idle' THEN 'Review'
+                       WHEN 'stale' THEN 'Blocked'
+                       WHEN 'failed' THEN 'Blocked'
+                       WHEN 'completed' THEN 'Done'
+                       WHEN 'stopped' THEN 'Stopped'
+                       ELSE b.lane END
+            ) OR EXISTS (
+                SELECT 1 FROM session_board AS b
+                LEFT JOIN sessions AS s ON s.id = b.session_id
+                WHERE s.id IS NULL
+            )",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(needs_rebuild != 0)
     }
 
     // Existing rows are untagged; keep their historical classification after
@@ -2531,7 +2564,8 @@ impl StateStore {
     }
 
     fn refresh_session_board_meta(&self) -> Result<()> {
-        self.conn.execute(
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
             "DELETE FROM session_board
              WHERE session_id NOT IN (SELECT id FROM sessions)",
             [],
@@ -2565,7 +2599,7 @@ impl StateStore {
             }
             meta.handoff_backlog = self.unread_task_handoff_count(&session.id)? as i64;
 
-            self.conn.execute(
+            tx.execute(
                 "INSERT INTO session_board (
                     session_id, lane, project, feature, issue, row_label,
                     previous_lane, previous_row_label,
@@ -2616,6 +2650,7 @@ impl StateStore {
             )?;
         }
 
+        tx.commit()?;
         Ok(())
     }
 
@@ -2624,6 +2659,17 @@ impl StateStore {
         Ok(sessions
             .into_iter()
             .find(|session| session.id == id || session.id.starts_with(id)))
+    }
+
+    /// Query a single full Session ID without prefix aliases or a full scan.
+    /// Used by automatic dispatch to fail closed on terminal recipients.
+    pub fn session_state_exact(&self, session_id: &str) -> Result<Option<SessionState>> {
+        let state = self.conn.query_row(
+            "SELECT state FROM sessions WHERE id = ?1",
+            [session_id],
+            |row| row.get::<_, String>(0),
+        ).optional()?;
+        Ok(state.map(|value| SessionState::from_db_value(&value)))
     }
 
     pub fn delete_session(&self, session_id: &str) -> Result<()> {
@@ -5911,6 +5957,43 @@ mod tests {
     }
 
     #[test]
+    fn session_state_exact_never_matches_a_longer_session_prefix() -> Result<()> {
+        let tempdir = TestDir::new("exact-session-state")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+        db.insert_session(&build_session("lead", SessionState::Completed))?;
+        db.insert_session(&build_session("lead-longer", SessionState::Running))?;
+        assert_eq!(db.session_state_exact("lead")?, Some(SessionState::Completed));
+        assert_eq!(db.session_state_exact("lead-longer")?, Some(SessionState::Running));
+        assert_eq!(db.session_state_exact("lead-l")?, None);
+        assert_eq!(db.session_state_exact("orphan")?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn session_board_refresh_rolls_back_after_later_row_error() -> Result<()> {
+        let tempdir = TestDir::new("atomic-session-board")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+        db.insert_session(&build_session("alpha", SessionState::Pending))?;
+        db.insert_session(&build_session("beta", SessionState::Pending))?;
+        let sessions = db.list_sessions()?;
+        assert_eq!(sessions.len(), 2);
+        let first = &sessions[0].id;
+        let second = &sessions[1].id;
+        let read_first = || db.conn.query_row(
+            "SELECT updated_at FROM session_board WHERE session_id = ?1",
+            [first], |row| row.get::<_, String>(0));
+        let before = read_first()?;
+        db.conn.execute_batch(&format!(
+            "CREATE TRIGGER reject_second BEFORE INSERT ON session_board
+             WHEN NEW.session_id = '{}' BEGIN SELECT RAISE(ABORT, 'forced'); END;",
+            second))?;
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        assert!(db.refresh_session_board_meta().is_err());
+        assert_eq!(read_first()?, before, "no earlier row may be partially written");
+        Ok(())
+    }
+
+    #[test]
     fn update_state_rejects_invalid_terminal_transition() -> Result<()> {
         let tempdir = TestDir::new("store-invalid-transition")?;
         let db = StateStore::open(&tempdir.path().join("state.db"))?;
@@ -5924,6 +6007,65 @@ mod tests {
         assert!(error
             .to_string()
             .contains("Invalid session state transition"));
+        Ok(())
+    }
+
+    #[test]
+    fn reopen_with_consistent_board_is_read_only_for_board_timestamps() -> Result<()> {
+        let tempdir = TestDir::new("store-board-fast-reopen")?;
+        let path = tempdir.path().join("state.db");
+        let db = StateStore::open(&path)?;
+        db.insert_session(&build_session("reopen-done", SessionState::Completed))?;
+        db.conn.execute(
+            "UPDATE session_board SET updated_at = '2000-01-01T00:00:00Z'
+             WHERE session_id = 'reopen-done'",
+            [],
+        )?;
+        drop(db);
+
+        let reopened = StateStore::open(&path)?;
+        let (lane, timestamp): (String, String) = reopened.conn.query_row(
+            "SELECT lane, updated_at FROM session_board WHERE session_id = 'reopen-done'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        assert_eq!(lane, "Done");
+        assert_eq!(timestamp, "2000-01-01T00:00:00Z");
+        Ok(())
+    }
+
+    #[test]
+    fn reopen_reconciles_missing_or_stale_board_rows() -> Result<()> {
+        let tempdir = TestDir::new("store-board-repair-reopen")?;
+        let path = tempdir.path().join("state.db");
+        let db = StateStore::open(&path)?;
+        db.insert_session(&build_session("repair-done", SessionState::Completed))?;
+        db.conn.execute(
+            "UPDATE session_board SET lane = 'Inbox' WHERE session_id = 'repair-done'",
+            [],
+        )?;
+        drop(db);
+
+        let reopened = StateStore::open(&path)?;
+        let lane: String = reopened.conn.query_row(
+            "SELECT lane FROM session_board WHERE session_id = 'repair-done'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(lane, "Done");
+        reopened.conn.execute(
+            "DELETE FROM session_board WHERE session_id = 'repair-done'",
+            [],
+        )?;
+        drop(reopened);
+
+        let rebuilt = StateStore::open(&path)?;
+        let count: i64 = rebuilt.conn.query_row(
+            "SELECT COUNT(*) FROM session_board WHERE session_id = 'repair-done'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(count, 1);
         Ok(())
     }
 

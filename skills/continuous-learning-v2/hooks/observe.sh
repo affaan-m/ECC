@@ -66,6 +66,40 @@ _is_windows_app_installer_stub() {
   return 1
 }
 
+_python_install_manager_launcher() {
+  # With the Python Install Manager, python3/python in
+  #   %LOCALAPPDATA%\Microsoft\WindowsApps
+  # are App Execution Aliases. Every start of one makes Windows run an App
+  # Installer update check (AppXDeploymentServer event 603), and this hook
+  # starts Python several times per tool call. The Install Manager's global
+  # shortcuts in %LOCALAPPDATA%\Python\bin start the same runtime without that
+  # check, so print the shortcut for $1 when it is an alias and one exists.
+  # Microsoft Store Python has no such shortcut and keeps its alias. Only the
+  # current user's WindowsApps counts: an alias from anywhere else is left alone.
+  # The alias is also kept when it may not be the Install Manager's (Store
+  # Python provides the same name, and either package can own it) and when
+  # PYTHON_MANAGER_DEFAULT picks the runtime, which the alias honours and the
+  # shortcut, generated for one runtime, does not.
+  local _candidate="$1" _resolved _local _store
+  [ -n "${LOCALAPPDATA:-}" ] || return 1
+  [ -z "${PYTHON_MANAGER_DEFAULT:-}" ] || return 1
+  _resolved="$(command -v "$_candidate" 2>/dev/null || true)"
+  case "$_resolved" in */*) ;; *) return 1 ;; esac
+  # Git Bash accepts C:/... paths, so swapping separators avoids a cygpath start.
+  _local="${LOCALAPPDATA//\\//}"
+  _local="${_local%/}"
+  # command -v prints /c/... (or a mount such as /tmp/...) while LOCALAPPDATA
+  # is C:\..., so ask whether the two name the same directory instead of
+  # comparing strings.
+  [ "${_resolved%/*}" -ef "$_local/Microsoft/WindowsApps" ] || return 1
+  # A glob, not a command, so this check starts no process.
+  for _store in "$_local"/Microsoft/WindowsApps/PythonSoftwareFoundation.Python.3*/"${_candidate}.exe"; do
+    [ -e "$_store" ] && return 1
+  done
+  [ -f "$_local/Python/bin/${_candidate}.exe" ] && [ -x "$_local/Python/bin/${_candidate}.exe" ] || return 1
+  printf '%s\n' "$_local/Python/bin/${_candidate}.exe"
+}
+
 resolve_python_cmd() {
   if [ -n "${CLV2_PYTHON_CMD:-}" ] && command -v "$CLV2_PYTHON_CMD" >/dev/null 2>&1; then
     printf '%s\n' "$CLV2_PYTHON_CMD"
@@ -73,12 +107,12 @@ resolve_python_cmd() {
   fi
 
   if command -v python3 >/dev/null 2>&1 && ! _is_windows_app_installer_stub python3; then
-    printf '%s\n' python3
+    _python_install_manager_launcher python3 || printf '%s\n' python3
     return 0
   fi
 
   if command -v python >/dev/null 2>&1 && ! _is_windows_app_installer_stub python; then
-    printf '%s\n' python
+    _python_install_manager_launcher python || printf '%s\n' python
     return 0
   fi
 
@@ -104,16 +138,23 @@ export CLV2_PYTHON_CMD="${CLV2_PYTHON_CMD:-$PYTHON_CMD}"
 # If cwd is a subdirectory inside a git repo, resolve it to the repo root so
 # observations attach to the project instead of a nested path.
 STDIN_CWD=$(echo "$INPUT_JSON" | "$PYTHON_CMD" -c '
-import json, sys
+import json, os, sys
 try:
     data = json.load(sys.stdin)
     cwd = data.get("cwd", "")
-    print(cwd)
-except(KeyError, TypeError, ValueError):
+    cwd = cwd[:4096] if isinstance(cwd, str) else ""
+    if isinstance(cwd, str) and os.path.isabs(cwd) and os.path.isdir(cwd):
+        print(os.path.realpath(cwd))
+    else:
+        print("")
+except (KeyError, OSError, TypeError, ValueError):
     print("")
 ' 2>/dev/null || echo "")
 
-# If cwd was provided in stdin, use it for project detection
+# Only a validated, absolute payload cwd may select a project. Missing,
+# relative, or non-existent paths must not fall through to detect-project.sh's
+# inherited-process-cwd discovery, which can attach an observation to an
+# unrelated repository that happened to launch the hook.
 if [ -n "$STDIN_CWD" ] && [ -d "$STDIN_CWD" ]; then
   _GIT_ROOT=$(git -C "$STDIN_CWD" rev-parse --show-toplevel 2>/dev/null || true)
   if [ -n "$_GIT_ROOT" ]; then
@@ -123,6 +164,9 @@ if [ -n "$STDIN_CWD" ] && [ -d "$STDIN_CWD" ]; then
     unset CLAUDE_PROJECT_DIR
     export CLV2_NO_PROJECT=1
   fi
+else
+  unset CLAUDE_PROJECT_DIR
+  export CLV2_NO_PROJECT=1
 fi
 
 # ─────────────────────────────────────────────
@@ -232,6 +276,7 @@ try:
     session_id = data.get("session_id", "unknown")
     tool_use_id = data.get("tool_use_id", "")
     cwd = data.get("cwd", "")
+    cwd = cwd[:4096] if isinstance(cwd, str) else ""
 
     # Truncate large inputs/outputs
     if isinstance(tool_input, dict):
@@ -271,24 +316,38 @@ import json, sys, os, re
 # Linear-time secret matcher. Bounded quantifiers and a fixed set of auth
 # schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
 # prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
+# The value class is disjoint from the separators, so it runs to the end of the
+# token: a long labeled key is redacted whole instead of leaving its tail.
 _SECRET_RE = re.compile(
     r"(?i)((?:api[_-]?key|token|secret|password|authorization|credentials?|auth)(?:_access_key|_key)?)"
     r"""(["'"'"'\s:=\\]{1,8})"""
     r"((?:bearer|basic|token|bot)\s+)?"
-    r"([A-Za-z0-9_\-/.+=]{8,256})"
+    r"([A-Za-z0-9_\-/.+=]{8,})"
 )
 # Value-shaped secrets that carry no keyword: PEM private key blocks (to END or
-# end of the truncated text), GitHub tokens, AWS key IDs, and DSN passwords
-# (scheme://user:PASSWORD@host keeps scheme and user). Each branch is anchored
-# on a literal prefix and uses bounded or non-overlapping classes (#2278).
+# end of the truncated text), GitHub tokens, AWS key IDs, Anthropic and OpenAI
+# style sk- keys, JWTs (eyJ header, payload, optional signature) and DSN
+# passwords (scheme://user:PASSWORD@host keeps scheme and user). Each branch is
+# anchored on a literal prefix and uses bounded or non-overlapping classes (#2278);
+# the sk- and JWT classes run to the end of the token so a long value is never
+# half redacted.
 # Tokens may follow a JSON escape (\n, \t, \uXXXX) since dict I/O is encoded
 # before scrubbing; a DSN cut by truncation before its "@" ends at \Z,
 # except a bare trailing host:port after http(s):// such as http://localhost:3000;
 # any other scheme (postgres://app:1234) is redacted even when the password is numeric (#3568).
+# PEM blocks run first: a label such as secret= in front of the BEGIN marker
+# would otherwise let _SECRET_RE eat "-----BEGIN" and hide the block from this match.
+_PEM_RE = re.compile(r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)")
 _SECRET_VALUE_RE = re.compile(
-    r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)"
-    r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
+    r"(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
+    r"|(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-(?:ant|proj|svcacct|admin|or)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}[A-Za-z0-9_-]*|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*)"
     r"""|(?<=://)(?:(?<=https://)|(?<=http://)|(?<!https://)(?<!http://)())([^\s:/@"\\]{1,256}:)(?(1)|(?!\d{1,5}\Z))[^\s@/"\\]{1,256}(?=@|\Z)"""
+)
+# A capture cut at its length limit can end inside an sk- key or JWT that the
+# full patterns no longer match. Only applied when the text was actually cut,
+# so a short output that happens to end in "sk-learn" stays readable.
+_CUT_TAIL_RE = re.compile(
+    r"(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-[A-Za-z0-9_-]*|eyJ[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]*)?)\Z"
 )
 
 import signal
@@ -301,9 +360,13 @@ try:
 except Exception:
     pass
 
-raw = sys.stdin.read()[:2000]
+raw_full = sys.stdin.read()
+raw = raw_full[:2000]
+raw = _PEM_RE.sub("[REDACTED]", raw)
 raw = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", raw)
 raw = _SECRET_VALUE_RE.sub(lambda m: (m.group(2) or "") + "[REDACTED]", raw)
+if len(raw_full) > 2000:
+    raw = _CUT_TAIL_RE.sub("[REDACTED]", raw)
 print(json.dumps({"timestamp": os.environ["TIMESTAMP"], "event": "parse_error", "raw": raw}))
 ' >> "$OBSERVATIONS_FILE"
   exit 0
@@ -325,6 +388,7 @@ timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 export PROJECT_ID_ENV="$PROJECT_ID"
 export PROJECT_NAME_ENV="$PROJECT_NAME"
+export OBSERVATION_CWD_ENV="$STDIN_CWD"
 export TIMESTAMP="$timestamp"
 
 echo "$PARSED" | "$PYTHON_CMD" -c '
@@ -356,31 +420,58 @@ observation = {
 # Linear-time secret matcher. Bounded quantifiers and a fixed set of auth
 # schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
 # prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
+# The value class is disjoint from the separators, so it runs to the end of the
+# token: a long labeled key is redacted whole instead of leaving its tail.
 _SECRET_RE = re.compile(
     r"(?i)((?:api[_-]?key|token|secret|password|authorization|credentials?|auth)(?:_access_key|_key)?)"
     r"""(["'"'"'\s:=\\]{1,8})"""
     r"((?:bearer|basic|token|bot)\s+)?"
-    r"([A-Za-z0-9_\-/.+=]{8,256})"
+    r"([A-Za-z0-9_\-/.+=]{8,})"
 )
 # Value-shaped secrets that carry no keyword: PEM private key blocks (to END or
-# end of the truncated text), GitHub tokens, AWS key IDs, and DSN passwords
-# (scheme://user:PASSWORD@host keeps scheme and user). Each branch is anchored
-# on a literal prefix and uses bounded or non-overlapping classes (#2278).
+# end of the truncated text), GitHub tokens, AWS key IDs, Anthropic and OpenAI
+# style sk- keys, JWTs (eyJ header, payload, optional signature) and DSN
+# passwords (scheme://user:PASSWORD@host keeps scheme and user). Each branch is
+# anchored on a literal prefix and uses bounded or non-overlapping classes (#2278);
+# the sk- and JWT classes run to the end of the token so a long value is never
+# half redacted.
 # Tokens may follow a JSON escape (\n, \t, \uXXXX) since dict I/O is encoded
 # before scrubbing; a DSN cut by truncation before its "@" ends at \Z,
 # except a bare trailing host:port after http(s):// such as http://localhost:3000;
 # any other scheme (postgres://app:1234) is redacted even when the password is numeric (#3568).
+# PEM blocks run first: a label such as secret= in front of the BEGIN marker
+# would otherwise let _SECRET_RE eat "-----BEGIN" and hide the block from this match.
+_PEM_RE = re.compile(r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)")
 _SECRET_VALUE_RE = re.compile(
-    r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)"
-    r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
+    r"(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
+    r"|(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-(?:ant|proj|svcacct|admin|or)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}[A-Za-z0-9_-]*|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*)"
     r"""|(?<=://)(?:(?<=https://)|(?<=http://)|(?<!https://)(?<!http://)())([^\s:/@"\\]{1,256}:)(?(1)|(?!\d{1,5}\Z))[^\s@/"\\]{1,256}(?=@|\Z)"""
+)
+# A capture cut at its length limit can end inside an sk- key or JWT that the
+# full patterns no longer match. Only applied when the text was actually cut,
+# so a short output that happens to end in "sk-learn" stays readable.
+_CUT_TAIL_RE = re.compile(
+    r"(?:(?<![A-Za-z0-9_-])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:sk-[A-Za-z0-9_-]*|eyJ[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]*)?)\Z"
 )
 
 def scrub(val):
     if val is None:
         return None
-    val = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", str(val))
-    return _SECRET_VALUE_RE.sub(lambda m: (m.group(2) or "") + "[REDACTED]", val)
+    val = str(val)
+    # Tool I/O is cut to 5000 chars before it reaches this process.
+    cut = len(val) >= 5000
+    val = _PEM_RE.sub("[REDACTED]", val)
+    val = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", val)
+    val = _SECRET_VALUE_RE.sub(lambda m: (m.group(2) or "") + "[REDACTED]", val)
+    return _CUT_TAIL_RE.sub("[REDACTED]", val) if cut else val
+
+# Prefer the canonical cwd that passed the project-selection boundary. Retain a
+# bounded rejected string as diagnostic metadata without ever using it to select
+# a project. Apply the same secret scrubber as tool I/O because path components
+# can still contain credentials or tokens (for example, generated checkout names).
+cwd = os.environ.get("OBSERVATION_CWD_ENV", "") or parsed.get("cwd", "")
+if cwd:
+    observation["cwd"] = scrub(cwd)
 
 if parsed["input"]:
     observation["input"] = scrub(parsed["input"])
@@ -532,15 +623,17 @@ print(str(cfg.get('observer', {}).get('enabled', False)).lower())
   fi
 fi
 
-# Check both project-scoped AND global PID files (with stale PID recovery)
+# Observers are deliberately scope-pinned: each project (and the global scope)
+# owns a distinct PROJECT_DIR, PID file, observation stream, and lazy-start lock.
+# An observer from another scope cannot consume this observation stream and must
+# not suppress startup or receive signals for the current scope.
 if [ "$OBSERVER_ENABLED" = "true" ]; then
   # Clean up stale PID files first.
   # `if` context (not `|| true`) so `set -e` stays satisfied while we still
-  # capture whether either PID file pointed at a live observer.
+  # capture whether this scope's PID file pointed at a live observer.
   OBSERVER_ALIVE=false
   OBSERVER_DIED=false
   if _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid"; then OBSERVER_ALIVE=true; fi
-  if _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid"; then OBSERVER_ALIVE=true; fi
 
   # A live observer clears the streak so a later one-off crash does not inherit
   # an old count. This is an idempotent unlink, not a read-modify-write, so it
@@ -551,15 +644,14 @@ if [ "$OBSERVER_ENABLED" = "true" ]; then
   fi
 
   # Check if observer is now running after cleanup
-  if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+  if [ ! -f "${PROJECT_DIR}/.observer.pid" ]; then
     # Use flock if available (Linux), fallback for macOS
     if command -v flock >/dev/null 2>&1; then
       (
         flock -n 9 || exit 0
-        # Double-check PID files after acquiring lock
+        # Double-check this scope's PID file after acquiring the lock.
         _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid" || true
-        _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid" || true
-        if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+        if [ ! -f "${PROJECT_DIR}/.observer.pid" ]; then
           _START_OBSERVER_LOGGED
         fi
       ) 9>"$LAZY_START_LOCK"
@@ -571,8 +663,7 @@ if [ "$OBSERVER_ENABLED" = "true" ]; then
           trap '_REMOVE_FILE_IF_PRESENT "$LAZY_START_LOCK"' EXIT
           lockfile -r 1 -l 30 "$LAZY_START_LOCK" 2>/dev/null || exit 0
           _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid" || true
-          _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid" || true
-          if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+          if [ ! -f "${PROJECT_DIR}/.observer.pid" ]; then
             _START_OBSERVER_LOGGED
           fi
           _REMOVE_FILE_IF_PRESENT "$LAZY_START_LOCK"
@@ -583,8 +674,7 @@ if [ "$OBSERVER_ENABLED" = "true" ]; then
           trap 'rmdir "${LAZY_START_LOCK}.d" 2>/dev/null || true' EXIT
           mkdir "${LAZY_START_LOCK}.d" 2>/dev/null || exit 0
           _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid" || true
-          _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid" || true
-          if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+          if [ ! -f "${PROJECT_DIR}/.observer.pid" ]; then
             _START_OBSERVER_LOGGED
           fi
         )
@@ -699,29 +789,22 @@ PY
   ) || should_signal=0
 fi
 
-# Signal observer if running and throttle allows (check both project-scoped and global observer, deduplicate)
+# Signal only the observer that owns the current observation stream.
 if [ "$should_signal" -eq 1 ]; then
-  signaled_pids=" "
-  for pid_file in "${PROJECT_DIR}/.observer.pid" "${CONFIG_DIR}/.observer.pid"; do
-    if [ -f "$pid_file" ]; then
-      observer_pid=$(cat "$pid_file" 2>/dev/null || true)
-      # Validate PID is a positive integer (>1)
-      case "$observer_pid" in
-        ''|*[!0-9]*|0|1)
-          _REMOVE_FILE_IF_PRESENT "$pid_file"
-          continue
-          ;;
-      esac
-      # Deduplicate: skip if already signaled this pass
-      case "$signaled_pids" in
-        *" $observer_pid "*) continue ;;
-      esac
-      if kill -0 "$observer_pid" 2>/dev/null; then
-        kill -USR1 "$observer_pid" 2>/dev/null || true
-        signaled_pids="${signaled_pids}${observer_pid} "
-      fi
+  pid_file="${PROJECT_DIR}/.observer.pid"
+  if [ -f "$pid_file" ]; then
+    observer_pid=$(cat "$pid_file" 2>/dev/null || true)
+    # Validate PID is a positive integer (>1)
+    case "$observer_pid" in
+      ''|*[!0-9]*|0|1)
+        _REMOVE_FILE_IF_PRESENT "$pid_file"
+        observer_pid=""
+        ;;
+    esac
+    if [ -n "$observer_pid" ] && kill -0 "$observer_pid" 2>/dev/null; then
+      kill -USR1 "$observer_pid" 2>/dev/null || true
     fi
-  done
+  fi
 fi
 
 exit 0

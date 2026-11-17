@@ -10,6 +10,7 @@ const path = require('path');
 const { StringDecoder } = require('string_decoder');
 const { isHookEnabled } = require('../lib/hook-flags');
 const { readStdinRaw: readBoundedStdin, resolveMaxStdin } = require('./hook-input');
+const { installHookWatchdog } = require('./hook-watchdog');
 const { runPostBash } = require('./bash-hook-dispatcher');
 const { run: runQualityGate } = require('./quality-gate');
 const { run: runDesignQualityCheck } = require('./design-quality-check');
@@ -69,7 +70,10 @@ const ASYNC_HOOKS = [
 ];
 
 function getPluginRoot(env = process.env) {
-  return env.CLAUDE_PLUGIN_ROOT || env.ECC_PLUGIN_ROOT || path.resolve(__dirname, '..', '..');
+  return [env.CLAUDE_PLUGIN_ROOT, env.ECC_PLUGIN_ROOT]
+    .map(value => typeof value === 'string' ? value.trim() : '')
+    .find(Boolean)
+    || path.resolve(__dirname, '..', '..');
 }
 
 function matchesTool(matcher, toolName) {
@@ -325,6 +329,7 @@ async function main(options = {}) {
 }
 
 function cli(options = {}) {
+  installHookWatchdog({ label: 'PostToolUse dispatcher' });
   main(options).catch(error => {
     process.stderr.write(`[Hook] PostToolUse dispatcher failed: ${error.message}\n`);
     process.exitCode = 0;

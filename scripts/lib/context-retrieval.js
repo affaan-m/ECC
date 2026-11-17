@@ -105,20 +105,25 @@ function expandDense(pairs) {
  * carry a `triggers` array (from the checked-in skill-triggers manifest) that
  * is weighted between name and description, and a `dense` array from
  * sparseDense to skip recomputing the n-gram leg. */
+function weightedDocument(entry) {
+  const fields = {};
+  let docLength = 0;
+  const weighted = new Map();
+  for (const field of Object.keys(FIELD_WEIGHTS)) {
+    const tokens = fieldTokens(entry, field);
+    fields[field] = tokens;
+    for (const token of tokens) {
+      const contribution = FIELD_WEIGHTS[field];
+      weighted.set(token, (weighted.get(token) || 0) + contribution);
+      docLength += contribution;
+    }
+  }
+  return { fields, weighted, docLength };
+}
+
 function buildRetrievalIndex(entries) {
   const documents = entries.map(entry => {
-    const fields = {};
-    let docLength = 0;
-    const weighted = new Map();
-    for (const field of Object.keys(FIELD_WEIGHTS)) {
-      const tokens = fieldTokens(entry, field);
-      fields[field] = tokens;
-      for (const token of tokens) {
-        const contribution = FIELD_WEIGHTS[field];
-        weighted.set(token, (weighted.get(token) || 0) + contribution);
-        docLength += contribution;
-      }
-    }
+    const { fields, weighted, docLength } = weightedDocument(entry);
     return { entry, fields, weighted, docLength,
       dense: entry.dense ? expandDense(entry.dense) : denseVector([fields.name, fields.description]),
       aliases: [...new Set([entry.id.slice('skill:'.length), entry.name].filter(Boolean).map(normalizedName))] };
@@ -202,5 +207,32 @@ function searchRetrieval(index, query, { limit = 5 } = {}) {
     });
 }
 
-module.exports = { buildRetrievalIndex, searchRetrieval, sparseDense, tokenize,
+/** Score registry-shaped entries that are NOT in the index, using the index's
+ * own corpus statistics (IDF, average length), field weights and query-coverage
+ * floor. Indexed scores are untouched, so each result's bm25 compares directly
+ * with an indexed candidate's bm25. Returns eligible entries, strongest first. */
+function scoreExternal(index, query, entries) {
+  const uniqueTerms = new Set(tokenize(query || ''));
+  if (!uniqueTerms.size) return [];
+  const minimumCoverage = Math.min(2, uniqueTerms.size);
+  const scored = [];
+  for (const entry of entries) {
+    const { weighted, docLength } = weightedDocument(entry);
+    const matched = [...uniqueTerms].filter(term => weighted.has(term));
+    if (!(matched.length >= minimumCoverage || (matched.length >= 1 && uniqueTerms.size >= 4))) continue;
+    let score = 0;
+    for (const term of uniqueTerms) {
+      const tf = weighted.get(term);
+      if (!tf) continue;
+      const frequency = index.documentFrequency.get(term) || 0;
+      const idf = Math.log(1 + (index.entryCount - frequency + 0.5) / (frequency + 0.5));
+      const denominator = tf + K1 * (1 - B + B * docLength / index.averageLength);
+      score += idf * (tf * (K1 + 1)) / denominator;
+    }
+    scored.push({ entry, id: entry.id, bm25: Math.round(score * 10000) / 10000, matchedTerms: matched });
+  }
+  return scored.sort((a, b) => b.bm25 - a.bm25 || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+module.exports = { buildRetrievalIndex, scoreExternal, searchRetrieval, sparseDense, tokenize,
   internals: { denseVector, dot, DENSE_ADMIT_COSINE, DENSE_DIM } };

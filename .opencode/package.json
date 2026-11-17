@@ -11,8 +11,8 @@
       "import": "./dist/index.js"
     },
     "./plugins": {
-      "types": "./dist/plugins/index.d.ts",
-      "import": "./dist/plugins/index.js"
+      "types": "./dist/plugins/ecc-hooks.d.ts",
+      "import": "./dist/plugins/ecc-hooks.js"
     },
     "./tools": {
       "types": "./dist/tools/index.d.ts",

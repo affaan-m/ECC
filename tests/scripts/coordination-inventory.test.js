@@ -9,6 +9,7 @@ const { normalizeManifest, buildInventory, collectResources, collectTaskFiles, r
 const now = '2026-09-08T06:30:00.000Z';
 const task = (id, paths, extra = {}) => ({ id, repoId: 'repo', paths, ...extra });
 const fixture = () => ({ version: 1, repositories: [{ id: 'repo', sources: { 'src/a.js': "require('../lib/b')", 'lib/b.js': '' } }], tasks: [task('a', ['src/a.js']), task('b', ['lib/b.js'])], leases: [] });
+const { trySymlink } = require('../lib/helpers/symlink-support');
 const run = value => buildInventory(value, { now });
 
 test('direct import warns when exact-path baseline would miss it; deterministic JSON', () => {
@@ -87,7 +88,8 @@ test('task file adapter reads structured status, labels mtime, skips symlinks an
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coordination-test-'));
   try {
     fs.mkdirSync(path.join(dir, 'worker')); fs.writeFileSync(path.join(dir, 'worker', 'STATUS.md'), '- State: running\n- Updated: 2026-09-08T06:29:00Z\n');
-    fs.symlinkSync(path.join(dir, 'worker'), path.join(dir, 'linked'));
+    // The task count holds with or without the link, so a refusal must not skip the rest.
+    trySymlink(path.join(dir, 'worker'), path.join(dir, 'linked'));
     const r = collectTaskFiles(dir); assert.equal(r.tasks.length, 1); assert.equal(r.tasks[0].status, 'running');
     assert.ok(r.tasks[0].statusFileModifiedAt); assert.equal(r.tasks[0].heartbeatAt, '2026-09-08T06:29:00Z');
     fs.writeFileSync(path.join(dir, 'large.json'), ' '.repeat(1024 * 1024 + 1));
@@ -95,6 +97,31 @@ test('task file adapter reads structured status, labels mtime, skips symlinks an
     assert.equal(collectTaskFiles(path.join(dir, 'missing')).status, 'unavailable');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+// Keep the native symlink case above, even on hosts that cannot create symlinks.
+test('task file adapter reads structured status, labels mtime, excludes junctions and rejects oversized JSON', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coordination-junction-'));
+  const worker = path.join(dir, 'worker');
+  const linked = path.join(dir, 'linked');
+  try {
+    fs.mkdirSync(worker);
+    fs.writeFileSync(path.join(worker, 'STATUS.md'), '- State: running\n- Updated: 2026-09-08T06:29:00Z\n');
+    fs.symlinkSync(worker, linked, process.platform === 'win32' ? 'junction' : 'dir');
+    assert.ok(fs.lstatSync(linked).isSymbolicLink());
+    assert.equal(fs.realpathSync(linked), fs.realpathSync(worker));
+    const r = collectTaskFiles(dir);
+    assert.equal(r.tasks.length, 1);
+    assert.equal(r.tasks[0].id, 'worker');
+    assert.equal(r.tasks[0].status, 'running');
+    assert.ok(r.tasks[0].statusFileModifiedAt);
+    assert.equal(r.tasks[0].heartbeatAt, '2026-09-08T06:29:00Z');
+    fs.writeFileSync(path.join(dir, 'large.json'), ' '.repeat(1024 * 1024 + 1));
+    assert.throws(() => readJson(path.join(dir, 'large.json')), /limit/);
+    assert.equal(collectTaskFiles(path.join(dir, 'missing')).status, 'unavailable');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('CLI JSON end to end, no output file changes and safe errors', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coordination-cli-'));
   const cli = path.resolve(__dirname, '../../scripts/coordination-inventory.js');
