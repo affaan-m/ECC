@@ -30,13 +30,13 @@ late acknowledgement.
 
 ## Publish After the Database Commits
 
-With Celery 5.4 or newer, `delay_on_commit()` is available for tasks based on
-`DjangoTask`. Custom task base classes must inherit from `DjangoTask` to expose this
-API. The method does not return a task ID because the message is not published until
-commit.
+With Celery 5.4 or newer, `delay_on_commit()` and `apply_async_on_commit()` are
+available for tasks based on `DjangoTask`. Custom task base classes must inherit from
+`DjangoTask` to expose this API. These methods do not return a task ID because the
+message is not published until commit.
 
-For older Celery versions or when `apply_async()` options are required, register the
-publication explicitly:
+For older Celery versions, or to keep the publication visible at the call site,
+register it explicitly:
 
 ```python
 from functools import partial
@@ -54,3 +54,44 @@ transaction.on_commit(
 An on-commit callback avoids publication on rollback, but it does not make the
 database commit and broker publish atomic. If task delivery must not be lost when a
 publish fails after commit, use a transactional outbox with a separate publisher.
+
+## Test the On-Commit Contract
+
+Django's `TestCase` wraps each test in a transaction that is rolled back, never
+committed, so `transaction.on_commit()` callbacks (including `delay_on_commit()`)
+never run. A test that only checks the new database row still passes when the task
+is never queued. Capture the callbacks, execute them, and assert the Celery call:
+
+```python
+from unittest.mock import patch
+
+from django.contrib.auth.models import User
+from django.test import TestCase
+
+from apps.users.services import create_user
+from apps.users.tasks import send_welcome_email
+
+
+class CreateUserTests(TestCase):
+    def test_queues_welcome_email_after_commit(self):
+        # Patch before the call: delay_on_commit() binds task.delay when it registers.
+        with patch.object(send_welcome_email, 'delay') as mock_delay:
+            with self.captureOnCommitCallbacks(execute=True) as callbacks:
+                create_user('bob')
+                mock_delay.assert_not_called()  # Not published before commit
+
+        user = User.objects.get(username='bob')
+        self.assertEqual(len(callbacks), 1)
+        mock_delay.assert_called_once_with(user.pk)
+```
+
+`captureOnCommitCallbacks()` is available on `TestCase` in Django 3.2 or newer. With
+pytest-django, the `django_capture_on_commit_callbacks` fixture provides the same
+context manager inside `@pytest.mark.django_db` tests.
+
+Use `TransactionTestCase`, or `@pytest.mark.django_db(transaction=True)`, only when a
+test needs a real commit: for example, when a real Celery worker in another thread
+or process must read the committed rows. Those tests commit for real, so on-commit
+callbacks run when the outermost `atomic()` block commits, and Django resets the
+database afterwards by truncating tables, which is much slower. Keep them for the
+worker integration boundary and use `TestCase` with captured callbacks elsewhere.

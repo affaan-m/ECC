@@ -227,10 +227,12 @@ result = generate_pdf_report.apply(args=[report.pk])
 ### Publish After the Database Commits
 
 A task published inside a Django transaction can run before its rows are visible or
-remain queued after rollback. Use `delay_on_commit()` with Celery 5.4 or newer; use
-`transaction.on_commit()` for `apply_async()` options or older versions. See
+remain queued after rollback. Use `delay_on_commit()` or `apply_async_on_commit()`
+with Celery 5.4 or newer; use `transaction.on_commit()` on older versions. See
 [Delivery Reliability](references/reliability.md#publish-after-the-database-commits)
-for custom-base, task-ID, and transactional-outbox boundaries.
+for custom-base, task-ID, and transactional-outbox boundaries. Django's `TestCase`
+never commits, so these callbacks never run in tests unless captured; see
+[Test the On-Commit Contract](references/reliability.md#test-the-on-commit-contract).
 
 ```python
 from django.db import transaction
@@ -373,6 +375,9 @@ class TestSendWelcomeEmail:
 Eager mode is a worker emulation, not a worker integration test. Use it to verify
 that a Django request selects the expected task and arguments, but do not use it as
 evidence for serialization, routing, acknowledgement, retry, or worker-loss behavior.
+It also does not prove post-commit dispatch: under `django_db` the test transaction
+never commits, so a view that publishes with `delay_on_commit()` runs nothing unless
+the request is wrapped in `django_capture_on_commit_callbacks(execute=True)`.
 
 ```python
 # config/settings/test.py
@@ -381,12 +386,13 @@ CELERY_TASK_EAGER_PROPAGATES = True  # Re-raise exceptions from tasks
 
 # tests/test_integration.py
 @pytest.mark.django_db
-def test_registration_triggers_welcome_email(client):
+def test_registration_triggers_welcome_email(client, django_capture_on_commit_callbacks):
     with patch('apps.notifications.services.EmailService') as mock_email:
-        response = client.post('/api/users/', {
-            'email': 'new@example.com',
-            'password': 'strongpass123',
-        })
+        with django_capture_on_commit_callbacks(execute=True):
+            response = client.post('/api/users/', {
+                'email': 'new@example.com',
+                'password': 'strongpass123',
+            })
 
     assert response.status_code == 201
     mock_email.send_welcome.assert_called_once()

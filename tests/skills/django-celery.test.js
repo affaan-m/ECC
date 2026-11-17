@@ -190,7 +190,7 @@ test('documents transaction-aware task publication', () => {
   assert.match(skillPublication, /validated_username/);
   assert.doesNotMatch(skillPublication, /request\.POST/);
   assert.match(reliabilityPublication, /transaction\.on_commit/);
-  assert.match(reliabilityPublication, /does not return (?:a )?task ID/i);
+  assert.match(reliabilityPublication, /(?:does|do) not return (?:a )?task ID/i);
   assert.match(reliabilityPublication, /transactional outbox/i);
 });
 
@@ -282,6 +282,26 @@ test('keeps every select_for_update example inside an atomic block', () => {
   }
 });
 
+test('documents the on-commit test contract with an asserted Celery call', () => {
+  const skillPublication = getMarkdownSection(skill, '### Publish After the Database Commits');
+  const contract = getMarkdownSection(reliability, '## Test the On-Commit Contract');
+  const example = contract.match(/```python\n([\s\S]*?)```/)?.[1];
+
+  assert.match(skillPublication, /references\/reliability\.md#test-the-on-commit-contract/);
+  assert.match(contract, /TestCase[\s\S]*never\s+committed[\s\S]*never run/i);
+  assert.ok(example, 'Expected a Python example in the on-commit test contract');
+  assert.match(example, /class \w+\(TestCase\)/);
+  assertMarkersInOrder(example, [
+    "patch.object(send_welcome_email, 'delay')",
+    'self.captureOnCommitCallbacks(execute=True)',
+    "create_user('bob')",
+    'mock_delay.assert_not_called()',
+    'mock_delay.assert_called_once_with(user.pk)',
+  ]);
+  assert.match(contract, /django_capture_on_commit_callbacks/);
+  assert.match(contract, /TransactionTestCase[\s\S]*real commit[\s\S]*truncating tables/i);
+});
+
 test('distinguishes eager execution from real worker integration', () => {
   const eagerMode = getMarkdownSection(skill, '### Django Integration Path with Eager Mode');
   const realWorker = getMarkdownSection(skill, '### Worker Integration with a Real Broker');
@@ -291,6 +311,12 @@ test('distinguishes eager execution from real worker integration', () => {
     eagerMode,
     /do not use it as[\s\S]*evidence for serialization, routing, acknowledgement, retry, or worker-loss behavior/i,
   );
+  assert.match(eagerMode, /does not prove post-commit dispatch/i);
+  assertMarkersInOrder(eagerMode, [
+    'with django_capture_on_commit_callbacks(execute=True):',
+    "client.post('/api/users/'",
+    'mock_email.send_welcome.assert_called_once()',
+  ]);
   assert.match(realWorker, /celery_worker/);
   assert.match(realWorker, /real broker/i);
 });
