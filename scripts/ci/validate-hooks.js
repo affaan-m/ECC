@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const Ajv = require('ajv');
+const { visit } = require('jsonc-parser');
 
 /**
  * Resolve a module by its repo-relative path.
@@ -287,20 +288,85 @@ function isValidMatcherValue(value) {
   return typeof value === 'string' || (typeof value === 'object' && value !== null);
 }
 
+// Inspect the source before JSON.parse discards earlier members with the same name.
+function checkHookDuplicates(source, eventMap) {
+  const events = new Map();
+  const ids = new Map();
+  const rootProperties = [];
+  const unwrappedIds = [];
+  let eventMapLine = null;
+
+  function checkEvent(key, line) {
+    if (events.has(key)) {
+      throw new Error(`line ${line + 1}: duplicate event key '${key}' (first on line ${events.get(key)})`);
+    }
+    events.set(key, line + 1);
+  }
+
+  function checkId(id, matcher, line) {
+    if (ids.has(id)) {
+      throw new Error(`line ${line + 1}: ${matcher} has duplicate id '${id}' (already used by ${ids.get(id)})`);
+    }
+    ids.set(id, `${matcher} on line ${line + 1}`);
+  }
+
+  visit(source, {
+    onObjectProperty(key, _offset, _length, line, _column, getPath) {
+      const parent = getPath();
+      if (parent.length === 1 && parent[0] === eventMap) {
+        checkEvent(key, line);
+      } else if (parent.length === 0 && key === eventMap) {
+        if (eventMapLine !== null) {
+          throw new Error(`line ${line + 1}: duplicate root key '${key}' (first on line ${eventMapLine})`);
+        }
+        eventMapLine = line + 1;
+      } else if (parent.length === 0 && eventMap === 'hooks' && eventMapLine === null) {
+        rootProperties.push({ key, line });
+      }
+    },
+    onLiteralValue(value, _offset, _length, line, _column, getPath) {
+      if (!isNonEmptyString(value)) return;
+      const location = getPath();
+      const [event, index, field] = location.slice(-3);
+      if (field !== 'id' || typeof event !== 'string' || typeof index !== 'number') return;
+
+      const matcher = `${event}[${index}]`;
+      if (location.length === 4 && location[0] === eventMap) {
+        checkId(value, matcher, line);
+      } else if (location.length === 3 && eventMap === 'hooks' && eventMapLine === null) {
+        unwrappedIds.push({ id: value, matcher, line });
+      }
+    },
+  });
+
+  // A hooks wrapper can appear after other root properties. Only an unwrapped
+  // manifest uses those root properties as its event map.
+  if (eventMapLine === null) {
+    for (const { key, line } of rootProperties) checkEvent(key, line);
+    for (const { id, matcher, line } of unwrappedIds) checkId(id, matcher, line);
+  }
+}
+
+function readHookDocument(file, eventMap) {
+  const name = path.basename(file);
+  try {
+    const source = fs.readFileSync(file, 'utf-8');
+    checkHookDuplicates(source, eventMap);
+    return JSON.parse(source);
+  } catch (error) {
+    const label = error instanceof SyntaxError ? `Invalid JSON in ${name}` : name;
+    console.error(`ERROR: ${label}: ${error.message}`);
+    process.exit(1);
+  }
+}
+
 function readHooksFile() {
   if (!fs.existsSync(HOOKS_FILE)) {
     console.log('No hooks.json found, skipping validation');
     process.exit(0);
   }
 
-  let data;
-  try {
-    data = JSON.parse(fs.readFileSync(HOOKS_FILE, 'utf-8'));
-  } catch (e) {
-    console.error(`ERROR: Invalid JSON in hooks.json: ${e.message}`);
-    process.exit(1);
-  }
-  return data;
+  return readHookDocument(HOOKS_FILE, 'hooks');
 }
 
 /**
@@ -317,13 +383,7 @@ function loadMetadata(data, metadataPath) {
     return null;
   }
 
-  let metadata;
-  try {
-    metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
-  } catch (e) {
-    console.error(`ERROR: Invalid JSON in ${METADATA_FILENAME}: ${e.message}`);
-    process.exit(1);
-  }
+  let metadata = readHookDocument(metadataPath, 'entries');
 
   if (validateHarnessCompatibility(data)) {
     process.exit(1);
@@ -368,24 +428,16 @@ function validateHookEntries(entries, label) {
 }
 
 /**
- * Validate one matcher of the object format. `ids` tracks stable ids when the
- * document requires them, and is null otherwise.
+ * Validate one matcher of the object format.
  * @returns {boolean} true if errors were found
  */
-function validateObjectMatcher(eventType, index, matcher, ids) {
+function validateObjectMatcher(eventType, index, matcher, requiresStableIds) {
   const matcherLabel = `${eventType}[${index}]`;
   let hasErrors = false;
 
-  if (ids && !isNonEmptyString(matcher.id)) {
+  if (requiresStableIds && !isNonEmptyString(matcher.id)) {
     console.error(`ERROR: ${matcherLabel} missing or invalid 'id' field`);
     hasErrors = true;
-  } else if (ids && ids.has(matcher.id)) {
-    console.error(
-      `ERROR: ${matcherLabel} has duplicate id '${matcher.id}' (already used by ${ids.get(matcher.id)})`
-    );
-    hasErrors = true;
-  } else if (ids) {
-    ids.set(matcher.id, matcherLabel);
   }
 
   if (!('matcher' in matcher) && !EVENTS_WITHOUT_MATCHER.has(eventType)) {
@@ -411,7 +463,6 @@ function validateObjectMatcher(eventType, index, matcher, ids) {
  * @returns {{ hasErrors: boolean, totalMatchers: number }}
  */
 function validateObjectFormat(hooks, requiresStableIds) {
-  const ids = requiresStableIds ? new Map() : null;
   let hasErrors = false;
   let totalMatchers = 0;
 
@@ -435,7 +486,7 @@ function validateObjectFormat(hooks, requiresStableIds) {
         hasErrors = true;
         continue;
       }
-      if (validateObjectMatcher(eventType, i, matcher, ids)) {
+      if (validateObjectMatcher(eventType, i, matcher, requiresStableIds)) {
         hasErrors = true;
       }
       totalMatchers++;

@@ -63,6 +63,11 @@
         "id": "prompt:hookify-runtime",
         "description": "Evaluate project-local Hookify prompt rules before a user prompt is processed",
         "fingerprint": "e59b2f099bf7"
+      },
+      {
+        "id": "user-prompt:context-gate",
+        "description": "Opt-in checkpoint-and-restart gate (ECC_CONTEXT_GATE_MODE=enforce): at >=90% context, order a clean stopping point, a session-scoped checkpoint under the handoff dir, and a fresh-session resume command. Default mode is advisory — inert, suppresses nothing",
+        "fingerprint": "13d8180d18ec"
       }
     ],
     "PreCompact": [

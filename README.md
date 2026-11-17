@@ -263,7 +263,7 @@ npx ecc-universal@2.2.3 doctor --target kimi
 
 Do not use `npx ecc-install --profile minimal --target claude`: `ecc-install` is a binary name inside `ecc-universal`, not a separately published npm package.
 
-ECC also ships advanced managed adapters for `cursor`, `antigravity`, `gemini`, `opencode`, `codebuddy`, `joycode`, `qwen`, `zed`, `hermes`, and `openclaw`. Those targets still use their documented `ecc install --target ...` paths until each adapter has passed the guided collision, update, repair, and uninstall lifecycle matrix. Neither wizard silently installs into every detected harness.
+ECC also ships advanced managed adapters for `cursor`, `antigravity`, `antigravity-home`, `gemini`, `opencode`, `codebuddy`, `joycode`, `qwen`, `zed`, `hermes`, `openclaw`, and `mistral-vibe`. Those targets still use their documented `ecc install --target ...` paths until each adapter has passed the guided collision, update, repair, and uninstall lifecycle matrix. Neither wizard silently installs into every detected harness.
 
 ### Pick one path only (per harness)
 
@@ -413,7 +413,7 @@ the [.qoder-plugin notes](.qoder-plugin/README.md) for the exact boundary.
 ### Other agents and editors
 
 <details>
-<summary><strong>Cursor, OpenCode, Gemini, Zed, Antigravity, Qwen, Hermes, OpenClaw, Kimi, CodeBuddy, JoyCode, Copilot</strong></summary>
+<summary><strong>Cursor, OpenCode, Gemini, Zed, Antigravity, Qwen, Hermes, OpenClaw, Kimi, Mistral Vibe, CodeBuddy, JoyCode, Copilot</strong></summary>
 
 Clone ECC once, then choose the target that matches your harness:
 
@@ -428,11 +428,13 @@ cd ECC
 | OpenCode | `npm install && npm run build:opencode && ./install.sh --profile full --target opencode --enable-hooks` | Builds the plugin payload before the full install |
 | Gemini CLI | `./install.sh --profile minimal --target gemini` | Project-local `.gemini/` config |
 | Zed | `./install.sh --profile minimal --target zed` | Project-local `.zed/` adapter |
-| Antigravity | `./install.sh --profile minimal --target antigravity` | See the [Antigravity guide](docs/ANTIGRAVITY-GUIDE.md) |
+| Antigravity (Global Plugin) | `./install.sh --target antigravity-home --profile core --enable-hooks` | Experimental global plugin (`~/.gemini/config/plugins/ecc/`) with lifecycle hooks · [Guide](docs/ANTIGRAVITY-GUIDE.md) |
+| Antigravity (Project-Local) | `./install.sh --target antigravity --profile minimal` | Project-local `.agents/` adapter · [Guide](docs/ANTIGRAVITY-GUIDE.md) |
 | Qwen CLI | `./install.sh --profile minimal --target qwen` | See the [Qwen guide](docs/QWEN-GUIDE.md) |
 | Hermes | `./install.sh --profile minimal --target hermes` | See the [Hermes setup guide](docs/HERMES-SETUP.md) |
 | OpenClaw | `./install.sh --profile minimal --target openclaw` | Managed home-directory install |
 | Kimi Code CLI | `./install.sh --profile minimal --target kimi` | Project-local `.kimi-code/` install · [Get Kimi Code](https://www.kimi.ai/code?aff=ecc) |
+| Mistral Vibe | `./install.sh --target mistral-vibe --skills tdd-workflow` | Project-local `.vibe/skills/` install · [Mistral Vibe guide](docs/MISTRAL-VIBE-GUIDE.md) |
 | CodeBuddy | `./install.sh --profile minimal --target codebuddy` | Project-local `.codebuddy/` install |
 | JoyCode | `./install.sh --profile minimal --target joycode` | Project-local `.joycode/` install |
 | GitHub Copilot | `./install.sh --profile full --target copilot` | Installs skills to `.github/skills/` and agents to `.github/agents/` for Copilot CLI |
@@ -1065,6 +1067,7 @@ ECC/
 |   |   |-- session-end.js       # Save state on session end
 |   |   |-- pre-compact.js       # Pre-compaction state saving
 |   |   |-- suggest-compact.js   # Strategic compaction suggestions
+|   |   |-- context-gate.js      # Opt-in checkpoint-and-restart gate at 90% context (ECC_CONTEXT_GATE_MODE=enforce; advisory by default)
 |   |   |-- evaluate-session.js  # Extract patterns from sessions
 |   |-- setup-package-manager.js # Interactive PM setup
 |
@@ -1330,12 +1333,13 @@ Treat `stable`, `beta`, `experimental`, and `instruction-only` below as capabili
 |---|---|---|---|
 | Claude Code | Stable primary | Plugin or selective installer | The plugin advertises the installed catalog to the model; use a selective/manual profile when context footprint matters. Optional shell-backed skills are not portable to every OS. |
 | Codex | Supported native plugin | Codex marketplace plugin or repo config | Native hooks require an explicit trust decision and do not use Claude's hook profiles. The legacy sync is compatibility-only. |
+| Antigravity | Experimental native plugin adapter | Antigravity 2.0/IDE plugin (`~/.gemini/config/plugins/ecc`) or project `.agents/` | Profile-gated lifecycle hooks, rules, workflows, skills, and memory MCP. CLI 1.3.5 validates local import; authenticated native tool and Stop execution remain unverified. |
 | Qoder | Supported native plugin | Local plugin directory in Qoder CLI or ZIP upload in Qoder IDE | Loads the canonical skills, agents, commands, and MCP config; only the reviewed SessionStart hook is enabled, and Node.js 18+ must be on the non-interactive PATH. |
 | Cursor | Beta project adapter | Selective installer into `.cursor/` | Agent discovery varies by Cursor build; hook events use profile-gated dispatchers, but full Claude feature parity is not claimed. |
 | OpenCode | Beta built plugin | Build plugin, then selective installer | ECC ships a subset of the catalog; connect a provider and select a model in OpenCode ([#2617](https://github.com/affaan-m/ECC/issues/2617)). |
 | GitHub Copilot Chat | Instruction-only | Checked-in instructions and prompt files | ECC hooks are not adapted. |
 | GitHub Copilot CLI | Beta project adapter | `--target copilot` places skills, adapted agents, and converted rules in `.github/` | ECC hooks and command shims are not installed by this target. |
-| Gemini, Zed, Antigravity, Qwen, Hermes, OpenClaw, Kimi, CodeBuddy, JoyCode | Experimental/minimal adapters | Harness-specific selective target | File placement and instruction portability are tested; full Claude feature parity is not claimed. |
+| Gemini, Zed, Qwen, Hermes, OpenClaw, Kimi, Mistral Vibe, CodeBuddy, JoyCode | Experimental/minimal adapters | Harness-specific selective target | File placement and instruction portability are tested; full Claude feature parity is not claimed. |
 
 <details>
 <summary><strong>Package manager detection</strong></summary>

@@ -66,6 +66,7 @@ const PLATFORM_SOURCE_PATH_OWNERS = Object.freeze({
   '.hermes': 'hermes',
   '.kimi': 'kimi',
   '.kimi-code': 'kimi',
+  '.vibe': 'mistral-vibe',
   '.joycode': 'joycode',
   '.opencode': 'opencode',
   '.openclaw': 'openclaw',
@@ -385,6 +386,13 @@ function createInstallTargetAdapter(config) {
         return config.resolveRoot(input, baseRoot);
       }
       return path.join(baseRoot, ...adapter.rootSegments);
+    },
+    resolveTrustedRoots(input = {}) {
+      const root = adapter.resolveRoot(input);
+      if (typeof config.resolveTrustedRoots === 'function') {
+        return config.resolveTrustedRoots(input, root);
+      }
+      return [root];
     },
     getInstallStatePath(input = {}) {
       const root = adapter.resolveRoot(input);

@@ -51,6 +51,15 @@ function renameAtomic(tempPath, resolvedPath, options) {
   }
 }
 
+function readExistingFileMode(filePath) {
+  try {
+    return fs.statSync(filePath).mode & 0o777;
+  } catch (error) {
+    if (error.code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+
 function writeFileAtomic(filePath, content, options = {}) {
   const resolvedPath = path.resolve(filePath);
   const parentDir = path.dirname(resolvedPath);
@@ -66,9 +75,12 @@ function writeFileAtomic(filePath, content, options = {}) {
   let descriptor;
   try {
     if (options.validateParent) options.validateParent();
-    descriptor = fs.openSync(tempPath, 'wx', mode);
+    const existingMode = options.preserveExistingMode ? readExistingFileMode(resolvedPath) : undefined;
+    descriptor = fs.openSync(tempPath, 'wx', existingMode ?? mode);
     if (options.validateParent) options.validateParent();
     fs.writeFileSync(descriptor, content, { encoding: options.encoding || 'utf8' });
+    // Restore existing permissions after writing, without applying the process umask a second time.
+    if (existingMode !== undefined) fs.fchmodSync(descriptor, existingMode);
     fs.fsyncSync(descriptor);
     fs.closeSync(descriptor);
     descriptor = undefined;

@@ -61,10 +61,47 @@ const COMMIT_OPTIONS_WITH_VALUE = new Set([
   '--template',
   '--fixup',
   '--squash',
-  '--pathspec-from-file'
+  '--pathspec-from-file',
+  // `git commit --trailer --no-verify` adds a trailer whose value is
+  // `--no-verify`; git still runs the hooks.
+  '--trailer'
 ]);
 
-const COMMIT_OPTIONS_WITH_INLINE_VALUE = ['--message=', '--file=', '--reuse-message=', '--reedit-message=', '--author=', '--date=', '--template=', '--fixup=', '--squash=', '--pathspec-from-file='];
+const COMMIT_OPTIONS_WITH_INLINE_VALUE = ['--message=', '--file=', '--reuse-message=', '--reedit-message=', '--author=', '--date=', '--template=', '--fixup=', '--squash=', '--pathspec-from-file=', '--trailer='];
+
+// `git push` options that consume the following token. Their value is sent or
+// executed verbatim, so `git push --push-option --no-verify` runs pre-push.
+// `--force-with-lease` is deliberately absent: its value is optional and
+// inline-only, so the bare form consumes nothing and a following
+// `--no-verify` is a real flag.
+const PUSH_OPTIONS_WITH_VALUE = new Set(['-o', '--push-option', '--receive-pack', '--exec', '--repo']);
+
+/**
+ * Return true when a token is a value-taking option, or an abbreviation that
+ * names exactly one value-taking long option in `optionsWithValue`.
+ *
+ * Git accepts any unambiguous long-option prefix, so `--mes` consumes the next
+ * token just like `--message`. Resolving against value-taking options alone is
+ * safe only because Git refuses a prefix that is ambiguous across its complete
+ * option table: a prefix that is unique here but also matches a boolean option
+ * (`git commit --s`) makes Git exit before any hook decision. Ambiguous
+ * prefixes within this set resolve to nothing, so `--no-verify` after them is
+ * still caught. The inline `--option=value` form is one token and never
+ * consumes the next one.
+ *
+ * @param {string} value
+ * @param {Set<string>} optionsWithValue
+ * @returns {boolean}
+ */
+function optionConsumesNextValue(value, optionsWithValue) {
+  if (optionsWithValue.has(value)) return true;
+  if (!value.startsWith('--') || value.length <= 2 || value.includes('=')) return false;
+  let matches = 0;
+  for (const option of optionsWithValue) {
+    if (option.startsWith('--') && option.startsWith(value)) matches++;
+  }
+  return matches === 1;
+}
 
 // Short options that take a value. When seen as part of a combined
 // short-option token (e.g. -tn), git's parser treats the rest of the
@@ -88,7 +125,7 @@ function commitOptionConsumesNextValue(value) {
     return false;
   }
 
-  if (COMMIT_OPTIONS_WITH_VALUE.has(value)) {
+  if (optionConsumesNextValue(value, COMMIT_OPTIONS_WITH_VALUE)) {
     return true;
   }
 
@@ -267,6 +304,7 @@ function findGitBypassFlag(words, budget, start, command) {
       if (commitOptionConsumesNextValue(value)) { skipNext = true; continue; }
       if (commitOptionContainsInlineValue(value)) continue;
     }
+    if (command === 'push' && optionConsumesNextValue(value, PUSH_OPTIONS_WITH_VALUE)) { skipNext = true; continue; }
     if (isNoVerifyLongFlag(value) || (command === 'commit' && isCommitNoVerifyShortFlag(value))) return true;
   }
   return false;
