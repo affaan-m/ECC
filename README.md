@@ -1067,6 +1067,7 @@ ECC/
 |   |   |-- session-end.js       # Save state on session end
 |   |   |-- pre-compact.js       # Pre-compaction state saving
 |   |   |-- suggest-compact.js   # Strategic compaction suggestions
+|   |   |-- context-gate.js      # Opt-in checkpoint-and-restart gate at 90% context (ECC_CONTEXT_GATE_MODE=enforce; advisory by default)
 |   |   |-- evaluate-session.js  # Extract patterns from sessions
 |   |-- setup-package-manager.js # Interactive PM setup
 |
