@@ -21,7 +21,14 @@ const SECRET_VALUE_PATTERNS = [
 ];
 
 // A CLI flag whose following value is a secret (e.g. --modelApiKey sk-...).
-const SECRET_FLAG_PATTERN = /(^|[-_])(api[-_]?key|apikey|token|secret|password|passwd|auth|credential|access[-_]?key|private[-_]?key)$/i;
+const SECRET_FLAG_PATTERN = /(^|[-_])(api[-_]?key|apikey|token|secret|password|passwd|auth|authorization|credential|access[-_]?key|private[-_]?key)$/i;
+
+function isSecretFlag(flag) {
+  const normalized = flag.replace(/^--?/, '')
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1-$2')
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2');
+  return SECRET_FLAG_PATTERN.test(normalized);
+}
 
 function looksLikeSecretValue(value) {
   if (typeof value !== 'string') {
@@ -56,8 +63,8 @@ function redactArgs(args) {
     }
 
     // Inline form: --flag=secret
-    const inlineMatch = current.match(/^(--?[A-Za-z0-9_-]+)=(.+)$/);
-    if (inlineMatch && (SECRET_FLAG_PATTERN.test(inlineMatch[1].replace(/^--?/, '')) || looksLikeSecretValue(inlineMatch[2]))) {
+    const inlineMatch = current.match(/^(--?[A-Za-z0-9_-]+)=([\s\S]+)$/);
+    if (inlineMatch && (isSecretFlag(inlineMatch[1]) || looksLikeSecretValue(inlineMatch[2]))) {
       result.push(`${inlineMatch[1]}=${REDACTED}`);
       continue;
     }
@@ -65,7 +72,7 @@ function redactArgs(args) {
     const previous = index > 0 ? list[index - 1] : null;
     const followsSecretFlag = typeof previous === 'string'
       && /^--?[A-Za-z0-9_-]+$/.test(previous)
-      && SECRET_FLAG_PATTERN.test(previous.replace(/^--?/, ''));
+      && isSecretFlag(previous);
 
     if (followsSecretFlag || looksLikeSecretValue(current)) {
       result.push(REDACTED);
