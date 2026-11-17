@@ -312,6 +312,42 @@ function runTests() {
     }), 'prohibition');
   })) passed++; else failed++;
 
+  if (test('instinctMatchKind does not forbid the name recommended before a prohibition', () => {
+    const { instinctMatchKind } = loadStore();
+    const instinct = {
+      id: 'use-barwidget-not-foowidget',
+      confidence: 0.91,
+      trigger: 'when rendering widgets',
+      content: 'Use `barWidget` and never use `fooWidget`',
+    };
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: '/src/view.js',
+      content: 'barWidget()',
+    }), 'guidance');
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: '/src/view.js',
+      content: 'fooWidget()',
+    }), 'prohibition');
+  })) passed++; else failed++;
+
+  if (test('instinctMatchKind forbids every quoted subject joined to a prohibition', () => {
+    const { instinctMatchKind } = loadStore();
+    const instinct = {
+      id: 'no-prod-config-edits-pair',
+      confidence: 0.91,
+      trigger: 'when changing config',
+      content: '`config.prod.json` and `secrets.json` should never be edited',
+    };
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: '/app/secrets.json',
+      contents: '{}',
+    }), 'prohibition');
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: '/app/config.prod.json',
+      contents: '{}',
+    }), 'prohibition');
+  })) passed++; else failed++;
+
   if (test('instinctMatchKind does not forbid a context opened without a comma', () => {
     const { instinctMatchKind } = loadStore();
     const instinct = {

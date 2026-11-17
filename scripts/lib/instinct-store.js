@@ -32,6 +32,9 @@ const NEVER_TOKEN_STOPWORDS = new Set([
 // Words that open an introductory context before a prohibition: in "When
 // editing `helpers.js` never use `fooWidget`" only `fooWidget` is forbidden.
 const CONTEXT_OPENER_RE = /^\s*(?:when|whenever|if|while|before|after|during|unless|once)\b/i;
+// A subject written before a prohibition is joined to it by an auxiliary
+// ("`config.prod.json` must never be edited") or stands alone as a quoted name.
+const SUBJECT_AUXILIARY_RE = /\b(?:must|should|shall|can|could|may|might|will|would|is|are|was|were|to)\s*$/i;
 // Words that end the prohibited part of a sentence: in "Never use `foo`,
 // always prefer `bar`" only `foo` is forbidden.
 const AFFIRMATIVE_MARKER_RE = /\b(?:always|prefer|preferring|instead|rather|but)\b/i;
@@ -289,14 +292,18 @@ function maskQuotedSpans(text) {
 
 // Text before the first prohibition marker is either the subject of the
 // prohibition ("`config.prod.json` must never be edited"), which stays
-// forbidden, or an introductory context ("When editing `helpers.js`, never use
-// `fooWidget`"), which does not. Context is the part up to the last comma
-// before the marker, or all of it when it opens with a condition word.
+// forbidden, or context or a recommendation ("When editing `helpers.js`, never
+// use `fooWidget`", "Use `barWidget` and never use `fooWidget`"), which does
+// not. Only the part after the last comma is considered, and it is a subject
+// when it ends in an auxiliary before the marker or holds nothing but quoted
+// names.
 function forbiddenStart(masked, markerIndex) {
   const before = masked.slice(0, markerIndex);
-  const comma = before.lastIndexOf(',');
-  if (comma !== -1) return comma + 1;
-  return CONTEXT_OPENER_RE.test(before) ? markerIndex : 0;
+  const segmentStart = Math.max(before.lastIndexOf(','), before.lastIndexOf(';')) + 1;
+  const segment = before.slice(segmentStart);
+  if (CONTEXT_OPENER_RE.test(segment)) return markerIndex;
+  if (SUBJECT_AUXILIARY_RE.test(segment) || !/\w/.test(segment)) return segmentStart;
+  return markerIndex;
 }
 
 // The forbidden part of a clause runs from forbiddenStart through the
