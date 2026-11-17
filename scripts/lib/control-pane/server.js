@@ -111,15 +111,24 @@ function runAction(action, options = {}) {
     const readStdout = captureActionOutput(child.stdout);
     const readStderr = captureActionOutput(child.stderr);
     let settled = false;
+    let timedOut = false;
+    let killTimeout;
     const timeout = setTimeout(() => {
       if (!settled) {
+        timedOut = true;
         child.kill('SIGTERM');
+        // Allow cleanup, then stop a direct child that ignores SIGTERM.
+        killTimeout = setTimeout(() => {
+          if (!settled) child.kill('SIGKILL');
+        }, 1000);
+        killTimeout.unref();
       }
     }, timeoutMs);
 
     child.on('error', error => {
       settled = true;
       clearTimeout(timeout);
+      clearTimeout(killTimeout);
       resolve({
         ok: false,
         action: action.id,
@@ -134,13 +143,15 @@ function runAction(action, options = {}) {
     child.on('close', (code, signal) => {
       settled = true;
       clearTimeout(timeout);
+      clearTimeout(killTimeout);
       resolve({
-        ok: code === 0,
+        ok: code === 0 && !timedOut,
         action: action.id,
         startedAt,
         finishedAt: new Date().toISOString(),
         code,
         signal,
+        ...(timedOut ? { timedOut: true, error: `Action timed out after ${timeoutMs} ms.` } : {}),
         stdout: readStdout(),
         stderr: readStderr()
       });
