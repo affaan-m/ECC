@@ -110,16 +110,22 @@ function rewriteRelativeLinks(content, options) {
   const installedSourceDir = posix.dirname(installedSource);
   const sourceDir = posix.dirname(normalizedSource);
   const lines = String(content).split('\n');
-  let inFence = false;
+  let fence = null;
 
   for (let i = 0; i < lines.length; i += 1) {
-    const fenceToggle = /^\s*(```|~~~)/.test(lines[i]);
-    if (fenceToggle) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) {
+    const marker = /^[ \t]*(`{3,}|~{3,})/.exec(lines[i]);
+    const info = marker ? lines[i].slice(marker[0].length) : '';
+    if (fence) {
+      // A shorter run, the other marker type, or trailing text is code content.
+      if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length && /^[ \t]*\r?$/.test(info)) {
+        fence = null;
+      }
       continue; // never rewrite inside fenced code blocks
+    }
+    if (marker) {
+      if (marker[1][0] === '~' || !info.includes('`')) fence = marker[1];
+      // Fence-like inline code remains literal without opening a block.
+      continue;
     }
 
     lines[i] = lines[i].replace(
