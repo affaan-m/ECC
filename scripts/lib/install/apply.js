@@ -780,6 +780,15 @@ function prepareAntigravityHookDeactivation(plan, migration, previousState) {
 }
 
 function prepareHookConsentMigration(plan, migration) {
+  if (plan.target === 'copilot' && plan.hookConsent === 'enabled') {
+    // A preserved user file must never become part of the automatic hook runtime.
+    const conflict = migration.skippedOperations.find(operation => (
+      operation.moduleId === 'hooks-runtime' && !isScriptBoundary(operation, plan.targetRoot)
+    ));
+    if (conflict) {
+      throw new Error(`Copilot hook activation requires an ECC-managed file at ${conflict.destinationPath}. Move the existing file or reinstall with --no-hooks.`);
+    }
+  }
   if (plan.target === 'copilot' && plan.hookConsent !== 'enabled') {
     const previousState = readPreviousInstallState(plan);
     if (plan.hookConsent === 'declined') {

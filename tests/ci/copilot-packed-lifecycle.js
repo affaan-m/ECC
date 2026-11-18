@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { verifyCopilotHookInstallOwnership } = require('./copilot-packed-lifecycle-security');
 
 function verifyCopilotPackedLifecycle({ packageRoot, projectRoot, env }) {
   const project = fs.realpathSync(projectRoot);
@@ -42,6 +43,15 @@ function verifyCopilotPackedLifecycle({ packageRoot, projectRoot, env }) {
   fs.mkdirSync(path.dirname(userHook), { recursive: true });
   const userContent = '{"version":1,"hooks":{}}\n';
   fs.writeFileSync(userHook, userContent);
+
+  verifyCopilotHookInstallOwnership({
+    project, manifest, installState,
+    enable(expectedError) {
+      const args = installArgs(withLifecycle, '--enable-hooks');
+      assert.match(run([...args, '--dry-run'], undefined, false), expectedError);
+      assert.match(run(args, undefined, false), expectedError);
+    },
+  });
 
   run(installArgs(withLifecycle, '--enable-hooks'));
   const managedContent = fs.readFileSync(manifest, 'utf8');
@@ -91,6 +101,17 @@ function verifyCopilotPackedLifecycle({ packageRoot, projectRoot, env }) {
   run([path.join(packageRoot, 'scripts/uninstall.js'), '--target', 'copilot', '--json']);
   assert.ok(!fs.existsSync(path.join(project, hooks.sessionStart[0].args[0])));
   assert.equal(fs.readFileSync(userHook, 'utf8'), userContent);
+
+  // A compatible project-owned module boundary is already validated by the installer.
+  const marker = path.join(github, 'ecc', 'scripts', 'package.json');
+  const markerContent = '{"type":"commonjs","private":true}\n';
+  fs.mkdirSync(path.dirname(marker), { recursive: true });
+  fs.writeFileSync(marker, markerContent, { flag: 'wx' });
+  run(installArgs('hooks-runtime', '--enable-hooks'));
+  assert.ok(fs.existsSync(manifest));
+  run([path.join(packageRoot, 'scripts/uninstall.js'), '--target', 'copilot', '--json']);
+  assert.ok(!fs.existsSync(manifest));
+  assert.equal(fs.readFileSync(marker, 'utf8'), markerContent);
 }
 
 module.exports = { verifyCopilotPackedLifecycle };
