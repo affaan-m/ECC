@@ -17,6 +17,7 @@ const {
 // ECC's hooks target Claude Code's event model, and commands rely on
 // slash-command argument substitution Copilot does not provide, so neither is
 // installed here.
+const CONTINUOUS_LEARNING_SKILL = 'skills/continuous-learning-v2';
 const SUPPORTED_SOURCE_PREFIXES = ['agents', 'skills', 'rules'];
 const COPILOT_HELPER_PATHS = new Set([
   'scripts/setup-package-manager.js',
@@ -87,6 +88,19 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
         contentTransform: 'copilot-agent-frontmatter',
       }),
     ];
+  }
+
+  if ([CONTINUOUS_LEARNING_SKILL, `${CONTINUOUS_LEARNING_SKILL}/SKILL.md`].includes(normalizedSourcePath)) {
+    const assets = [
+      ['manifests/install-assets/copilot-learning-skill.md', `${CONTINUOUS_LEARNING_SKILL}/SKILL.md`],
+      ['scripts/copilot-learning.py', 'ecc/scripts/copilot-learning.py'],
+      [`${CONTINUOUS_LEARNING_SKILL}/scripts/instinct-cli.py`, `ecc/${CONTINUOUS_LEARNING_SKILL}/scripts/instinct-cli.py`],
+    ];
+    return assets.map(([sourceRelativePath, destination]) => createManagedOperation({
+      moduleId: module.id,
+      sourceRelativePath,
+      destinationPath: path.join(targetRoot, destination),
+    }));
   }
 
   if (hasPrefix(normalizedSourcePath, 'skills')) {
