@@ -139,6 +139,17 @@ test('pinned-checkout bridges preview, preserve selection and require explicit h
   const updated = invoke(root, 'auto-update', ['--apply', '--enable-hooks'], '', env);
   assert.strictEqual(updated.status, 0, updated.stderr); assert.ok(updated.json.argv.includes('--enable-hooks')); assert.ok(!updated.json.argv.includes('--no-hooks'));
   assert.ok(updated.json.argv.includes('commands-core')); assert.ok(updated.json.argv.includes('capability:security')); assert.ok(updated.json.argv.includes('capability:orchestration'));
+  state.request = { profile: 'minimal', modules: ['security', 'commands-core'], hookConsent: 'declined' };
+  fs.writeFileSync(path.join(root, '.github/ecc-install-state.json'), JSON.stringify(state));
+  const combined = invoke(root, 'auto-update', ['--apply'], '', env);
+  assert.strictEqual(combined.status, 0, combined.stderr);
+  assert.deepStrictEqual(combined.json.argv, [
+    '--target', 'copilot', '--profile', 'minimal', '--modules', 'security,commands-core', '--no-hooks', '--json',
+  ]);
+  state.request.modules = ['../outside'];
+  fs.writeFileSync(path.join(root, '.github/ecc-install-state.json'), JSON.stringify(state));
+  assert.strictEqual(invoke(root, 'auto-update', [], '', env).status, 2);
+  state.request.modules = ['security'];
   state.request.includeComponents = ['../outside']; fs.writeFileSync(path.join(root, '.github/ecc-install-state.json'), JSON.stringify(state));
   assert.strictEqual(invoke(root, 'auto-update', [], '', env).status, 2);
 });

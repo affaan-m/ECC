@@ -29,9 +29,21 @@ function checkoutCommand(action, args, cwd) {
     const selection = state.request || state.installRequest || state.selection;
     if (options['--apply'] && selection?.hookConsent === 'enabled' && !options['--enable-hooks'] && !options['--no-hooks']) throw new Error('Explicitly choose whether to preserve hook activation during update.');
     // Reconstruct supported selection fields only, never executable or path fields.
-    if (selection?.profile && /^[a-z][a-z0-9-]+$/.test(selection.profile)) request = ['--profile', selection.profile];
-    else if (Array.isArray(selection?.modules) && selection.modules.length && selection.modules.every(id => /^[a-z][a-z0-9-]+$/.test(id))) request = ['--modules', selection.modules.join(',')];
-    else throw new Error('Cannot reconstruct a managed reinstall request; use project-init with an explicit profile.');
+    request = [];
+    if (selection?.profile != null) {
+      if (typeof selection.profile !== 'string' || !/^[a-z][a-z0-9-]+$/.test(selection.profile)) {
+        throw new Error('Invalid recorded profile.');
+      }
+      request.push('--profile', selection.profile);
+    }
+    if (selection?.modules != null) {
+      if (!Array.isArray(selection.modules)
+        || selection.modules.some(id => typeof id !== 'string' || !/^[a-z][a-z0-9-]+$/.test(id))) {
+        throw new Error('Invalid recorded module selection.');
+      }
+      if (selection.modules.length) request.push('--modules', selection.modules.join(','));
+    }
+    if (!request.length) throw new Error('Cannot reconstruct a managed reinstall request; use project-init with an explicit profile.');
     for (const [field, flag] of [['includeComponents', '--with'], ['excludeComponents', '--without']]) {
       if (selection[field] !== undefined && (!Array.isArray(selection[field]) || selection[field].length > 100
         || selection[field].some(component => typeof component !== 'string' || !/^[a-z][a-z0-9:-]{0,127}$/.test(component)))) throw new Error('Invalid recorded component selection.');
