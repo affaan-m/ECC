@@ -31,7 +31,7 @@ function readFileWithSharingRetry(filePath, options) {
 // every round until it gives up. Short, fully jittered waits break that
 // lockstep; longer (exponential) waits measurably starve the loser further.
 const DEFAULT_RENAME_RETRY_BUDGET_MS = 2000;
-const RENAME_RETRY_MIN_WAIT_MS = 1;
+const RENAME_RETRY_MIN_WAIT_MS = 5;
 const RENAME_RETRY_MAX_WAIT_MS = 25;
 
 function renameRetryWaitMs(remaining) {
@@ -42,9 +42,11 @@ function renameRetryWaitMs(remaining) {
 
 function renameAtomic(tempPath, resolvedPath, options) {
   // Keep publication bounded by an elapsed budget (callers that are not on a
-  // latency-sensitive hook path may raise it) and a hard attempt cap.
+  // latency-sensitive hook path may raise it). The attempt cap is only a
+  // safety net: size it for the shortest possible wait so it can never end
+  // retries before the elapsed budget does.
   const budget = options.renameRetryBudgetMs || DEFAULT_RENAME_RETRY_BUDGET_MS;
-  const maxAttempts = Math.ceil(budget / 25) + 1;
+  const maxAttempts = Math.ceil(budget / RENAME_RETRY_MIN_WAIT_MS) + 1;
   const deadline = performance.now() + budget;
   let attempts = 0;
   let sleeper;

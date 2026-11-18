@@ -11,6 +11,8 @@ const source = fs.readFileSync(filename, 'utf8');
 
 // Load the actual helper with a local platform/filesystem facade. File creation,
 // fsync, replacement and cleanup remain real; fault injection is module-local.
+// clockStep 'requested' advances the fake clock by exactly the wait the helper
+// asked for, which exposes attempt caps that undercut the elapsed budget.
 function loadHelper(platform, rename, { clockStep = 25, read = fs.readFileSync } = {}) {
   let elapsed = 0;
   let waits = 0;
@@ -24,10 +26,14 @@ function loadHelper(platform, rename, { clockStep = 25, read = fs.readFileSync }
     require: name => name === 'fs' ? filesystem : require(name),
     process: { platform, pid: process.pid },
     performance: { now: () => elapsed },
-    Atomics: { wait: (_buffer, _index, _value, timeout) => { elapsed += clockStep; waits++; timeouts.push(timeout); } },
+    Atomics: { wait: (_buffer, _index, _value, timeout) => {
+      elapsed += clockStep === 'requested' ? timeout : clockStep;
+      waits++;
+      timeouts.push(timeout);
+    } },
     SharedArrayBuffer, Int32Array,
   }, { filename });
-  return { ...module.exports, waits: () => waits, timeouts: () => timeouts };
+  return { ...module.exports, waits: () => waits, timeouts: () => timeouts, elapsed: () => elapsed };
 }
 
 let passed = 0;
@@ -70,7 +76,7 @@ for (const code of ['EPERM', 'EACCES', 'EBUSY']) {
       throw expected;
     });
     assert.throws(() => helper.writeFileAtomic(destination, 'new'), error => error === expected);
-    assert.strictEqual(attempts, 81, 'Hard attempt bound applies even before the deadline');
+    assert.strictEqual(attempts, 81, 'Eighty 25ms waits exhaust the default 2s budget');
     assert.strictEqual(helper.waits(), 80);
     assert.strictEqual(fs.readFileSync(destination, 'utf8'), 'old');
     assert.deepStrictEqual(fs.readdirSync(root), ['state.json']);
@@ -119,6 +125,22 @@ test('Windows callers can raise the rename retry budget', ({ root, destination }
   assert.deepStrictEqual(fs.readdirSync(root), ['state.json']);
 });
 
+for (const budget of [undefined, 10000]) {
+  const expectedBudget = budget || 2000;
+  test(`Windows short jittered waits keep retrying through the full ${expectedBudget}ms budget`, ({ root, destination }) => {
+    let attempts = 0;
+    const expected = sharingError('EPERM');
+    const helper = loadHelper('win32', () => { attempts++; throw expected; }, { clockStep: 'requested' });
+    assert.throws(() => helper.writeFileAtomic(destination, 'new', budget ? { renameRetryBudgetMs: budget } : {}),
+      error => error === expected);
+    assert.ok(Math.abs(helper.elapsed() - expectedBudget) < 1e-6,
+      `Retries stop at the elapsed budget, not an attempt cap (stopped at ${helper.elapsed()}ms)`);
+    assert.ok(attempts > Math.ceil(expectedBudget / 25) + 1, 'Waits shorter than 25ms allow more attempts');
+    assert.strictEqual(fs.readFileSync(destination, 'utf8'), 'old');
+    assert.deepStrictEqual(fs.readdirSync(root), ['state.json']);
+  });
+}
+
 test('Windows rename retries use short jittered waits so contenders fall out of lockstep', ({ destination }) => {
   let attempts = 0;
   const helper = loadHelper('win32', (temporary, target) => {
@@ -130,7 +152,7 @@ test('Windows rename retries use short jittered waits so contenders fall out of 
   const timeouts = helper.timeouts();
   assert.strictEqual(timeouts.length, 40);
   for (const timeout of timeouts) {
-    assert.ok(timeout >= 1 && timeout <= 25, `wait ${timeout}ms stays within [1, 25]`);
+    assert.ok(timeout >= 5 && timeout <= 25, `wait ${timeout}ms stays within [5, 25]`);
   }
   assert.ok(new Set(timeouts).size > 1, 'Waits must vary between attempts');
   assert.strictEqual(fs.readFileSync(destination, 'utf8'), 'new');
