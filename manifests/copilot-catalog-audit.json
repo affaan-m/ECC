@@ -24916,7 +24916,7 @@
       "id": "catalog:scripts/copilot-runtime.js",
       "source": "scripts/copilot-runtime.js",
       "kind": "runtime",
-      "sha256": "bade51b7d9d310cb4b6b187ef7efc0f5df4fa22476dcc53f0203ab1460989aab",
+      "sha256": "050ca91cc74960c882860e40513ab0946ff16d5140601f984bc883f3e06bd972",
       "classification": "external-or-portability-review-required",
       "native_status": "native-unverified",
       "findings": [
@@ -24976,7 +24976,7 @@
         },
         {
           "kind": "external-tool",
-          "line": 41,
+          "line": 57,
           "column": 101,
           "reference": "copilot",
           "context": "executable-candidate",
@@ -24985,7 +24985,7 @@
         },
         {
           "kind": "local-reference",
-          "line": 41,
+          "line": 57,
           "column": 60,
           "reference": "scripts/install-apply.js",
           "context": "executable-candidate",
@@ -24994,7 +24994,7 @@
         },
         {
           "kind": "external-tool",
-          "line": 53,
+          "line": 69,
           "column": 19,
           "reference": "pm2",
           "context": "executable-candidate",

@@ -20929,7 +20929,7 @@
       "id": "runtime:scripts/copilot-runtime.js",
       "kind": "runtime",
       "source": "scripts/copilot-runtime.js",
-      "source_sha256": "bade51b7d9d310cb4b6b187ef7efc0f5df4fa22476dcc53f0203ab1460989aab",
+      "source_sha256": "050ca91cc74960c882860e40513ab0946ff16d5140601f984bc883f3e06bd972",
       "phase": "P10",
       "status": "review-required",
       "required_event": null,

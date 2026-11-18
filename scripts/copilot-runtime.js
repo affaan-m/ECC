@@ -23,6 +23,7 @@ function checkoutCommand(action, args, cwd) {
     return { exitCode: 0, stdout: JSON.stringify({ fetched: true, installed: false,
       next: 'Review the fetched revision, update the trusted checkout, and repin ECC_COPILOT_CHECKOUT_COMMIT before reinstalling.' }), stderr: '' };
   }
+  const enableHooks = options['--enable-hooks'];
   let request = ['--profile', options['--profile'] || 'developer'];
   if (action === 'auto-update') {
     const state = tools.readJson(path.join(cwd, '.github/ecc-install-state.json'));
@@ -41,17 +42,20 @@ function checkoutCommand(action, args, cwd) {
         || selection.modules.some(id => typeof id !== 'string' || !/^[a-z][a-z0-9-]+$/.test(id))) {
         throw new Error('Invalid recorded module selection.');
       }
-      if (selection.modules.length) request.push('--modules', selection.modules.join(','));
+      const modules = enableHooks ? selection.modules : selection.modules.filter(id => id !== 'hooks-runtime');
+      if (modules.length) request.push('--modules', modules.join(','));
     }
-    if (!request.length) throw new Error('Cannot reconstruct a managed reinstall request; use project-init with an explicit profile.');
+    const hasProfileOrModules = request.length > 0;
     for (const [field, flag] of [['includeComponents', '--with'], ['excludeComponents', '--without']]) {
-      if (selection[field] !== undefined && (!Array.isArray(selection[field]) || selection[field].length > 100
-        || selection[field].some(component => typeof component !== 'string' || !/^[a-z][a-z0-9:-]{0,127}$/.test(component)))) throw new Error('Invalid recorded component selection.');
-      request.push(...(selection[field] || []).flatMap(component => [flag, component]));
+      const components = selection?.[field];
+      if (components !== undefined && (!Array.isArray(components) || components.length > 100
+        || components.some(component => typeof component !== 'string' || !/^[a-z][a-z0-9:-]{0,127}$/.test(component)))) throw new Error('Invalid recorded component selection.');
+      request.push(...(components || []).flatMap(component => [flag, component]));
     }
+    if (!hasProfileOrModules && !selection?.includeComponents?.length) throw new Error('Cannot reconstruct a managed reinstall request; use project-init with an explicit profile.');
   }
   return tools.execute(process.execPath, [path.join(root, 'scripts/install-apply.js'), '--target', 'copilot', ...request,
-    ...(options['--apply'] ? [] : ['--dry-run']), options['--enable-hooks'] ? '--enable-hooks' : '--no-hooks', '--json'], cwd);
+    ...(options['--apply'] ? [] : ['--dry-run']), enableHooks ? '--enable-hooks' : '--no-hooks', '--json'], cwd);
 }
 
 async function main() {
