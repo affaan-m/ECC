@@ -130,7 +130,7 @@ test('search-only agent receives search tools without shell access (run_command)
   assert.strictEqual(parsed.tools.includes('run_command'), false);
 });
 
-test('pinned native loader receipt establishes distinct editor and CLI capability boundaries', () => {
+test('transform-only capability fixture establishes distinct editor and CLI capability boundaries', () => {
   const yaml = require('js-yaml');
   const allClaudeTools = 'Read, ReadFile, NotebookRead, Write, Edit, MultiEdit, Grep, Glob, Bash, WebSearch, WebFetch, Task';
   const source = [
