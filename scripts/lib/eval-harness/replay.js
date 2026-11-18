@@ -18,6 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 
+const { writeFileAtomic } = require('../atomic-write');
 const { canonicalJson, hashValue } = require('./canonical');
 const envelope = require('./envelope');
 
@@ -57,7 +58,7 @@ class FixtureStore {
       response_hash: hashValue(response),
       response,
     };
-    fs.writeFileSync(this.pathFor(key), canonicalJson(record) + '\n', 'utf8');
+    writeFileAtomic(this.pathFor(key), canonicalJson(record) + '\n');
     return record;
   }
 
