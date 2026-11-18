@@ -213,11 +213,6 @@ _clv2_pick_install_manager_launcher() {
   _CLV2_LAUNCHER_PATH="$_local/Python/bin/${_candidate}.exe"
 }
 
-_python_install_manager_launcher() {
-  _clv2_pick_install_manager_launcher "$1" || return 1
-  printf '%s\n' "$_CLV2_LAUNCHER_PATH"
-}
-
 # Sets _CLV2_RESOLVED_PYTHON instead of printing, so the hot path can resolve
 # the interpreter without a command-substitution subshell.
 _clv2_pick_python_cmd() {
@@ -247,11 +242,6 @@ _clv2_pick_python_cmd() {
   fi
 
   return 1
-}
-
-resolve_python_cmd() {
-  _clv2_pick_python_cmd || return 1
-  printf '%s\n' "$_CLV2_RESOLVED_PYTHON"
 }
 
 _CLV2_RESOLVED_PYTHON=""
