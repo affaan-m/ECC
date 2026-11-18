@@ -7,8 +7,12 @@
  * cache serves a repeat call from one small file, and these tests pin when it
  * may and may not be trusted:
  *
- *   - a repeat call is a hit, returns the same project, and launches no git
- *   - a changed remote (.git/config newer than the entry) forces re-detection
+ *   - a repeat call is a hit, returns the same project, and launches git once
+ *     (to ask for the origin)
+ *   - a changed origin forces re-detection wherever it is configured: the
+ *     repository config, a file it includes, or the global config
+ *   - an entry that holds an origin git does not report is rejected
+ *   - credentials embedded in the origin never reach the cache file
  *   - an entry from another day forces re-detection
  *   - a missing project directory forces re-detection
  *   - an id that detection could not have produced is rejected
@@ -82,16 +86,17 @@ function makeRepo(parent, name, remote) {
   fs.mkdirSync(repo, { recursive: true });
   git(repo, 'init', '-q');
   if (remote) git(repo, 'remote', 'add', 'origin', remote);
-  // An entry is trusted only while it is strictly newer than .git/config.
-  // Backdate the config so that holds even where mtimes (or the shell's -nt)
-  // only resolve whole seconds.
-  const past = new Date(Date.now() - 10000);
-  fs.utimesSync(path.join(repo, '.git', 'config'), past, past);
   return repo;
 }
 
 function baseEnv(homeDir, extra = {}) {
-  const env = { ...process.env, HOME: homeDir, USERPROFILE: homeDir };
+  // HOME is a fresh directory, so no global git config leaks in. The system
+  // config and any GIT_CONFIG_* overrides from the caller are shut out too.
+  const env = { ...process.env, HOME: homeDir, USERPROFILE: homeDir, GIT_CONFIG_NOSYSTEM: '1' };
+  for (const name of Object.keys(env)) {
+    if (/^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+|GLOBAL|SYSTEM|PARAMETERS)$/.test(name)) delete env[name];
+  }
+  delete env.XDG_CONFIG_HOME;
   delete env.CLAUDE_PROJECT_DIR;
   delete env.CLV2_NO_PROJECT;
   delete env.CLV2_HOMUNCULUS_DIR;
@@ -144,9 +149,11 @@ function gitSpy(dir) {
     ['#!/usr/bin/env bash', `printf '%s\\n' "$*" >> "$GIT_SPY_LOG"`, `exec "${real}" "$@"`, ''].join('\n'),
     { mode: 0o755 }
   );
+  const lines = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : []);
   return {
     env: { PATH: `${binDir}${path.delimiter}${process.env.PATH}`, GIT_SPY_LOG: log },
-    calls: () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).length : 0)
+    calls: () => lines().length,
+    lines
   };
 }
 
@@ -181,7 +188,7 @@ test('a repeat call is served from the cache with identical results', () => {
   }
 });
 
-test('a cache hit launches no git process', () => {
+test('a cache hit launches git once, only to ask for the origin', () => {
   const tmp = createTempDir();
   try {
     const home = path.join(tmp, 'home');
@@ -191,11 +198,32 @@ test('a cache hit launches no git process', () => {
 
     detect(repo, home, spy.env);
     const afterMiss = spy.calls();
-    assert.ok(afterMiss > 0, 'full detection should call git');
+    assert.ok(afterMiss > 1, 'full detection should call git more than once');
 
     const second = detect(repo, home, spy.env);
     assert.strictEqual(second.hit, '1');
-    assert.strictEqual(spy.calls(), afterMiss, 'a cache hit must not call git');
+    const onHit = spy.lines().slice(afterMiss);
+    assert.strictEqual(onHit.length, 1, `a cache hit must call git exactly once, got: ${onHit.join(' | ')}`);
+    assert.match(onHit[0], /remote get-url origin$/, 'the one call must be the origin lookup');
+  } finally {
+    cleanupDir(tmp);
+  }
+});
+
+test('a cached "global" result launches no git process', () => {
+  const tmp = createTempDir();
+  try {
+    const home = path.join(tmp, 'home');
+    fs.mkdirSync(home);
+    const dir = path.join(tmp, 'anywhere');
+    fs.mkdirSync(dir);
+    const spy = gitSpy(tmp);
+
+    detect(dir, home, { ...spy.env, CLV2_NO_PROJECT: '1' });
+    const afterMiss = spy.calls();
+    const second = detect(dir, home, { ...spy.env, CLV2_NO_PROJECT: '1' });
+    assert.strictEqual(second.hit, '1');
+    assert.strictEqual(spy.calls(), afterMiss, 'a cached global result has no origin to confirm');
   } finally {
     cleanupDir(tmp);
   }
@@ -210,14 +238,124 @@ test('a changed remote invalidates the entry and yields the new project id', () 
 
     const first = detect(repo, home);
     git(repo, 'remote', 'set-url', 'origin', 'https://github.com/example/gamma-renamed.git');
-    // Make the config unambiguously newer than the entry, whatever the
-    // filesystem's timestamp granularity.
-    const future = new Date(Date.now() + 5000);
-    fs.utimesSync(path.join(repo, '.git', 'config'), future, future);
+    // The decision must not depend on file times: make the config look older
+    // than the cache entry.
+    const past = new Date(Date.now() - 3600 * 1000);
+    fs.utimesSync(path.join(repo, '.git', 'config'), past, past);
 
     const second = detect(repo, home);
-    assert.strictEqual(second.hit, '0', 'a newer .git/config must force re-detection');
+    assert.strictEqual(second.hit, '0', 'a different origin must force re-detection');
     assert.notStrictEqual(second.id, first.id, 'the project id must follow the new remote');
+
+    const third = detect(repo, home);
+    assert.strictEqual(third.hit, '1', 'the re-detected result is cached again');
+    assert.strictEqual(third.id, second.id);
+  } finally {
+    cleanupDir(tmp);
+  }
+});
+
+test('an origin changed in an included config file invalidates the entry', () => {
+  const tmp = createTempDir();
+  try {
+    const home = path.join(tmp, 'home');
+    fs.mkdirSync(home);
+    const repo = makeRepo(tmp, 'gamma-inc');
+    const included = path.join(tmp, 'remote.inc');
+    const writeIncluded = (url) =>
+      fs.writeFileSync(included, `[remote "origin"]\n\turl = ${url}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n`);
+    writeIncluded('https://github.com/example/included-a.git');
+    git(repo, 'config', 'include.path', included);
+
+    const first = detect(repo, home);
+    assert.strictEqual(detect(repo, home).hit, '1', 'unchanged included origin is a hit');
+
+    // .git/config itself is untouched; only the included file changes.
+    writeIncluded('https://github.com/example/included-b.git');
+    const second = detect(repo, home);
+    assert.strictEqual(second.hit, '0', 'an origin changed in an included file must force re-detection');
+    assert.notStrictEqual(second.id, first.id, 'the project id must follow the included origin');
+  } finally {
+    cleanupDir(tmp);
+  }
+});
+
+test('an origin rewritten by the global config invalidates the entry', () => {
+  const tmp = createTempDir();
+  try {
+    const home = path.join(tmp, 'home');
+    fs.mkdirSync(home);
+    const repo = makeRepo(tmp, 'gamma-global', 'https://github.com/example/global-a.git');
+
+    const first = detect(repo, home);
+    assert.strictEqual(detect(repo, home).hit, '1');
+
+    // url.<base>.insteadOf in ~/.gitconfig changes what git reports as origin.
+    fs.writeFileSync(
+      path.join(home, '.gitconfig'),
+      '[url "https://mirror.example/"]\n\tinsteadOf = https://github.com/\n'
+    );
+    const second = detect(repo, home);
+    assert.strictEqual(second.hit, '0', 'an origin rewritten outside the repository must force re-detection');
+    assert.notStrictEqual(second.id, first.id);
+  } finally {
+    cleanupDir(tmp);
+  }
+});
+
+test('an entry holding an origin git does not report is rejected', () => {
+  const tmp = createTempDir();
+  try {
+    const home = path.join(tmp, 'home');
+    fs.mkdirSync(home);
+    const repo = makeRepo(tmp, 'gamma-race', 'https://github.com/example/race-b.git');
+
+    const first = detect(repo, home);
+    // What a detection that raced a config change would leave behind: an
+    // entry derived from origin A while the repository now says B.
+    const [entry] = cacheEntries(home);
+    rewriteCacheLine(entry, 6, 'https://github.com/example/race-a.git');
+
+    const second = detect(repo, home);
+    assert.strictEqual(second.hit, '0', 'an entry for another origin must not be trusted');
+    assert.strictEqual(second.id, first.id);
+  } finally {
+    cleanupDir(tmp);
+  }
+});
+
+test('a repository without an origin is cached until one is added', () => {
+  const tmp = createTempDir();
+  try {
+    const home = path.join(tmp, 'home');
+    fs.mkdirSync(home);
+    const repo = makeRepo(tmp, 'gamma-local');
+
+    const first = detect(repo, home);
+    assert.strictEqual(detect(repo, home).hit, '1', 'no origin then, no origin now: a hit');
+
+    git(repo, 'remote', 'add', 'origin', 'https://github.com/example/gamma-local.git');
+    const second = detect(repo, home);
+    assert.strictEqual(second.hit, '0', 'a newly added origin must force re-detection');
+    assert.notStrictEqual(second.id, first.id);
+  } finally {
+    cleanupDir(tmp);
+  }
+});
+
+test('credentials embedded in the origin are not written to the cache', () => {
+  const tmp = createTempDir();
+  try {
+    const home = path.join(tmp, 'home');
+    fs.mkdirSync(home);
+    const repo = makeRepo(tmp, 'gamma-cred', 'https://someuser:not-a-real-token@github.com/example/cred.git');
+
+    detect(repo, home);
+    const [entry] = cacheEntries(home);
+    const text = fs.readFileSync(entry, 'utf8');
+    assert.ok(!text.includes('not-a-real-token'), 'the cache entry must not hold the credential');
+    assert.ok(text.includes('https://github.com/example/cred.git'), 'the entry holds the origin without credentials');
+    assert.strictEqual(detect(repo, home).hit, '1', 'the stripped origin still matches on the next call');
   } finally {
     cleanupDir(tmp);
   }
@@ -352,7 +490,7 @@ test('an explicit CLV2_NO_PROJECT=1 result is cached under its own key', () => {
   }
 });
 
-test('a linked worktree is never cached (its config lives outside the worktree)', () => {
+test('a linked worktree is never cached (it has no .git directory of its own)', () => {
   const tmp = createTempDir();
   try {
     const home = path.join(tmp, 'home');
@@ -365,7 +503,7 @@ test('a linked worktree is never cached (its config lives outside the worktree)'
     const first = detect(worktree, home);
     const second = detect(worktree, home);
     assert.match(first.id, /^[0-9a-f]{12}$/);
-    assert.strictEqual(second.hit, '0', 'a worktree has no watchable .git/config, so it must not be cached');
+    assert.strictEqual(second.hit, '0', 'a worktree has no .git directory of its own, so it must not be cached');
     assert.strictEqual(second.id, first.id);
 
     // Adding a remote in the main repository changes the id; the worktree
@@ -453,6 +591,79 @@ test('observe.sh records the same project on a cache hit as on a miss', () => {
       { id: records[1].project_id, name: records[1].project_name, event: records[1].event },
       { id: records[0].project_id, name: records[0].project_name, event: 'tool_start' }
     );
+  } finally {
+    cleanupDir(tmp);
+  }
+});
+
+function runObserve(repo, home, payload) {
+  const r = spawnSync('bash', [observePath, 'pre'], {
+    cwd: repo,
+    input: payload,
+    encoding: 'utf8',
+    timeout: 60000,
+    env: baseEnv(home, { CLAUDE_CODE_ENTRYPOINT: 'cli', ECC_HOOK_PROFILE: 'standard', ECC_SKIP_OBSERVE: '0' })
+  });
+  assert.strictEqual(r.status, 0, `observe.sh should exit 0, stderr: ${r.stderr}`);
+}
+
+test('observe.sh housekeeping runs once a day whoever filled the detection cache', () => {
+  const tmp = createTempDir();
+  try {
+    const home = path.join(tmp, 'home');
+    fs.mkdirSync(home);
+    const repo = makeRepo(tmp, 'mu', 'https://github.com/example/mu.git');
+    const payload = JSON.stringify({ session_id: 'hk', cwd: repo, tool_name: 'Read', tool_input: {} });
+
+    runObserve(repo, home, payload);
+    const projectsDir = path.join(homunculusDir(home), 'projects');
+    const projectDir = path.join(projectsDir, fs.readdirSync(projectsDir)[0]);
+    const observations = path.join(projectDir, 'observations.jsonl');
+    const marker = path.join(projectDir, '.housekeeping-day');
+    const archiveDir = path.join(projectDir, 'observations.archive');
+    assert.match(fs.readFileSync(marker, 'utf8').trim(), /^\d{8}$/, 'the first call records the housekeeping day');
+
+    // Over the size cap, housekeeping already done today: nothing is archived.
+    fs.appendFileSync(observations, `${'x'.repeat(1024 * 1024 - 1)}\n`.repeat(11));
+    runObserve(repo, home, payload);
+    const archived = () => (fs.existsSync(archiveDir) ? fs.readdirSync(archiveDir).length : 0);
+    assert.strictEqual(archived(), 0, 'housekeeping must not repeat on the same day');
+
+    // The cache is filled (as another caller of detect-project.sh would leave
+    // it) but this project has had no housekeeping today: it must run.
+    fs.rmSync(marker);
+    assert.strictEqual(cacheEntries(home).length, 1);
+    runObserve(repo, home, payload);
+    assert.strictEqual(archived(), 1, 'the oversized file must be archived on a cache hit');
+    assert.ok(fs.existsSync(marker), 'the housekeeping day is recorded again');
+  } finally {
+    cleanupDir(tmp);
+  }
+});
+
+test('observe.sh keeps a payload cwd whose name contains a newline intact', () => {
+  const tmp = createTempDir();
+  try {
+    const home = path.join(tmp, 'home');
+    fs.mkdirSync(home);
+    // "line\nbreak" is one directory; "line break" is a different, real
+    // repository that must not be selected in its place.
+    const odd = path.join(tmp, 'line\nbreak');
+    fs.mkdirSync(odd);
+    makeRepo(tmp, 'line break', 'https://github.com/example/decoy.git');
+    const payload = JSON.stringify({ session_id: 'nl', cwd: odd, tool_name: 'Read', tool_input: {} });
+
+    runObserve(tmp, home, payload);
+
+    const hom = homunculusDir(home);
+    assert.ok(!fs.existsSync(path.join(hom, 'projects')), 'the look-alike repository must not be selected');
+    const [record] = fs
+      .readFileSync(path.join(hom, 'observations.jsonl'), 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    assert.strictEqual(record.project_id, 'global', 'a non-repository cwd records under global');
+    assert.strictEqual(record.cwd, fs.realpathSync(odd), 'the recorded cwd is the real directory, newline included');
   } finally {
     cleanupDir(tmp);
   }

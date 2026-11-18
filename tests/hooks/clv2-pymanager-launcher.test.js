@@ -101,7 +101,7 @@ function makeTree({ enabled = false } = {}) {
 function writePython(dir, name, label) {
   fs.writeFileSync(
     path.join(dir, name),
-    `#!/bin/sh\necho "${label}|$CLV2_PYTHON_CMD\${_CLV2_HASH_INPUT:+|detect-project}" >> "$T_LOG"\ncase "$2" in *agent_id*) printf '%s\\n%s\\n' "$T_PROJECT" "$T_AGENT_ID" ;; esac\n[ -n "\${_CLV2_HASH_INPUT:-}" ] && printf '0123456789ab\\n'\n`,
+    `#!/bin/sh\necho "${label}|$CLV2_PYTHON_CMD\${_CLV2_HASH_INPUT:+|detect-project}" >> "$T_LOG"\ncase "$2" in *agent_id*) printf '%s\\nfalse\\n%s.' "$T_AGENT_ID" "$T_PROJECT" ;; esac\n[ -n "\${_CLV2_HASH_INPUT:-}" ] && printf '0123456789ab\\n'\n`,
     { mode: 0o755 }
   );
 }

@@ -142,12 +142,21 @@ _is_windows_app_installer_stub() {
   case "$_resolved" in
     *AppInstallerPythonRedirector.exe|*AppInstallerPythonRedirector.EXE) return 0 ;;
   esac
-  # The alias stubs only exist under ...\Microsoft\WindowsApps\, so only a
-  # candidate resolved there needs its symlink followed. Everywhere else this
-  # saves a readlink launch on every tool call.
+  # The alias stubs live under ...\Microsoft\WindowsApps\, so a candidate
+  # resolved there always has its link followed. Anywhere else only a symbolic
+  # link can lead to the stub, and only where Windows programs can run at all
+  # (Git Bash, Cygwin, WSL). Both checks are builtins, so an ordinary file, and
+  # any python3 on plain Linux or macOS (usually a symlink), costs no readlink
+  # launch on every tool call.
   case "$_resolved" in
     */[Ww]indows[Aa]pps/*) ;;
-    *) return 1 ;;
+    *)
+      [ -L "$_resolved" ] || return 1
+      case "${OSTYPE:-}" in
+        msys*|cygwin*|win32*) ;;
+        *) [ -n "${WSL_DISTRO_NAME:-}${WSL_INTEROP:-}" ] || return 1 ;;
+      esac
+      ;;
   esac
   # Also resolve one level of symlink on POSIX-like shells (Git Bash, WSL).
   if command -v readlink >/dev/null 2>&1; then
@@ -278,31 +287,38 @@ if [ -f "$EFFECTIVE_CONFIG" ]; then
   _CLV2_CONFIG_FOR_PY="$EFFECTIVE_CONFIG"
 fi
 
-# One value per line: cwd, agent_id, observer.enabled. A value that fails to
-# parse is emitted empty (or "false"), matching the previous separate calls.
+# Output: agent_id on line 1, observer.enabled on line 2, then cwd as everything
+# after that, closed by a "." so trailing characters survive $(...). cwd is the
+# only value that must arrive byte for byte (a directory name may contain a
+# newline on POSIX), so it is the one that is not confined to a line. A value
+# that fails to parse is emitted empty (or "false"), matching the previous
+# separate calls.
 _CLV2_STDIN_FIELDS=$(CLV2_CONFIG_PATH="$_CLV2_CONFIG_FOR_PY" "$PYTHON_CMD" -c '
 import json, os, sys
 
 # Each value is checked against the stdout encoding on its own (cp1252 through a
 # pipe on native Windows Python), so one unprintable value is emitted empty
 # instead of failing the whole write and hiding the other two.
-def one_line(value):
-    text = str(value).replace("\r", " ").replace("\n", " ")
+def printable(text):
     text.encode(sys.stdout.encoding or "utf-8")
     return text
+
+def one_line(value):
+    return printable(str(value).replace("\r", " ").replace("\n", " "))
 
 try:
     data = json.load(sys.stdin)
 except Exception:
     data = None
 
-# Only an absolute, existing directory is reported, in canonical form; anything
-# else is emitted empty so it cannot select a project (see below).
+# Only an absolute, existing directory is reported, in canonical form and with
+# its characters unchanged; anything else is emitted empty so it cannot select
+# a project (see below).
 try:
     cwd = data.get("cwd", "")
     cwd = cwd[:4096] if isinstance(cwd, str) else ""
     if os.path.isabs(cwd) and os.path.isdir(cwd):
-        cwd = one_line(os.path.realpath(cwd))
+        cwd = printable(os.path.realpath(cwd))
     else:
         cwd = ""
 except Exception:
@@ -323,23 +339,33 @@ if config_path:
     except Exception:
         enabled = "false"
 
-sys.stdout.write(cwd + "\n" + agent_id + "\n" + enabled + "\n")
+# newline="" keeps a newline inside cwd from becoming CRLF on native Windows.
+out = sys.stdout
+try:
+    out.reconfigure(newline="")
+except Exception:
+    pass
+out.write(agent_id + "\n" + enabled + "\n" + cwd + ".")
 ' 2>/dev/null <<< "$INPUT_JSON" || true)
 
 STDIN_CWD=""
 _ECC_AGENT_ID=""
 _CLV2_OBSERVER_ENABLED="false"
-if [ -n "$_CLV2_STDIN_FIELDS" ]; then
-  {
-    IFS= read -r STDIN_CWD
-    IFS= read -r _ECC_AGENT_ID
-    IFS= read -r _CLV2_OBSERVER_ENABLED
-  } <<< "$_CLV2_STDIN_FIELDS" || true
-  # Native Windows Python writes CRLF; drop the CR each inner line keeps.
-  STDIN_CWD="${STDIN_CWD%$'\r'}"
-  _ECC_AGENT_ID="${_ECC_AGENT_ID%$'\r'}"
-  _CLV2_OBSERVER_ENABLED="${_CLV2_OBSERVER_ENABLED%$'\r'}"
-fi
+# Accept the output only in its complete shape: two lines, then cwd closed by
+# ".". Anything else (Python failed part-way) leaves all three at their safe
+# defaults.
+case "$_CLV2_STDIN_FIELDS" in
+  *$'\n'*$'\n'*.)
+    _ECC_AGENT_ID="${_CLV2_STDIN_FIELDS%%$'\n'*}"
+    _CLV2_STDIN_REST="${_CLV2_STDIN_FIELDS#*$'\n'}"
+    _CLV2_OBSERVER_ENABLED="${_CLV2_STDIN_REST%%$'\n'*}"
+    STDIN_CWD="${_CLV2_STDIN_REST#*$'\n'}"
+    STDIN_CWD="${STDIN_CWD%.}"
+    # A Python that could not switch off newline translation writes CRLF.
+    _ECC_AGENT_ID="${_ECC_AGENT_ID%$'\r'}"
+    _CLV2_OBSERVER_ENABLED="${_CLV2_OBSERVER_ENABLED%$'\r'}"
+    ;;
+esac
 
 # Layer 4: subagent sessions are automated by definition.
 [ -n "$_ECC_AGENT_ID" ] && exit 0
@@ -398,11 +424,24 @@ OBSERVATIONS_FILE="${PROJECT_DIR}/observations.jsonl"
 MAX_FILE_SIZE_MB=10
 
 # Housekeeping (old-file purge and size-based archiving) needs find and du,
-# so it runs only when project detection was not served from its cache: at
-# least once a day per project, and on every call when the cache is off or
-# unavailable. The observations file can therefore exceed MAX_FILE_SIZE_MB by
-# at most one day of records before it is archived.
-if [ "${_CLV2_PROJECT_CACHE_HIT:-0}" != "1" ]; then
+# so it runs once a day per project instead of on every call. The day it last
+# ran is kept in its own marker inside the project directory, so the guarantee
+# does not depend on who filled the detection cache (start-observer.sh sources
+# detect-project.sh too, and does no housekeeping). The observations file can
+# therefore exceed MAX_FILE_SIZE_MB by at most one day of records before it is
+# archived. Shells without printf '%(...)T' (bash < 4.2) cannot read the day
+# without a launch and keep running it on every call, as before.
+_CLV2_HOUSEKEEPING_MARKER="${PROJECT_DIR}/.housekeeping-day"
+_CLV2_HOUSEKEEPING_TODAY=""
+_CLV2_HOUSEKEEPING_LAST=""
+if [ "${BASH_VERSINFO[0]:-0}" -gt 4 ] ||
+   { [ "${BASH_VERSINFO[0]:-0}" -eq 4 ] && [ "${BASH_VERSINFO[1]:-0}" -ge 2 ]; }; then
+  printf -v _CLV2_HOUSEKEEPING_TODAY '%(%Y%m%d)T' -1
+  if [ -f "$_CLV2_HOUSEKEEPING_MARKER" ]; then
+    IFS= read -r _CLV2_HOUSEKEEPING_LAST < "$_CLV2_HOUSEKEEPING_MARKER" 2>/dev/null || true
+  fi
+fi
+if [ -z "$_CLV2_HOUSEKEEPING_TODAY" ] || [ "$_CLV2_HOUSEKEEPING_LAST" != "$_CLV2_HOUSEKEEPING_TODAY" ]; then
   # Auto-purge observation files older than 30 days (runs once per session)
   PURGE_MARKER="${PROJECT_DIR}/.last-purge"
   if [ ! -f "$PURGE_MARKER" ] || [ "$(find "$PURGE_MARKER" -mtime +1 2>/dev/null)" ]; then
@@ -418,6 +457,11 @@ if [ "${_CLV2_PROJECT_CACHE_HIT:-0}" != "1" ]; then
       mkdir -p "$archive_dir"
       mv "$OBSERVATIONS_FILE" "$archive_dir/observations-$(date +%Y%m%d-%H%M%S)-$$.jsonl" 2>/dev/null || true
     fi
+  fi
+
+  # Recorded after the work, so an interrupted run is repeated by the next call.
+  if [ -n "$_CLV2_HOUSEKEEPING_TODAY" ]; then
+    printf '%s\n' "$_CLV2_HOUSEKEEPING_TODAY" > "$_CLV2_HOUSEKEEPING_MARKER" 2>/dev/null || true
   fi
 fi
 

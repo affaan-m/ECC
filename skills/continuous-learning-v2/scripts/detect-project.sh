@@ -180,6 +180,8 @@ _clv2_detect_project() {
   fi
 
   local raw_remote_url="$remote_url"
+  # Remembered for the detection cache: the origin this id was derived from.
+  _CLV2_PROJECT_REMOTE_SEEN="$raw_remote_url"
 
   # Strip embedded credentials from remote URL (e.g., https://ghp_xxxx@github.com/...)
   if [ -n "$remote_url" ]; then
@@ -343,19 +345,27 @@ atomic_write_json(registry_path, registry)
 #
 # Full detection launches git twice, python twice, sed six times and mkdir
 # seven times, and rewrites projects.json. The answer rarely changes, so it is
-# cached per (CLV2_NO_PROJECT, CLAUDE_PROJECT_DIR, PWD) for the rest of the day.
+# cached per (CLV2_NO_PROJECT, CLAUDE_PROJECT_DIR, PWD) for the rest of the day;
+# a hit costs one git launch (none for a cached "global").
 #
 # A cached entry is rejected, and full detection reruns, when:
 #   - it was written on another day (so the registry last_seen still refreshes
 #     at least daily)
-#   - the repository's .git/config is not older than the entry (remote added
-#     or changed, which changes the project id)
+#   - git no longer reports the origin the entry was derived from (remote
+#     added, changed or removed, which changes the project id)
 #   - the project storage directory or the project root no longer exists
 #   - the stored id is not a shape detection can produce
 #
-# Only a project whose own .git/config can be watched is cached. Linked
-# worktrees, submodules and non-git CLAUDE_PROJECT_DIR roots are detected on
-# every call, as is a "global" result reached because no repository was found.
+# The origin is asked from git on every hit (one `git remote get-url`) rather
+# than inferred from file timestamps: the effective origin can come from the
+# repository config, a file it includes, the global or system config, or
+# GIT_CONFIG_* variables, and only git resolves all of those. The entry stores
+# the origin that detection itself read, so an entry written while the config
+# was being changed fails this comparison too.
+#
+# Only a repository with its own .git/config file is cached. Linked worktrees,
+# submodules and non-git CLAUDE_PROJECT_DIR roots are detected on every call,
+# as is a "global" result reached because no repository was found.
 #
 # Set CLV2_PROJECT_CACHE=0 to disable. The day stamp needs printf '%(...)T'
 # (bash >= 4.2); older shells such as the macOS system bash 3.2 skip the cache
@@ -364,7 +374,19 @@ _CLV2_PROJECT_CACHE_HIT=0
 _CLV2_PROJECT_CACHE_FILE=""
 _CLV2_PROJECT_CACHE_KEY=""
 _CLV2_PROJECT_CACHE_DAY=""
-_CLV2_PROJECT_CACHE_VERSION="clv2-project-cache-1"
+_CLV2_PROJECT_CACHE_VERSION="clv2-project-cache-2"
+_CLV2_PROJECT_REMOTE_SEEN=""
+_CLV2_PROJECT_CACHE_REMOTE=""
+
+# Drop embedded credentials (https://token@host/...) so they never reach the
+# cache file. Same rule as the sed in _clv2_detect_project, without a launch:
+# the leftmost "://<non-@ characters>@" becomes "://".
+_clv2_project_cache_remote() {
+  _CLV2_PROJECT_CACHE_REMOTE="$1"
+  if [[ "$1" =~ ://[^@]+@ ]]; then
+    _CLV2_PROJECT_CACHE_REMOTE="${1/"${BASH_REMATCH[0]}"/://}"
+  fi
+}
 
 _clv2_project_cache_prepare() {
   [ "${CLV2_PROJECT_CACHE:-1}" = "0" ] && return 1
@@ -390,11 +412,11 @@ _clv2_project_cache_load() {
   local file="$_CLV2_PROJECT_CACHE_FILE"
   [ -n "$file" ] && [ -f "$file" ] || return 1
 
-  local version day key id name root gitcfg
+  local version day key id name root remote
   {
     IFS= read -r version && IFS= read -r day && IFS= read -r key &&
       IFS= read -r id && IFS= read -r name && IFS= read -r root &&
-      IFS= read -r gitcfg
+      IFS= read -r remote
   } < "$file" 2>/dev/null || return 1
 
   [ "$version" = "$_CLV2_PROJECT_CACHE_VERSION" ] || return 1
@@ -420,17 +442,19 @@ _clv2_project_cache_load() {
   [ -d "$dir" ] || return 1
 
   if [ "$id" != "global" ]; then
-    # A project entry is only stored together with the .git/config that
-    # produced its id (see _clv2_project_cache_store), and is trusted only
-    # while the entry is strictly newer than that file. Equal timestamps count
-    # as stale so a change in the same clock tick is not missed on filesystems
-    # with coarse mtimes.
-    [ -n "$gitcfg" ] && [ -f "$gitcfg" ] || return 1
-    if ! [ "$file" -nt "$gitcfg" ]; then
-      return 1
-    fi
-    # The root feeds CLV2_OBSERVER_SENTINEL_FILE; it must still be a directory.
+    # The root feeds CLV2_OBSERVER_SENTINEL_FILE; it must still be a directory,
+    # and still a repository with its own .git/config file (see the store side).
     [ -n "$root" ] && [ -d "$root" ] || return 1
+    [ -f "${root}/.git/config" ] || return 1
+    # The id is derived from the origin, so the entry is trusted only while
+    # git reports the same origin that detection read when it wrote the entry.
+    # A repository without an origin stores an empty line and must still have
+    # none. Without git the origin cannot be confirmed, so nothing is trusted.
+    command -v git >/dev/null 2>&1 || return 1
+    local live
+    live=$(git -C "$root" remote get-url origin 2>/dev/null || true)
+    _clv2_project_cache_remote "$live"
+    [ "$_CLV2_PROJECT_CACHE_REMOTE" = "$remote" ] || return 1
   fi
 
   _CLV2_PROJECT_ID="$id"
@@ -454,17 +478,17 @@ _clv2_project_cache_store() {
 
   case "${_CLV2_PROJECT_NAME}${_CLV2_PROJECT_ROOT}" in *$'\n'*|*$'\r'*) return 0 ;; esac
 
-  local gitcfg=""
-  if [ -n "$_CLV2_PROJECT_ROOT" ] && [ -f "${_CLV2_PROJECT_ROOT}/.git/config" ]; then
-    gitcfg="${_CLV2_PROJECT_ROOT}/.git/config"
-  fi
-
-  # A project is cached only when its own .git/config can be watched for
-  # changes. Linked worktrees and submodules (.git is a file; the config that
-  # decides the id lives elsewhere) and non-git CLAUDE_PROJECT_DIR roots have
-  # no such file here, so they are detected on every call, as before.
-  if [ "$_CLV2_PROJECT_ID" != "global" ] && [ -z "$gitcfg" ]; then
-    return 0
+  local remote=""
+  if [ "$_CLV2_PROJECT_ID" != "global" ]; then
+    # A project is cached only when it is a repository with its own .git
+    # directory. Linked worktrees and submodules (.git is a file; their id can
+    # also depend on the main worktree) and non-git CLAUDE_PROJECT_DIR roots
+    # are detected on every call, as before.
+    [ -n "$_CLV2_PROJECT_ROOT" ] && [ -f "${_CLV2_PROJECT_ROOT}/.git/config" ] || return 0
+    _clv2_project_cache_remote "$_CLV2_PROJECT_REMOTE_SEEN"
+    remote="$_CLV2_PROJECT_CACHE_REMOTE"
+    # The entry is line-based; an origin that spans lines cannot be stored.
+    case "$remote" in *$'\n'*|*$'\r'*) return 0 ;; esac
   fi
 
   local dir="${file%/*}"
@@ -481,7 +505,7 @@ _clv2_project_cache_store() {
     "$_CLV2_PROJECT_ID" \
     "$_CLV2_PROJECT_NAME" \
     "$_CLV2_PROJECT_ROOT" \
-    "$gitcfg" > "$tmp" 2>/dev/null; then
+    "$remote" > "$tmp" 2>/dev/null; then
     mv -f "$tmp" "$file" 2>/dev/null || rm -f "$tmp" 2>/dev/null || true
   fi
   return 0
