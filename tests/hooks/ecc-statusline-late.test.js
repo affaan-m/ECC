@@ -94,7 +94,11 @@ test('statusline context reaches the monitor without republishing tool metrics',
     assert.match(JSON.parse(monitor()).hookSpecificOutput.additionalContext, /CONTEXT CRITICAL/);
 
     const observationPath = bridgePath.replace(/\.json$/, '.context.json');
-    fs.writeFileSync(observationPath, JSON.stringify({ remaining: 8, observedAt: Date.now() - 120000 }));
+    if (process.platform !== 'win32') {
+      assert.equal(fs.statSync(observationPath).mode & 0o077, 0, 'observation is owner-only');
+    }
+    // Use a different warning tier to avoid masking a stale-reading regression through dedupe.
+    fs.writeFileSync(observationPath, JSON.stringify({ remaining: 30, observedAt: Date.now() - 120000 }));
     fs.writeFileSync(bridgePath, JSON.stringify({ ...bridge, tool_count: 13, last_timestamp: new Date().toISOString() }));
     assert.equal(monitor(), input, 'a new tool call must not refresh an old context reading');
   });
