@@ -78,6 +78,8 @@ npx e2e run --repeat-each 5 --no-cache       # Check for flakiness with live age
 
 `--yes` uses Vercel AI Gateway, so agent steps need `AI_GATEWAY_API_KEY` (or a linked Vercel project's OIDC token); pass `--gateway <id>` to use another provider. With `--engine mobile`, `init` targets iOS on macOS and Android elsewhere, and both its config and `tests/example.e2e.ts` use the Settings app. Before running tests, set `mobile({ platform })` and `app.bundleId` in `e2e.config.ts`, and replace or remove the Settings example test. The engine does not install the build: install it on the device first, or install it in a fixture with `device.installApp()`, which needs `app.appPath` set in `e2e.config.ts` or a path passed in (`device.installApp('./build/MyApp.app')`).
 
+`init` leaves an existing `e2e.config.ts` and its tests unchanged, and `--engine` and `--gateway` apply only to a new config, so on a project that already has one they add no packages. Edit that config instead. To switch the model provider, replace the model in `agents.default` and install the provider's package (for example `@openrouter/ai-sdk-provider` for OpenRouter). To add mobile tests to a web-only config, install `@e2e-dev/mobile` and add a target with `engine: mobile({ platform })` and `app.bundleId`, then install the build as above.
+
 Repeated runs with the replay cache on replay recorded agent steps, so check e2e tests for flakiness with `--no-cache`.
 
 ## Workflow
