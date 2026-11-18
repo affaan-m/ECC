@@ -13,7 +13,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { sanitizeSessionId, readBridge, writeBridgeAtomic } = require('../lib/session-bridge');
+const { sanitizeSessionId, readBridge, writeContextObservation } = require('../lib/session-bridge');
 
 const AUTO_COMPACT_BUFFER_PCT = 16.5;
 const MAX_STDIN = 1024 * 1024;
@@ -179,11 +179,10 @@ function runStatusline() {
       const sessionId = sanitizeSessionId(session);
       const bridge = sessionId ? readBridge(sessionId) : null;
 
-      // Write context % back to bridge for context-monitor
-      if (sessionId && bridge && remaining !== null && remaining !== undefined) {
-        bridge.context_remaining_pct = remaining;
+      // Publish context separately so this read-only metrics snapshot stays read-only.
+      if (sessionId && bridge) {
         try {
-          writeBridgeAtomic(sessionId, bridge);
+          writeContextObservation(sessionId, remaining);
         } catch {
           /* best effort */
         }
