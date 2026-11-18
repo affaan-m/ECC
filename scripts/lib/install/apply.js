@@ -56,8 +56,10 @@ const {
   prepareExcludedPathsReconciliation,
 } = require('./excluded-paths-reconciliation');
 const {
+  completeCopilotHookDeactivation,
   completeStaleOperationsReconciliation,
   describeStaleOperationsPreview,
+  prepareCopilotHookDeactivation,
   prepareStaleOperationsReconciliation,
   withoutStaleOperations,
 } = require('./stale-operations-reconciliation');
@@ -778,6 +780,26 @@ function prepareAntigravityHookDeactivation(plan, migration, previousState) {
 }
 
 function prepareHookConsentMigration(plan, migration) {
+  if (plan.target === 'copilot' && plan.hookConsent !== 'enabled') {
+    const previousState = readPreviousInstallState(plan);
+    if (plan.hookConsent === 'declined') {
+      return prepareCopilotHookDeactivation(plan, migration, previousState);
+    }
+    const previousConsent = previousState?.request?.hookConsent;
+    if (previousConsent) {
+      return {
+        ...migration,
+        finalState: {
+          ...migration.finalState,
+          request: { ...migration.finalState.request, hookConsent: previousConsent },
+        },
+        bridgeState: {
+          ...migration.bridgeState,
+          request: { ...migration.bridgeState.request, hookConsent: previousConsent },
+        },
+      };
+    }
+  }
   if (shouldDisableOpenCodeHooks(plan) && migration.requiresBridgeState) {
     const previousState = readPreviousInstallState(plan);
     if (previousState) {
@@ -966,6 +988,7 @@ function applyInstallPlanLocked(rawPlan, dependencies = {}, settingsLockHeld = f
     operation.kind === 'remove-claude-settings-hooks'
   )).length;
   let completedHookRemovalCount = 0;
+  let copilotHookDeactivated = false;
   const writtenDestinations = new Set();
   const migratedActivationOperations = [];
   const digestPlan = () => ({
@@ -1149,6 +1172,8 @@ function applyInstallPlanLocked(rawPlan, dependencies = {}, settingsLockHeld = f
           writtenDestinations.add(operation.destinationPath);
         },
       });
+      completeCopilotHookDeactivation(migration.copilotHookDeactivation, plan.targetRoot);
+      copilotHookDeactivated = Boolean(migration.copilotHookDeactivation);
       // Stale records leave only the successful final state; the bridge and
       // failure checkpoint above keep them so a failed install retains ownership.
       finalState = stateWithContentDigests(
@@ -1169,7 +1194,7 @@ function applyInstallPlanLocked(rawPlan, dependencies = {}, settingsLockHeld = f
             plan.installStatePath,
             stateWithContentDigests(
               preserveUnwrittenFiles(
-                hookRemovalCount > 0 && completedHookRemovalCount === hookRemovalCount
+                copilotHookDeactivated || (hookRemovalCount > 0 && completedHookRemovalCount === hookRemovalCount)
                   ? migration.finalState
                   : migration.bridgeState,
                 migration,

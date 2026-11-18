@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { verifyCopilotPackedLifecycle } = require('./copilot-packed-lifecycle');
 const { pathToFileURL } = require('url');
 const { spawnSync } = require('child_process');
 
@@ -868,6 +869,14 @@ function runLifecycle(options) {
       selectionArgs: ['--skills', 'skill-comply'],
     });
 
+    const copilotProject = path.join(tempRoot, 'copilot lifecycle project');
+    fs.mkdirSync(copilotProject);
+    verifyCopilotPackedLifecycle({
+      packageRoot: path.join(projectDir, 'node_modules', 'ecc-universal'),
+      projectRoot: copilotProject,
+      env: environment,
+    });
+
     return {
       packageSha256: options.expectedSha256,
       platform: process.platform,
@@ -900,6 +909,7 @@ function runLifecycle(options) {
         'antigravity-install-doctor-uninstall',
         'opencode-install-doctor-uninstall',
         'mistral-vibe-skill-install-doctor-uninstall',
+        'copilot-installed-session-lifecycle',
       ],
     };
   } finally {

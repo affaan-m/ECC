@@ -1338,7 +1338,7 @@ Treat `stable`, `beta`, `experimental`, and `instruction-only` below as capabili
 | Cursor | Beta project adapter | Selective installer into `.cursor/` | Agent discovery varies by Cursor build; hook events use profile-gated dispatchers, but full Claude feature parity is not claimed. |
 | OpenCode | Beta built plugin | Build plugin, then selective installer | ECC ships a subset of the catalog; connect a provider and select a model in OpenCode ([#2617](https://github.com/affaan-m/ECC/issues/2617)). |
 | GitHub Copilot Chat | Instruction-only | Checked-in instructions and prompt files | ECC hooks are not adapted. |
-| GitHub Copilot CLI | Beta project adapter | `--target copilot` places skills, adapted agents, and converted rules in `.github/` | ECC hooks and command shims are not installed by this target. |
+| GitHub Copilot CLI | Beta project adapter | `--target copilot` places skills, adapted agents, and converted rules in `.github/` | Session lifecycle hooks are available with explicit consent. |
 | Gemini, Zed, Qwen, Hermes, OpenClaw, Kimi, Mistral Vibe, CodeBuddy, JoyCode | Experimental/minimal adapters | Harness-specific selective target | File placement and instruction portability are tested; full Claude feature parity is not claimed. |
 
 <details>
@@ -1814,7 +1814,7 @@ tool access per session through `--allow-tool`/`--deny-tool` rather than through
 agent frontmatter. Rules are installed under `.github/instructions/ecc/` as
 `.instructions.md` files, with the Claude-style `paths:` frontmatter converted
 to Copilot's `applyTo:` glob list (rules without `paths` become `applyTo:
-"**"`). ECC's commands and hooks are not installed by this target.
+"**"`).
 
 #### Feature coverage
 
@@ -1831,19 +1831,36 @@ to Copilot's `applyTo:` glob list (rules without `paths` become `applyTo:
 | Skills | Native discovery in Copilot CLI (`.github/skills/`, `.agents/skills/`) |
 | Agents / delegation | Copilot CLI custom agents (`.github/agents/`, `--agent`) |
 | Rules | Path-specific instructions (`.github/instructions/ecc/`, `applyTo:` globs) |
-| Hooks / automation | ECC's hooks are not ported (Copilot CLI has its own plugin hook system) |
+| Hooks / automation | Opt-in session start, stop, compaction, and end hooks |
+
+#### Session lifecycle
+
+Install the lifecycle hooks in a Copilot CLI project with Node.js on the PATH.
+
+```sh
+ecc install --target copilot --profile full --enable-hooks
+```
+
+The installer writes `.github/hooks/ecc.json`. Session state stays under the
+local Copilot configuration directory, isolated by project. To save an
+explicit checkpoint, pass its text on standard input.
+
+```sh
+node .github/ecc/scripts/hooks/copilot-lifecycle.js checkpoint --session <id> --stdin
+```
+
+A later session can receive the checkpoint as historical context. Set
+`ECC_SESSION_START_CONTEXT=0` to disable injection. Set
+`ECC_COPILOT_TRANSCRIPT_SUMMARY=1` to opt in to local transcript summaries.
+Reinstall with `--no-hooks` to remove the managed hook manifest.
+
+The packed-artifact test dispatches fixture events through the installed
+manifest. Authenticated Copilot CLI event delivery still needs native acceptance.
 
 #### Limitations
 
-ECC's hook automations (auto-format, TypeScript check, session persistence,
-dev-server guard) are written against Claude Code's hook event model and are
-not ported to Copilot. Copilot CLI does expose a hook system through its plugin
-format, but ECC does not currently ship a Copilot plugin, so none of ECC's hooks
-run there.
-
-ECC also does not install rules, commands, or hooks for Copilot. The `copilot`
-target installs skills and agents only. Skills that shell out to bundled
-scripts assume the same interpreters as on Claude Code. Copilot Chat in VS Code
+Skills that shell out to bundled scripts require the same interpreters as on
+Claude Code. Copilot Chat in VS Code
 does not read `.github/skills/` or `.github/agents/`; those paths are Copilot
 CLI surfaces. The instruction and prompt layer is what carries ECC's coding
 philosophy into Copilot Chat sessions.
