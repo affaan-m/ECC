@@ -25,6 +25,7 @@
  *   - git is always invoked through execFileSync with an argv array. Paths are
  *     passed after `--`; the date is validated to YYYY-MM-DD first and passed
  *     as a single argument. Nothing from spec Markdown reaches a shell.
+ *     Literal pathspecs ensure Git looks at the same target we validated.
  *   - the project root must not be a symlink; every enforced target is resolved
  *     through fs.realpathSync and must stay inside the real project root.
  *   - shallow clones report UNVERIFIED — incomplete history is never
@@ -207,7 +208,7 @@ function gitProbe() {
 function gitHashesAfter(date, anchorPath) {
   const out = execFileSync(
     'git',
-    ['log', '--format=%H', `--after=${date}`, '--', anchorPath],
+    ['--literal-pathspecs', 'log', '--format=%H', `--after=${date}`, '--', anchorPath],
     { encoding: 'utf8', cwd: projectRoot, stdio: ['pipe', 'pipe', 'pipe'] }
   );
   return out.trim().split('\n').filter(Boolean);
@@ -216,7 +217,7 @@ function gitHashesAfter(date, anchorPath) {
 function gitAllHashes(anchorPath) {
   const out = execFileSync(
     'git',
-    ['log', '--format=%H', '--', anchorPath],
+    ['--literal-pathspecs', 'log', '--format=%H', '--', anchorPath],
     { encoding: 'utf8', cwd: projectRoot, stdio: ['pipe', 'pipe', 'pipe'] }
   );
   return out.trim().split('\n').filter(Boolean);

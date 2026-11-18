@@ -190,6 +190,41 @@ describe('check-spec-freshness (v1, file-level)', () => {
     });
   });
 
+  describe('literal enforced paths', () => {
+    it('finds changes to a tracked file with brackets in its name', () => {
+      const repo = track(initRepo());
+      commitFile(repo, 'src/[id].js', 'v1\n', daysAgo(5));
+      commitFile(repo, 'src/[id].js', 'v2\n', daysAgo(1));
+      writeSpec(repo, 'route', { lastVerified: daysAgo(3), anchors: ['src/[id].js::run'] });
+
+      const result = runChecker(repo);
+      assert.strictEqual(result.exitCode, 1);
+      assert.strictEqual(parseJson(result).specs[0].status, 'STALE');
+    });
+
+    it('ignores decoy changes when the literal bracketed path is unchanged', () => {
+      const repo = track(initRepo());
+      commitFile(repo, 'src/[id].js', 'unchanged\n', daysAgo(5));
+      commitFile(repo, 'src/i.js', 'unrelated\n', daysAgo(1));
+      writeSpec(repo, 'route', { lastVerified: daysAgo(3), anchors: ['src/[id].js::run'] });
+
+      const result = runChecker(repo);
+      assert.strictEqual(result.exitCode, 0);
+      assert.strictEqual(parseJson(result).specs[0].status, 'FRESH');
+    });
+
+    it('does not use another file as evidence for an uncommitted bracketed path', () => {
+      const repo = track(initRepo());
+      commitFile(repo, 'src/i.js', 'unrelated\n', daysAgo(5));
+      fs.writeFileSync(path.join(repo, 'src/[id].js'), 'uncommitted\n');
+      writeSpec(repo, 'route', { lastVerified: daysAgo(3), anchors: ['src/[id].js::run'] });
+
+      const result = runChecker(repo);
+      assert.strictEqual(result.exitCode, 0);
+      assert.strictEqual(parseJson(result).specs[0].status, 'UNVERIFIED');
+    });
+  });
+
   describe('verdicts on a real repo with history', () => {
     // Timeline: src/lib.js committed 300 days ago (v1) and 50 days ago (v2).
     let repo;
