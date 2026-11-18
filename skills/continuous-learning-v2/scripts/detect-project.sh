@@ -351,14 +351,16 @@ atomic_write_json(registry_path, registry)
 # A cached entry is rejected, and full detection reruns, when:
 #   - it was written on another day (so the registry last_seen still refreshes
 #     at least daily)
+#   - the repository's .git/config is not older than the entry (a setting that
+#     decides the root or the id, such as core.worktree, was changed)
 #   - git no longer reports the origin the entry was derived from (remote
 #     added, changed or removed, which changes the project id)
 #   - the project storage directory or the project root no longer exists
 #   - the stored id is not a shape detection can produce
 #
-# The origin is asked from git on every hit (one `git remote get-url`) rather
-# than inferred from file timestamps: the effective origin can come from the
-# repository config, a file it includes, the global or system config, or
+# The origin is asked from git on every hit (one `git remote get-url`), in
+# addition to the timestamp check, because the effective origin can come from
+# the repository config, a file it includes, the global or system config, or
 # GIT_CONFIG_* variables, and only git resolves all of those. The entry stores
 # the origin that detection itself read, so an entry written while the config
 # was being changed fails this comparison too.
@@ -446,6 +448,11 @@ _clv2_project_cache_load() {
     # and still a repository with its own .git/config file (see the store side).
     [ -n "$root" ] && [ -d "$root" ] || return 1
     [ -f "${root}/.git/config" ] || return 1
+    # Settings in the repository's own config (core.worktree moves the root,
+    # a remote changes the id) are trusted only while the entry is strictly
+    # newer than that file. Equal timestamps count as stale so a change in the
+    # same clock tick is not missed on filesystems with coarse mtimes.
+    [ "$file" -nt "${root}/.git/config" ] || return 1
     # The id is derived from the origin, so the entry is trusted only while
     # git reports the same origin that detection read when it wrote the entry.
     # A repository without an origin stores an empty line and must still have

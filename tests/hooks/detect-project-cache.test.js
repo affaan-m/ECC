@@ -11,6 +11,7 @@
  *     (to ask for the origin)
  *   - a changed origin forces re-detection wherever it is configured: the
  *     repository config, a file it includes, or the global config
+ *   - a .git/config newer than the entry forces re-detection (core.worktree)
  *   - an entry that holds an origin git does not report is rejected
  *   - credentials embedded in the origin never reach the cache file
  *   - an entry from another day forces re-detection
@@ -77,8 +78,19 @@ function bashSupportsCache() {
   return major > 4 || (major === 4 && minor >= 2);
 }
 
+// Variables that point git at a particular repository. The test runner already
+// removes them; they are removed here too so the file also passes when run
+// directly from a shell (or a git hook) that has them exported.
+const GIT_LOCATION_VARS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX'];
+
+function scrubbedEnv(base) {
+  const env = { ...base };
+  for (const name of GIT_LOCATION_VARS) delete env[name];
+  return env;
+}
+
 function git(cwd, ...args) {
-  execFileSync('git', args, { cwd, stdio: 'ignore' });
+  execFileSync('git', args, { cwd, stdio: 'ignore', env: scrubbedEnv(process.env) });
 }
 
 function makeRepo(parent, name, remote) {
@@ -86,13 +98,18 @@ function makeRepo(parent, name, remote) {
   fs.mkdirSync(repo, { recursive: true });
   git(repo, 'init', '-q');
   if (remote) git(repo, 'remote', 'add', 'origin', remote);
+  // An entry is trusted only while it is strictly newer than .git/config.
+  // Backdate the config so that holds even where mtimes (or the shell's -nt)
+  // only resolve whole seconds.
+  const past = new Date(Date.now() - 10000);
+  fs.utimesSync(path.join(repo, '.git', 'config'), past, past);
   return repo;
 }
 
 function baseEnv(homeDir, extra = {}) {
   // HOME is a fresh directory, so no global git config leaks in. The system
   // config and any GIT_CONFIG_* overrides from the caller are shut out too.
-  const env = { ...process.env, HOME: homeDir, USERPROFILE: homeDir, GIT_CONFIG_NOSYSTEM: '1' };
+  const env = scrubbedEnv({ ...process.env, HOME: homeDir, USERPROFILE: homeDir, GIT_CONFIG_NOSYSTEM: '1' });
   for (const name of Object.keys(env)) {
     if (/^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+|GLOBAL|SYSTEM|PARAMETERS)$/.test(name)) delete env[name];
   }
@@ -298,6 +315,28 @@ test('an origin rewritten by the global config invalidates the entry', () => {
     const second = detect(repo, home);
     assert.strictEqual(second.hit, '0', 'an origin rewritten outside the repository must force re-detection');
     assert.notStrictEqual(second.id, first.id);
+  } finally {
+    cleanupDir(tmp);
+  }
+});
+
+test('a changed .git/config forces re-detection even when the origin is unchanged', () => {
+  const tmp = createTempDir();
+  try {
+    const home = path.join(tmp, 'home');
+    fs.mkdirSync(home);
+    // No origin: nothing the origin check could notice. A setting such as
+    // core.worktree, which decides the project root, lives in this same file.
+    const repo = makeRepo(tmp, 'gamma-cfg');
+
+    detect(repo, home);
+    assert.strictEqual(detect(repo, home).hit, '1', 'an untouched config is a hit');
+
+    git(repo, 'config', 'core.worktree', repo);
+    const future = new Date(Date.now() + 5000);
+    fs.utimesSync(path.join(repo, '.git', 'config'), future, future);
+
+    assert.strictEqual(detect(repo, home).hit, '0', 'a config newer than the entry must force re-detection');
   } finally {
     cleanupDir(tmp);
   }
@@ -596,16 +635,46 @@ test('observe.sh records the same project on a cache hit as on a miss', () => {
   }
 });
 
-function runObserve(repo, home, payload) {
+function runObserve(repo, home, payload, extraEnv = {}) {
   const r = spawnSync('bash', [observePath, 'pre'], {
     cwd: repo,
     input: payload,
     encoding: 'utf8',
     timeout: 60000,
-    env: baseEnv(home, { CLAUDE_CODE_ENTRYPOINT: 'cli', ECC_HOOK_PROFILE: 'standard', ECC_SKIP_OBSERVE: '0' })
+    env: baseEnv(home, { CLAUDE_CODE_ENTRYPOINT: 'cli', ECC_HOOK_PROFILE: 'standard', ECC_SKIP_OBSERVE: '0', ...extraEnv })
   });
   assert.strictEqual(r.status, 0, `observe.sh should exit 0, stderr: ${r.stderr}`);
 }
+
+test('observe.sh survives an observer.enabled value that contains a newline', () => {
+  const tmp = createTempDir();
+  try {
+    const home = path.join(tmp, 'home');
+    fs.mkdirSync(home);
+    const repo = makeRepo(tmp, 'nu', 'https://github.com/example/nu.git');
+    // A hand-edited config whose flag spans two lines would shift the fields
+    // the first Python start prints, move text into the cwd, and send the
+    // observation to the no-project path instead of the repository.
+    const config = path.join(tmp, 'config.json');
+    fs.writeFileSync(config, JSON.stringify({ observer: { enabled: 'false\nstray line' } }));
+    const payload = JSON.stringify({ session_id: 'en', cwd: repo, tool_name: 'Read', tool_input: {} });
+
+    runObserve(repo, home, payload, { CLV2_CONFIG: config });
+
+    const projectsDir = path.join(homunculusDir(home), 'projects');
+    assert.ok(fs.existsSync(projectsDir), 'the observation must be stored under the repository project');
+    const [projectId] = fs.readdirSync(projectsDir);
+    const [record] = fs
+      .readFileSync(path.join(projectsDir, projectId, 'observations.jsonl'), 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    assert.strictEqual(record.project_id, projectId);
+    assert.strictEqual(record.cwd, fs.realpathSync(repo), 'the recorded cwd is the payload cwd, nothing else');
+  } finally {
+    cleanupDir(tmp);
+  }
+});
 
 test('observe.sh housekeeping runs once a day whoever filled the detection cache', () => {
   const tmp = createTempDir();

@@ -325,7 +325,9 @@ if config_path:
     try:
         with open(config_path) as f:
             cfg = json.load(f)
-        enabled = str(cfg.get("observer", {}).get("enabled", False)).lower()
+        # Only the literal values may leave this block: a user-written string
+        # with a newline in it would shift the fields that follow.
+        enabled = "true" if str(cfg.get("observer", {}).get("enabled", False)).lower() == "true" else "false"
     except Exception:
         enabled = "false"
 
