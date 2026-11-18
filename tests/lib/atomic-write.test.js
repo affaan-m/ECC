@@ -14,6 +14,7 @@ const source = fs.readFileSync(filename, 'utf8');
 function loadHelper(platform, rename, { clockStep = 25, read = fs.readFileSync } = {}) {
   let elapsed = 0;
   let waits = 0;
+  const timeouts = [];
   const filesystem = Object.create(fs);
   filesystem.renameSync = rename;
   filesystem.readFileSync = read;
@@ -23,10 +24,10 @@ function loadHelper(platform, rename, { clockStep = 25, read = fs.readFileSync }
     require: name => name === 'fs' ? filesystem : require(name),
     process: { platform, pid: process.pid },
     performance: { now: () => elapsed },
-    Atomics: { wait: () => { elapsed += clockStep; waits++; } },
+    Atomics: { wait: (_buffer, _index, _value, timeout) => { elapsed += clockStep; waits++; timeouts.push(timeout); } },
     SharedArrayBuffer, Int32Array,
   }, { filename });
-  return { ...module.exports, waits: () => waits };
+  return { ...module.exports, waits: () => waits, timeouts: () => timeouts };
 }
 
 let passed = 0;
@@ -106,6 +107,33 @@ test('Windows retries also stop at the elapsed deadline', ({ root, destination }
   assert.throws(() => helper.writeFileAtomic(destination, 'new'), error => error === expected);
   assert.strictEqual(attempts, 9);
   assert.deepStrictEqual(fs.readdirSync(root), ['state.json']);
+});
+
+test('Windows callers can raise the rename retry budget', ({ root, destination }) => {
+  let attempts = 0;
+  const expected = sharingError('EPERM');
+  const helper = loadHelper('win32', () => { attempts++; throw expected; }, { clockStep: 250 });
+  assert.throws(() => helper.writeFileAtomic(destination, 'new', { renameRetryBudgetMs: 10000 }),
+    error => error === expected);
+  assert.strictEqual(attempts, 41, 'A 10s budget allows forty 250ms waits');
+  assert.deepStrictEqual(fs.readdirSync(root), ['state.json']);
+});
+
+test('Windows rename retries use short jittered waits so contenders fall out of lockstep', ({ destination }) => {
+  let attempts = 0;
+  const helper = loadHelper('win32', (temporary, target) => {
+    attempts++;
+    if (attempts <= 40) throw sharingError('EPERM');
+    fs.renameSync(temporary, target);
+  });
+  helper.writeFileAtomic(destination, 'new');
+  const timeouts = helper.timeouts();
+  assert.strictEqual(timeouts.length, 40);
+  for (const timeout of timeouts) {
+    assert.ok(timeout >= 1 && timeout <= 25, `wait ${timeout}ms stays within [1, 25]`);
+  }
+  assert.ok(new Set(timeouts).size > 1, 'Waits must vary between attempts');
+  assert.strictEqual(fs.readFileSync(destination, 'utf8'), 'new');
 });
 
 for (const platform of ['linux', 'darwin']) {
