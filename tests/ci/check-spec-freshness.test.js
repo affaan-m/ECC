@@ -202,6 +202,19 @@ describe('check-spec-freshness (v1, file-level)', () => {
       assert.strictEqual(parseJson(result).specs[0].status, 'STALE');
     });
 
+    it('queries the exact path even with inherited pathspec options', () => {
+      const repo = track(initRepo());
+      commitFile(repo, 'src/[id].js', 'v1\n', daysAgo(5));
+      commitFile(repo, 'src/[id].js', 'v2\n', daysAgo(1));
+      writeSpec(repo, 'route', { lastVerified: daysAgo(3), anchors: ['src/[id].js::run'] });
+
+      for (const variable of ['GIT_GLOB_PATHSPECS', 'GIT_NOGLOB_PATHSPECS', 'GIT_ICASE_PATHSPECS']) {
+        const result = runChecker(repo, { [variable]: '1' });
+        assert.strictEqual(result.exitCode, 1, variable + ': ' + result.stderr);
+        assert.strictEqual(parseJson(result).specs[0].status, 'STALE');
+      }
+    });
+
     it('ignores decoy changes when the literal bracketed path is unchanged', () => {
       const repo = track(initRepo());
       commitFile(repo, 'src/[id].js', 'unchanged\n', daysAgo(5));

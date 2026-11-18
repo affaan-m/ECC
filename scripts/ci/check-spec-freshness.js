@@ -204,12 +204,19 @@ function gitProbe() {
   return gitState;
 }
 
+// Git rejects literal mode when other global pathspec settings are active.
+// These queries are always exact; keep other inherited Git settings intact.
+const conflictingPathspecOptions = new Set(['GIT_GLOB_PATHSPECS', 'GIT_NOGLOB_PATHSPECS', 'GIT_ICASE_PATHSPECS']);
+const gitHistoryEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([name]) => !conflictingPathspecOptions.has(name.toUpperCase()))
+);
+
 /** stdout of `git log --format=%H --after=<date> -- <path>` (empty when none). */
 function gitHashesAfter(date, anchorPath) {
   const out = execFileSync(
     'git',
     ['--literal-pathspecs', 'log', '--format=%H', `--after=${date}`, '--', anchorPath],
-    { encoding: 'utf8', cwd: projectRoot, stdio: ['pipe', 'pipe', 'pipe'] }
+    { encoding: 'utf8', cwd: projectRoot, env: gitHistoryEnv, stdio: ['pipe', 'pipe', 'pipe'] }
   );
   return out.trim().split('\n').filter(Boolean);
 }
@@ -218,7 +225,7 @@ function gitAllHashes(anchorPath) {
   const out = execFileSync(
     'git',
     ['--literal-pathspecs', 'log', '--format=%H', '--', anchorPath],
-    { encoding: 'utf8', cwd: projectRoot, stdio: ['pipe', 'pipe', 'pipe'] }
+    { encoding: 'utf8', cwd: projectRoot, env: gitHistoryEnv, stdio: ['pipe', 'pipe', 'pipe'] }
   );
   return out.trim().split('\n').filter(Boolean);
 }
