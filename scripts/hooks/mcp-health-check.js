@@ -154,6 +154,16 @@ function safeParse(raw) {
 
 function extractMcpTarget(input) {
   const toolName = String(input.tool_name || input.name || '');
+  // A native MCP tool name identifies the dispatch target. A similarly named
+  // argument belongs to that tool's schema and may identify something else.
+  if (toolName.startsWith('mcp__')) {
+    const [server, ...segments] = toolName.slice(5).split('__');
+    if (server && segments.length > 0) {
+      return { server, tool: segments.join('__') };
+    }
+  }
+
+
   const explicitServer = input.server
     || input.mcp_server
     || input.tool_input?.server
@@ -173,19 +183,7 @@ function extractMcpTarget(input) {
     };
   }
 
-  if (!toolName.startsWith('mcp__')) {
-    return null;
-  }
-
-  const segments = toolName.slice(5).split('__');
-  if (segments.length < 2 || !segments[0]) {
-    return null;
-  }
-
-  return {
-    server: segments[0],
-    tool: segments.slice(1).join('__')
-  };
+  return null;
 }
 
 function extractMcpTargetFromRaw(raw) {
