@@ -53,6 +53,7 @@
   "files": [
     ".adal/",
     ".agents/",
+    ".antigravity-plugin/",
     ".claude-plugin/",
     ".codex/",
     ".codex-plugin/",
@@ -113,6 +114,7 @@
     "rules/",
     "schemas/",
     "scripts/agent-convert.js",
+    "scripts/antigravity/",
     "scripts/catalog.js",
     "scripts/config-health.py",
     "scripts/config_health_constants.py",

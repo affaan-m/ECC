@@ -345,9 +345,10 @@ const ADAPTER_RECORDS = Object.freeze([
       'slash workflows (.agents/workflows/) projected from commands/',
       'canonical ECC skills (.agents/skills/<name>/SKILL.md)',
       'custom agents (.agents/agents/) with adapted flash/pro models and tool allowlists',
+      'experimental external-root CLI bridge and plugin metadata (native acceptance pending)',
     ],
     unsupported_surfaces: [
-      'Claude runtime hooks and MCP configs are not installed by the Antigravity project target',
+      'Authenticated native tool and lifecycle acceptance remains unverified; transform fixtures do not establish native compatibility',
       'Unsupported Claude tool names are omitted from custom agents because unmapped tool identifiers can stall execution',
     ],
     install_or_onramp: [
@@ -356,11 +357,13 @@ const ADAPTER_RECORDS = Object.freeze([
     ],
     verification_commands: [
       '`node tests/lib/antigravity-install-target.test.js`',
+      '`node tests/lib/antigravity-hook-bridge.test.js`',
       '`node tests/lib/antigravity-rule.test.js`',
       '`node scripts/doctor.js --target antigravity`',
     ],
     risk_notes: [
       'Do not copy the repository .agents/ Codex packaging tree wholesale or rename legacy .agent/ directories manually because ecc-install-state.json records absolute managed paths.',
+      'Default project tools remain unchanged; CLI transforms require explicit ANTIGRAVITY_RUNTIME=cli and unsupported editor tools remain omitted.',
     ],
     last_verified_at: '2026-10-30',
     owner: 'ECC maintainers',
