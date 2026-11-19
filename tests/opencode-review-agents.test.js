@@ -61,22 +61,17 @@ test('a full OpenCode install includes agents required by affected commands', ()
     const config = JSON.parse(
       fs.readFileSync(path.join(installRoot, 'opencode.json'), 'utf8')
     );
-    const missing = [];
-
-    for (const [command, agents] of Object.entries(agentsByCommand)) {
+    const missing = Object.entries(agentsByCommand).flatMap(([command, agents]) => {
       const commandFile = path.join(installRoot, 'commands', `${command}.md`);
       assert.ok(fs.existsSync(commandFile), `Expected /${command} to be installed`);
 
-      for (const name of agents) {
+      return agents.filter(name => {
         const hasAgentFile = ['agents', 'agent'].some(folder =>
           fs.existsSync(path.join(installRoot, folder, `${name}.md`))
         );
-
-        if (!Object.hasOwn(config.agent ?? {}, name) && !hasAgentFile) {
-          missing.push(`/${command} -> ${name}`);
-        }
-      }
-    }
+        return !Object.hasOwn(config.agent ?? {}, name) && !hasAgentFile;
+      }).map(name => `/${command} -> ${name}`);
+    });
 
     assert.deepEqual(missing, [], `Missing OpenCode agents: ${missing.join(', ')}`);
   } finally {
