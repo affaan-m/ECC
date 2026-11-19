@@ -145,7 +145,10 @@ scan_dir_to_json() {
     echo "[]"
   else
     local usage_file="$tmpdir/.usage"
-    aggregate_observations >"$usage_file"
+    if ! aggregate_observations >"$usage_file"; then
+      echo "Error: observation aggregation failed; refusing incomplete usage counts" >&2
+      return 1
+    fi
     jq -s --slurpfile usage "$usage_file" '
       $usage[0] as $counts |
       map($counts[.observation_path] as $skill |

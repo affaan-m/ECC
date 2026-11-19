@@ -258,6 +258,18 @@ if (process.platform !== 'win32') {
       }
     });
 
+    test('scan rejects truncated observations instead of reporting unavailable usage', () => {
+      const brokenObservations = path.join(tempRoot, 'truncated-observations.jsonl');
+      fs.writeFileSync(brokenObservations, `${JSON.stringify({
+        tool: 'Read', path: path.join(globalSkills, 'active', 'SKILL.md'),
+        timestamp: new Date().toISOString(),
+      })}\n{"tool":`);
+      const result = runBash(scanScript, [], { ...env, SKILL_STOCKTAKE_OBSERVATIONS: brokenObservations });
+      assert.notStrictEqual(result.status, 0, 'A partial observation log must fail visibly');
+      assert.strictEqual(result.stdout, '', 'A failed scan must not publish incomplete inventory');
+      assert.match(result.stderr, /observation|parse error/i);
+    });
+
     test('scan counts literal backslashes in skill paths without interpreting escape sequences', () => {
       const skillsDir = path.join(tempRoot, 'backslash-skills');
       const skillDir = path.join(skillsDir, String.raw`literal\tname\nending`);
