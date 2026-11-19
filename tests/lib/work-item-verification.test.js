@@ -237,9 +237,10 @@ async function run() {
     const canonicalArtifact = path.join(fs.realpathSync(root), 'matrix.md');
     const open = fs.openSync;
     const readFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0);
+    let observedArtifactFlags;
     fs.openSync = function (filename, flags, mode) {
       if (filename === canonicalArtifact) {
-        assert.strictEqual(flags, readFlags, 'artifact reads must retain nonblocking/no-follow flags');
+        observedArtifactFlags = flags;
         fs.unlinkSync(artifact); makeFifo();
         return open(filename, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0));
       }
@@ -254,8 +255,10 @@ async function run() {
       assert.strictEqual(flags, 'r', 'unexpected file-open mode during verification');
       return open(filename, 'r');
     };
-    try { assert.strictEqual(store.verifyWorkItem('docs-task').attempt.outcome, 'unknown'); }
-    finally { fs.openSync = open; }
+    try {
+      assert.strictEqual(store.verifyWorkItem('docs-task').attempt.outcome, 'unknown');
+      assert.strictEqual(observedArtifactFlags, readFlags, 'artifact reads must retain nonblocking/no-follow flags');
+    } finally { fs.openSync = open; }
   });
 
   await test('the validator comes from ECC, never a module supplied by the artifact repository', ({ root, store, register, claim, artifact }) => {
