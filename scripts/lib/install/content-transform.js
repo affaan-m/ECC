@@ -1,5 +1,7 @@
 'use strict';
 
+const path = require('path');
+
 const { stripPluginNamespace } = require('./plugin-namespace');
 const { adaptAntigravityAgent } = require('./antigravity-agent');
 const { adaptAntigravityRule } = require('./antigravity-rule');
@@ -180,16 +182,26 @@ function transformInstallContent(operation, content) {
   }
   if (operation.contentTransform === 'opencode-home-skills-path') {
     const config = JSON.parse(content);
-    if (!Array.isArray(config?.skills?.paths) || !config.skills.paths.includes('../skills')) {
-      return content;
+    const { opencodeHomeInstructions } = operation;
+    const hasProjection = Array.isArray(opencodeHomeInstructions);
+    const hasInstructions = hasProjection && Array.isArray(config.instructions);
+    const hasBundledSkillsPath = Array.isArray(config.skills?.paths)
+      && config.skills.paths.includes('../skills');
+    if (!hasInstructions && !hasBundledSkillsPath) return content;
+    const installedConfig = { ...config };
+    if (hasInstructions) {
+      installedConfig.instructions = opencodeHomeInstructions;
     }
-    const installedConfig = {
-      ...config,
-      skills: {
+    if (hasBundledSkillsPath) {
+      // OpenCode resolves config-relative strings from the active project.
+      const bundledSkills = hasProjection
+        ? path.join(path.dirname(operation.destinationPath), 'skills')
+        : './skills';
+      installedConfig.skills = {
         ...config.skills,
-        paths: config.skills.paths.map(skillPath => skillPath === '../skills' ? './skills' : skillPath),
-      },
-    };
+        paths: config.skills.paths.map(skillPath => skillPath === '../skills' ? bundledSkills : skillPath),
+      };
+    }
     return `${JSON.stringify(installedConfig, null, 2)}\n`;
   }
   throw new Error(`Unknown install content transform: ${operation.contentTransform}`);
