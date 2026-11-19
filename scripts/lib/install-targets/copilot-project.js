@@ -73,6 +73,27 @@ function planCopilotRuleOperations(module, normalizedSourcePath, targetRoot, rep
 function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRoot) {
   const normalizedSourcePath = normalizeRelativePath(sourceRelativePath);
 
+  if (['skills/plan-canvas', 'skills/plan-canvas/SKILL.md'].includes(normalizedSourcePath)) {
+    const runtime = [
+      'scripts/copilot-canvas.js',
+      'scripts/lib/copilot-canvas.js',
+      'scripts/lib/memory-vault-format.js',
+      'scripts/lib/plan-canvas/sessions.js',
+    ];
+    return [
+      createManagedOperation({
+        moduleId: module.id,
+        sourceRelativePath: 'manifests/install-assets/copilot-plan-canvas-skill.md',
+        destinationPath: path.join(targetRoot, 'skills', 'plan-canvas', 'SKILL.md'),
+      }),
+      ...runtime.map(sourceRelativePath => createManagedOperation({
+        moduleId: module.id,
+        sourceRelativePath,
+        destinationPath: path.join(targetRoot, 'ecc', 'scripts', 'canvas', stripPrefix(sourceRelativePath, 'scripts')),
+      })),
+    ];
+  }
+
   if (hasPrefix(normalizedSourcePath, 'agents')) {
     return [
       createManagedOperation({
@@ -148,7 +169,8 @@ module.exports = createInstallTargetAdapter({
           repoRoot
         ));
     });
-    const helper = operations.find(operation => COPILOT_HELPER_PATHS.has(operation.sourceRelativePath));
+    const helper = operations.find(operation => COPILOT_HELPER_PATHS.has(operation.sourceRelativePath)
+      || operation.sourceRelativePath === 'scripts/copilot-canvas.js');
     if (!helper) return operations;
     // Keep managed helpers executable when the host project uses ES modules.
     return [...operations, createManagedOperation({
