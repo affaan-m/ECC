@@ -48,22 +48,59 @@ const ID_TOKEN_WRITE_PATTERN = /^\s*id-token:\s*write\b/m;
 const TOP_LEVEL_JOBS_PATTERN = /^jobs:\s*$/m;
 const UNSAFE_INSTALL_PATTERNS = [
   {
-    pattern: /\bnpm\s+ci\b(?![^\n]*--ignore-scripts)/g,
+    pattern: /\bnpm\s+ci\b(?![^\n;&|]*--ignore-scripts)/g,
     description: 'npm ci must include --ignore-scripts',
   },
   {
-    pattern: /\bpnpm\s+install\b(?![^\n]*--ignore-scripts)/g,
+    pattern: /\bnpm\s+(?:install|i)\b(?![^\n;&|]*--ignore-scripts)/g,
+    description: 'npm install must include --ignore-scripts',
+  },
+  {
+    pattern: /\bpnpm\s+(?:install|i)\b(?![^\n;&|]*--ignore-scripts)/g,
     description: 'pnpm install must include --ignore-scripts',
   },
   {
-    pattern: /\byarn\s+install\b(?![^\n]*--mode=skip-build)/g,
+    pattern: /\byarn\s+install\b(?![^\n;&|]*--mode=skip-build)/g,
     description: 'yarn install must use --mode=skip-build',
   },
   {
-    pattern: /\bbun\s+install\b(?![^\n]*--ignore-scripts)/g,
+    pattern: /\bbun\s+(?:install|i)\b(?![^\n;&|]*--ignore-scripts)/g,
     description: 'bun install must include --ignore-scripts',
   },
 ];
+
+function stripLineComment(line) {
+  if (/^\s*#/.test(line)) {
+    return '';
+  }
+
+  let quote = null;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quote) {
+      if (quote === '"' && ch === '\\') {
+        i += 1;
+      } else if (quote === '\'' && ch === '\'' && line[i + 1] === '\'') {
+        i += 1;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (ch === '\'' || ch === '"') {
+      quote = ch;
+    } else if (ch === '#' && (i === 0 || /\s/.test(line[i - 1]))) {
+      return line.slice(0, i).trimEnd();
+    }
+  }
+
+  return line;
+}
+
+function stripWorkflowComments(source) {
+  return source.split(/\r?\n/).map(stripLineComment).join('\n');
+}
 
 function getWorkflowFiles(workflowsDir) {
   if (!fs.existsSync(workflowsDir)) {
@@ -80,16 +117,24 @@ function getLineNumber(source, index) {
   return source.slice(0, index).split(/\r?\n/).length;
 }
 
-function extractCheckoutSteps(source) {
+function extractCheckoutSteps(rawSource) {
+  const sanitized = stripWorkflowComments(rawSource);
   const blocks = [];
-  const lines = source.split(/\r?\n/);
+  const lines = sanitized.split(/\r?\n/);
   let current = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const stepStart = line.match(/^(\s*)-\s+/);
+    if (current && line.trim() !== '') {
+      const indent = line.match(/^(\s*)/)[1].length;
+      if (indent < current.indent) {
+        blocks.push(current);
+        current = null;
+      }
+    }
 
-    if (stepStart) {
+    const stepStart = line.match(/^(\s*)-\s+/);
+    if (stepStart && (!current || stepStart[1].length === current.indent)) {
       if (current) {
         blocks.push(current);
       }
@@ -116,14 +161,11 @@ function extractCheckoutSteps(source) {
       startLine: block.startLine,
       text: block.lines.join('\n'),
     }))
-    .filter(block => /uses:\s*['"]?actions\/checkout@/m.test(block.text));
+    .filter(block => /^\s*(?:-\s*)?uses:\s*['"]?actions\/checkout@/m.test(block.text));
 }
 
-function findViolations(filePath, source) {
+function collectCheckoutViolations(filePath, source, checkoutSteps) {
   const violations = [];
-  const checkoutSteps = extractCheckoutSteps(source);
-  const jobsIndex = source.search(TOP_LEVEL_JOBS_PATTERN);
-  const workflowHeader = jobsIndex >= 0 ? source.slice(0, jobsIndex) : source;
 
   for (const rule of RULES) {
     if (!rule.eventPattern.test(source)) {
@@ -165,7 +207,7 @@ function findViolations(filePath, source) {
 
   if (WRITE_PERMISSION_PATTERN.test(source) || WRITE_ALL_PATTERN.test(source)) {
     for (const step of checkoutSteps) {
-      if (!/persist-credentials:\s*['"]?false['"]?\b/m.test(step.text)) {
+      if (!/^\s*persist-credentials:\s*['"]?false['"]?\s*$/m.test(step.text)) {
         violations.push({
           filePath,
           event: 'write-permission checkout',
@@ -175,8 +217,17 @@ function findViolations(filePath, source) {
         });
       }
     }
-
   }
+
+  return violations;
+}
+
+function findViolations(filePath, rawSource) {
+  const source = stripWorkflowComments(rawSource);
+  const checkoutSteps = extractCheckoutSteps(source);
+  const violations = collectCheckoutViolations(filePath, source, checkoutSteps);
+  const jobsIndex = source.search(TOP_LEVEL_JOBS_PATTERN);
+  const workflowHeader = jobsIndex >= 0 ? source.slice(0, jobsIndex) : source;
 
   if (ID_TOKEN_WRITE_PATTERN.test(workflowHeader)) {
     violations.push({
