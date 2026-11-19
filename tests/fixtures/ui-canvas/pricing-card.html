@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pricing card mockup</title>
+<style>
+  :root{--brand:#6885e8;--brand-2:#e26a9e;--ink:#181b23;--muted:#585e6e;--line:#dde1e8;--bg:#f4f5f7}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;color:var(--ink);padding:24px}
+  .card{width:min(720px,100%);display:grid;grid-template-columns:260px 1fr;gap:28px;background:#fff;border:2px solid var(--line);border-radius:18px;padding:28px;box-shadow:0 20px 60px rgba(24,27,35,.08)}
+  .card .art{width:100%;aspect-ratio:1/1;border-radius:14px;background:linear-gradient(135deg,var(--brand),var(--brand-2));display:block}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--brand);background:rgba(104,133,232,.12);border-radius:99px;padding:4px 10px;margin-bottom:12px}
+  .badge i{width:7px;height:7px;border-radius:99px;background:var(--brand);animation:pulse 1.4s infinite}
+  @keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.5);opacity:.5}}
+  h1{margin:0 0 8px;font-size:28px;letter-spacing:-.02em}
+  p{margin:0 0 18px;color:var(--muted);line-height:1.55}
+  .price{display:flex;align-items:baseline;gap:6px;margin-bottom:18px}
+  .price b{font-size:40px;letter-spacing:-.03em}
+  .price span{color:var(--muted)}
+  .toggle{display:inline-flex;background:var(--bg);border-radius:99px;padding:3px;margin-bottom:18px}
+  .toggle button{border:0;background:transparent;padding:6px 14px;border-radius:99px;font:600 12px inherit;color:var(--muted);cursor:pointer}
+  .toggle button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  .actions{display:flex;gap:10px}
+  .btn{height:42px;padding:0 18px;border-radius:10px;font:600 14px inherit;cursor:pointer;border:1px solid transparent}
+  .btn.primary{background:var(--brand);color:#fff}
+  .btn.secondary{background:#fff;color:var(--ink);border-color:var(--line)}
+  .card{animation:bubble-in .7s both;transform-origin:50% 50%}
+  @keyframes bubble-in{
+    0%{transform:scale(.05);opacity:0;animation-timing-function:cubic-bezier(.2,.9,.3,1)}
+    40%{transform:scale(1.08);opacity:1;animation-timing-function:ease-in-out}
+    58%{transform:scale(.95,1.04)}
+    74%{transform:scale(1.03,.98)}
+    88%{transform:scale(.99,1.01)}
+    100%{transform:scale(1)}
+  }
+  @media (prefers-reduced-motion:reduce){.card{animation:none}}
+  @media (max-width:600px){.card{grid-template-columns:1fr;padding:20px}.card .art{aspect-ratio:16/9}h1{font-size:24px}}
+</style>
+</head>
+<body>
+  <article class="card" id="pricing-card">
+    <img class="art" alt="Plan illustration" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%236885e8'/%3E%3Cstop offset='1' stop-color='%23e26a9e'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='10' height='10' fill='url(%23g)'/%3E%3C/svg%3E">
+    <div class="body">
+      <span class="badge"><i></i>Most popular</span>
+      <h1 id="plan-title">Team plan</h1>
+      <p>Everything in Starter, plus shared memory, hosted CI tiers, and priority support for up to 25 seats.</p>
+      <div class="toggle" role="group"><button class="on" data-period="monthly">Monthly</button><button data-period="yearly">Yearly</button></div>
+      <div class="price"><b id="price">$49</b><span id="period">/ seat / month</span></div>
+      <div class="actions">
+        <button class="btn primary">Start free trial</button>
+        <button class="btn secondary">Talk to sales</button>
+      </div>
+    </div>
+  </article>
+  <script>
+    document.querySelectorAll('.toggle button').forEach(b => b.addEventListener('click', () => {
+      document.querySelectorAll('.toggle button').forEach(x => x.classList.toggle('on', x === b));
+      const yearly = b.dataset.period === 'yearly';
+      document.getElementById('price').textContent = yearly ? '$39' : '$49';
+      document.getElementById('period').textContent = yearly ? '/ seat / month, billed yearly' : '/ seat / month';
+    }));
+  </script>
+</body>
+</html>

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- UI Canvas (`/ui-canvas`, `ecc-ui-canvas`, `skills/ui-canvas`): a browser preview for UI component mockups. The agent writes a self-contained HTML file; the human selects, drags to reorder, resizes with handles, double-clicks to edit text, deletes elements or style properties, switches between desktop, mobile (393×852 with a device frame), and exact width × height, toggles an interact mode to try the component, pauses animations, and chats with the agent about the selected element. Save and Finish exports the edited DOM to `<name>.edited.html` plus a structured edit log in `<name>.edits.json`, which `await` hands to the agent to implement for real. Shares the Plan Canvas loopback server, state, and Stop/SessionStart hooks; the presence pill now names the connected harness (Claude Code, Codex, Cursor, …). Conventions borrowed from VisBug and Onlook; protocol lineage from lavish-axi.
+
 ### Changed
 
 - Rename the `claude-devfleet` skill to `devfleet` so its frontmatter name complies with Claude's reserved-word rule; the `/devfleet` entrypoint and external DevFleet integration are unchanged (#3783).

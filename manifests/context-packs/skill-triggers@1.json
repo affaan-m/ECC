@@ -1,7 +1,7 @@
 {
   "coverage": {
-    "skills": 326,
-    "withTriggers": 42
+    "skills": 328,
+    "withTriggers": 43
   },
   "generatedAt": "2026-10-30T00:01:34.569Z",
   "id": "skill-triggers@1",
@@ -10,7 +10,7 @@
     "id": "hand-seeded",
     "source": "manual-curation-pending-regeneration"
   },
-  "registryDigest": "cf9879ff972740a7d2af9b56a0f682870375d3abc75eea9164bd2b1838fd5b81",
+  "registryDigest": "a3be37b0b1e317454b4ab0eae2163a12a5ddcab8f7c4dce9c7abd8f70dbd4e26",
   "schemaVersion": 1,
   "triggers": {
     "skill:agent-runtime-gateway-smoke-test": [
@@ -376,7 +376,17 @@
       "yoruba bilingual ui",
       "test yoruba character preservation",
       "yoruba accents not rendering"
+    ],
+    "skill:ui-canvas": [
+      "preview the component before committing",
+      "show me a mockup in the browser",
+      "ui canvas",
+      "let me resize and move elements myself",
+      "edit the mockup by hand then build it",
+      "check the design on mobile and desktop",
+      "approve the ui before you implement it",
+      "lovable style visual editing"
     ]
   },
-  "triggersDigest": "b1f4c1bd0602860615fb67ecf4d16b6a0f7171ab4d65862c3db66aa0a2d6487c"
+  "triggersDigest": "b00be40af04a07aec545fb55cd23ca3fce77d0613ca392a3177bbc2f0238fc9c"
 }
