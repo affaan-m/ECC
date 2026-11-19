@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -197,38 +198,142 @@ function sanitizeCommand(command) {
 const LOG_MAX_BYTES = 10 * 1024 * 1024;
 const LOG_FILE_MODE = 0o600;
 
+// Keep this hook standalone: managed copies may omit scripts/lib. Lock
+// publication and release use descriptor identities, as the installer does.
+const LOG_LOCK_WAIT_MS = 500;
+function sameLogLock(left, right) {
+  return left.ino === right.ino && (left.dev === right.dev
+    || (process.platform === 'win32' && (!left.dev || !right.dev)));
+}
+
+function restoreLogLock(quarantine, lockPath) {
+  // Exclusive publication never overwrites a replacement owner's lock. Keep
+  // the displaced file for inspection if another owner already holds the path.
+  fs.linkSync(quarantine, lockPath);
+  fs.unlinkSync(quarantine);
+}
+
+function publishLogLock(lockPath) {
+  const temporary = `${lockPath}.create-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
+  let descriptor = fs.openSync(temporary, 'wx', LOG_FILE_MODE);
+  let identity;
+  try {
+    fs.writeFileSync(descriptor, JSON.stringify({ pid: process.pid }));
+    fs.fsyncSync(descriptor);
+    identity = fs.fstatSync(descriptor, { bigint: true });
+    fs.closeSync(descriptor);
+    descriptor = undefined;
+    fs.linkSync(temporary, lockPath);
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+    fs.rmSync(temporary, { force: true });
+  }
+  return () => {
+    const quarantine = `${lockPath}.release-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
+    fs.renameSync(lockPath, quarantine);
+    if (!sameLogLock(fs.lstatSync(quarantine, { bigint: true }), identity)) {
+      restoreLogLock(quarantine, lockPath);
+      throw new Error('Command log lock changed owner before release');
+    }
+    fs.unlinkSync(quarantine);
+  };
+}
+
+function inspectLogLock(lockPath) {
+  const descriptor = fs.openSync(lockPath, fs.constants.O_RDONLY
+    | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0));
+  try {
+    const identity = fs.fstatSync(descriptor, { bigint: true });
+    const named = fs.lstatSync(lockPath, { bigint: true });
+    if (!identity.isFile() || named.isSymbolicLink() || !sameLogLock(identity, named)
+      || identity.size > 4096n) return null;
+    const bytes = Buffer.alloc(4097);
+    const count = fs.readSync(descriptor, bytes, 0, bytes.length, 0);
+    if (count > 4096) return null;
+    const owner = JSON.parse(bytes.subarray(0, count).toString('utf8'));
+    if (!Number.isSafeInteger(owner.pid) || owner.pid <= 0) return null;
+    try { process.kill(owner.pid, 0); return null; }
+    catch (error) { return error.code === 'ESRCH' ? identity : null; }
+  } finally { fs.closeSync(descriptor); }
+}
+
+function recoverLogLock(lockPath) {
+  let releaseGuard;
+  try { releaseGuard = publishLogLock(`${lockPath}.recover`); }
+  catch { return null; }
+  try {
+    const identity = inspectLogLock(lockPath);
+    if (!identity) return null; // Never take a live or unverifiable owner's lock.
+    const quarantine = `${lockPath}.stale-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
+    fs.renameSync(lockPath, quarantine);
+    if (!sameLogLock(fs.lstatSync(quarantine, { bigint: true }), identity)) {
+      restoreLogLock(quarantine, lockPath);
+      return null;
+    }
+    fs.unlinkSync(quarantine);
+    return publishLogLock(lockPath);
+  } finally { releaseGuard(); }
+}
+
+function acquireLogLock(filePath) {
+  const lockPath = `${filePath}.lock`;
+  const deadline = performance.now() + LOG_LOCK_WAIT_MS;
+  const sleeper = new Int32Array(new SharedArrayBuffer(4));
+  while (true) {
+    try { return publishLogLock(lockPath); }
+    catch (error) { if (error.code !== 'EEXIST') return null; }
+    try {
+      const release = recoverLogLock(lockPath);
+      if (release) return release;
+    } catch { /* A writer can finish while recovery inspects the path. */ }
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) return null;
+    Atomics.wait(sleeper, 0, 0, Math.min(10, remaining));
+  }
+}
+
+function appendOnly(filePath, data) {
+  const descriptor = fs.openSync(filePath, 'a', LOG_FILE_MODE);
+  try {
+    if (process.platform !== 'win32') fs.fchmodSync(descriptor, LOG_FILE_MODE);
+    fs.writeSync(descriptor, data);
+  } finally { fs.closeSync(descriptor); }
+}
+
 function appendLine(filePath, line) {
   const data = `${line}\n`;
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-
-  let stat = null;
+  const release = acquireLogLock(filePath);
+  if (!release) {
+    // Preserve the command after a bounded wait or unsupported lock operation.
+    // Only the lock owner rotates; size enforcement resumes on a later call.
+    appendOnly(filePath, data);
+    return;
+  }
   try {
-    stat = fs.statSync(filePath);
-  } catch {
-    // No log yet.
-  }
-  // Logs written by earlier versions were group/world readable. Tighten an
-  // existing log before it can be rotated, so the `.1` copy is private too.
-  // Windows has no POSIX permission bits to tighten.
-  if (stat && stat.isFile() && process.platform !== 'win32' && (stat.mode & 0o077) !== 0) {
-    fs.chmodSync(filePath, LOG_FILE_MODE);
-  }
-  if (stat && stat.isFile() && stat.size > 0 && stat.size + Buffer.byteLength(data) > LOG_MAX_BYTES) {
+    let stat = null;
     try {
-      fs.renameSync(filePath, `${filePath}.1`);
+      stat = fs.statSync(filePath);
     } catch {
-      // Rotation is best effort (another process may have rotated first, or
-      // Windows may refuse the rename); still record this command.
+      // No log yet.
     }
-  }
-
-  // The mode only applies when this call creates the file; an existing log
-  // was tightened above.
-  const fd = fs.openSync(filePath, 'a', LOG_FILE_MODE);
-  try {
-    fs.writeSync(fd, data);
+    // Logs written by earlier versions were group/world readable. Tighten an
+    // existing log before it can be rotated, so the `.1` copy is private too.
+    // Windows has no POSIX permission bits to tighten.
+    if (stat && stat.isFile() && process.platform !== 'win32' && (stat.mode & 0o077) !== 0) {
+      fs.chmodSync(filePath, LOG_FILE_MODE);
+    }
+    if (stat && stat.isFile() && stat.size > 0 && stat.size + Buffer.byteLength(data) > LOG_MAX_BYTES) {
+      try {
+        fs.renameSync(filePath, `${filePath}.1`);
+      } catch {
+        // Rotation is best effort (another process may have rotated first, or
+        // Windows may refuse the rename); still record this command.
+      }
+    }
+    appendOnly(filePath, data);
   } finally {
-    fs.closeSync(fd);
+    try { release(); } catch { /* Preserve the write result and foreign locks. */ }
   }
 }
 
