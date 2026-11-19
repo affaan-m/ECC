@@ -6,7 +6,7 @@
     "context7": {
       "url": "https://mcp.context7.com/mcp",
       "headers": {
-        "CONTEXT7_API_KEY": "<CONTEXT7_API_KEY>"
+        "CONTEXT7_API_KEY": "ctx7sk-0de3a28d-ead9-4827-b160-b46489d4725b"
       }
     }
   },
@@ -16,8 +16,22 @@
   "toolAliases": {},
   "allowedTools": [],
   "resources": [],
-  "hooks": {},
+  "hooks": [],
   "toolsSettings": {},
   "includeMcpJson": false,
-  "model": null
+  "model": null,
+  "permissions": {
+    "rules": [
+      {
+        "capability": "fs_read",
+        "match": [
+          "./**"
+        ],
+        "effect": "allow"
+      }
+    ]
+  },
+  "kiroUpgrade": {
+    "revision": 2
+  }
 }

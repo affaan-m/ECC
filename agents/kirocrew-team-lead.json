@@ -1,0 +1,125 @@
+{
+  "name": "kirocrew-team-lead",
+  "description": "Owns a goal end to end and runs a team on it \u2014 splits it into work-ledger items, does the small focused ones itself, dispatches a session for every other one, and patrols that fleet.",
+  "model": "auto",
+  "tools": [
+    "execute_bash",
+    "fs_read",
+    "fs_write",
+    "code",
+    "grep",
+    "glob",
+    "web_fetch",
+    "web_search",
+    "introspect",
+    "session",
+    "report",
+    "tool_search",
+    "@kirocrew-cron",
+    "@kirocrew-core",
+    "@kirocrew-computer",
+    "@kirocrew-dashboard",
+    "@kirocrew-work"
+  ],
+  "allowedTools": [
+    "web_fetch",
+    "web_search",
+    "introspect",
+    "session",
+    "report",
+    "@kirocrew-cron/cron_list",
+    "@kirocrew-cron/cron_pause",
+    "@kirocrew-cron/cron_resume",
+    "@kirocrew-cron/cron_trigger",
+    "@kirocrew-cron/cron_remove",
+    "@kirocrew-cron/cron_remove_all",
+    "@kirocrew-core",
+    "@kirocrew-dashboard/chat_folder_tree",
+    "@kirocrew-dashboard/chat_folder_create",
+    "@kirocrew-dashboard/chat_folder_file_self",
+    "@kirocrew-dashboard/session_create",
+    "@kirocrew-dashboard/session_read_message",
+    "@kirocrew-dashboard/session_status",
+    "@kirocrew-work/work_ledger_read",
+    "@kirocrew-work/work_ledger_record",
+    "@kirocrew-work/work_ledger_rebuild",
+    "@kirocrew-work/work_brief"
+  ],
+  "resources": [
+    "file://.kiro/steering/**/*.md",
+    "skill://~/.kiro/crew/skills/team-lead/SKILL.md",
+    "skill://~/.kiro/crew/skills/goal-conductor/SKILL.md",
+    "skill://~/.kiro/crew/skills/dashboard/SKILL.md"
+  ],
+  "includeMcpJson": false,
+  "hooks": {
+    "postToolUse": [
+      {
+        "matcher": "execute_bash",
+        "command": "f=\"${KIROCREW_HOME:-$HOME/.kiro/crew}/audit.log\"; if command -v python3 >/dev/null 2>&1; then python3 -c 'import os,sys,time;d=sys.stdin.buffer.read().replace(b\"\\r\",b\"\").replace(b\"\\n\",b\"\");r=time.strftime(\"%Y-%m-%dT%H:%M:%SZ\",time.gmtime()).encode()+b\" BASH: \"+d+b\"\\n\";fd=os.open(sys.argv[1],os.O_WRONLY|os.O_APPEND|os.O_CREAT|getattr(os,\"O_BINARY\",0),0o600);os.write(fd,r);os.close(fd)' \"$f\"; else umask 077; printf '%s BASH: %s\\n' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" \"$(tr -d '\\r\\n')\" >> \"$f\"; fi"
+      }
+    ]
+  },
+  "prompt": "# Kiro Crew Team Lead\n\nYou are `kirocrew-team-lead`. A person hands you a goal and you own it end to\nend. You run it as a team, and unlike a conductor you can also do a piece of it\nyourself: you carry the full default toolset beside the dispatch tools\n(`session_create`, `chat_folder_*`, `work_ledger_*`). You are the root of your\nown goal; the person is the only reader above you.\n\n## The one rule: do it yourself only when it fits one turn\n\n**Read each task as if you were writing its work-ledger item.** ONE acceptance\ncondition, met before this turn ends, with nothing outside this session to wait\non: do it yourself, now. Everything else is dispatched. Say in one line which\nhalf you picked for each task. A task you started yourself and did not finish in\nthat turn becomes a dispatch, not a second turn.\n\n## Your procedure lives in two skills\n\nRead the `team-lead` skill before acting on a goal: it carries the\ndo-it-yourself test, the one-level dispatch rule and how to run the team. Its\nprocedure is `goal-conductor` -- dispatch order, the work ledger, the patrol\nloop, acceptance and stop conditions -- and it applies to you unchanged. With\nMCP Tool Search active the dispatch tools are deferred: load them by id with\n`tool_search` before the first call.\n\nThe owner can message you at any time: apply a goal change at the next natural\nboundary, except a message that invalidates work already in flight, which you\nhandle at once.\n",
+  "mcpServers": {
+    "kirocrew-cron": {
+      "command": "/Users/trung.ly/.kiro/crew-venv/bin/kirocrew",
+      "args": [
+        "mcp-cron"
+      ]
+    },
+    "kirocrew-core": {
+      "command": "/Users/trung.ly/.kiro/crew-venv/bin/kirocrew",
+      "args": [
+        "mcp-core"
+      ]
+    },
+    "kirocrew-dashboard": {
+      "command": "/Users/trung.ly/.kiro/crew-venv/bin/kirocrew",
+      "args": [
+        "mcp-dashboard"
+      ]
+    },
+    "kirocrew-work": {
+      "command": "/Users/trung.ly/.kiro/crew-venv/bin/kirocrew",
+      "args": [
+        "mcp-work"
+      ]
+    }
+  },
+  "permissions": {
+    "rules": [
+      {
+        "capability": "mcp",
+        "match": [
+          "kirocrew-core/*",
+          "kirocrew-cron/cron_list",
+          "kirocrew-cron/cron_pause",
+          "kirocrew-cron/cron_remove",
+          "kirocrew-cron/cron_remove_all",
+          "kirocrew-cron/cron_resume",
+          "kirocrew-cron/cron_trigger",
+          "kirocrew-dashboard/chat_folder_create",
+          "kirocrew-dashboard/chat_folder_file_self",
+          "kirocrew-dashboard/chat_folder_tree",
+          "kirocrew-dashboard/session_create",
+          "kirocrew-dashboard/session_read_message",
+          "kirocrew-dashboard/session_status",
+          "kirocrew-work/work_brief",
+          "kirocrew-work/work_ledger_read",
+          "kirocrew-work/work_ledger_rebuild",
+          "kirocrew-work/work_ledger_record"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "web_fetch",
+        "effect": "allow"
+      },
+      {
+        "capability": "web_search",
+        "effect": "allow"
+      }
+    ]
+  }
+}
