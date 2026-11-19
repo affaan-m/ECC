@@ -33,7 +33,7 @@ function hasPrefix(normalizedPath, prefix) {
 function supportsCopilotSourcePath(sourceRelativePath) {
   const normalizedPath = normalizeRelativePath(sourceRelativePath);
   if (normalizedPath.split('/').includes('..')) return false;
-  return COPILOT_HELPER_PATHS.has(normalizedPath)
+  return normalizedPath === 'scripts/copilot-pm2.cjs' || COPILOT_HELPER_PATHS.has(normalizedPath)
     || SUPPORTED_SOURCE_PREFIXES.some(prefix => hasPrefix(normalizedPath, prefix));
 }
 
@@ -102,6 +102,21 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
 
   if (hasPrefix(normalizedSourcePath, 'rules')) {
     return planCopilotRuleOperations(module, normalizedSourcePath, targetRoot, repoRoot);
+  }
+
+  if (normalizedSourcePath === 'scripts/copilot-pm2.cjs') {
+    return [
+      createManagedOperation({
+        moduleId: module.id,
+        sourceRelativePath: 'manifests/install-assets/copilot-pm2-skill.md',
+        destinationPath: path.join(targetRoot, 'skills', 'copilot-pm2', 'SKILL.md'),
+      }),
+      createManagedOperation({
+        moduleId: module.id,
+        sourceRelativePath: normalizedSourcePath,
+        destinationPath: path.join(targetRoot, 'ecc', 'scripts', 'pm2', 'copilot-pm2.cjs'),
+      }),
+    ];
   }
 
   if (COPILOT_HELPER_PATHS.has(normalizedSourcePath)) {
