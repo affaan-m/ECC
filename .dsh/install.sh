@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+#
+# Install ECC into a DeepSeek Harness profile.
+#
+# Writes only inside $DSH_HOME:
+#   <dsh-home>/claude-compat/ecc-hooks.json      a copy of ECC's hooks.json
+#   <dsh-home>/local-bundles/dsh-cc-hooks/       the hook bridge (this repo's .dsh/plugin)
+# then registers the bundle with `dsh plugin --profile <profile> add`.
+#
+# Idempotent: re-running overwrites the generated files and never deletes
+# anything else. Use --dry-run to see the plan first.
+set -euo pipefail
+
+ECC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
+PROFILE="web"
+WITH_SKILLS=0
+DRY_RUN=0
+FORCE=0
+
+usage() {
+  cat <<'USAGE'
+Usage: ./.dsh/install.sh [options]
+
+  --profile <name>    DSH profile to install into (default: web)
+  --dsh-home <path>   Harness home (default: $DSH_HOME or ~/.dsh)
+  --skills            Also link ECC's skills into <dsh-home>/skills
+  --force             Overwrite an edited ecc-hooks.json instead of preserving it
+  --dry-run           Print the plan without writing anything
+  -h, --help          This message
+USAGE
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --profile) PROFILE="${2:?--profile needs a value}"; shift 2 ;;
+    --dsh-home) DSH_HOME="${2:?--dsh-home needs a value}"; shift 2 ;;
+    --skills) WITH_SKILLS=1; shift ;;
+    --force) FORCE=1; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+case "$ECC_ROOT$DSH_HOME" in
+  *"'"*) echo "paths containing a single quote are not supported" >&2; exit 2 ;;
+esac
+
+# A relative --dsh-home would bake a relative configPath into the bundle patch,
+# which the bridge resolves against whatever directory a session starts in.
+if [ "$DRY_RUN" != 1 ]; then
+  mkdir -p "$DSH_HOME"
+  DSH_HOME="$(cd "$DSH_HOME" && pwd)"
+fi
+export DSH_HOME
+
+HOOKS_SOURCE="$ECC_ROOT/hooks/hooks.json"
+PLUGIN_SOURCE="$ECC_ROOT/.dsh/plugin"
+CONFIG_PATH="$DSH_HOME/claude-compat/ecc-hooks.json"
+CONFIG_DIGEST_PATH="$CONFIG_PATH.sha256"
+BUNDLE_DIR="$DSH_HOME/local-bundles/dsh-cc-hooks"
+
+[ -f "$HOOKS_SOURCE" ] || { echo "missing $HOOKS_SOURCE — run this from an ECC checkout" >&2; exit 1; }
+[ -f "$PLUGIN_SOURCE/index.js" ] || { echo "missing $PLUGIN_SOURCE/index.js" >&2; exit 1; }
+command -v node >/dev/null 2>&1 || { echo "node is required (>=18)" >&2; exit 1; }
+
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | cut -d' ' -f1
+  else openssl dgst -sha256 "$1" | sed 's/^.*= //'
+  fi
+}
+
+# Remembers the copy this installer last wrote, so an untouched install from an
+# older ECC is recognised as stale rather than mistaken for a local edit.
+record_digest() {
+  if [ "$DRY_RUN" = 1 ]; then
+    echo "   would record the installed digest"
+  else
+    printf '%s\n' "$1" > "$CONFIG_DIGEST_PATH"
+  fi
+}
+
+run() {
+  if [ "$DRY_RUN" = 1 ]; then
+    printf '  would run: %s\n' "$*"
+  else
+    "$@"
+  fi
+}
+
+echo "ECC root      : $ECC_ROOT"
+echo "Harness home  : $DSH_HOME"
+echo "Profile       : $PROFILE"
+echo "Skills        : $([ "$WITH_SKILLS" = 1 ] && echo 'link all' || echo 'skip (use --skills)')"
+echo
+
+echo "1. hook config"
+run mkdir -p "$DSH_HOME/claude-compat"
+source_digest="$(sha256_of "$HOOKS_SOURCE")"
+recorded_digest=""
+[ -f "$CONFIG_DIGEST_PATH" ] && recorded_digest="$(cat "$CONFIG_DIGEST_PATH")"
+# A reinstall must not silently re-enable hooks the user trimmed out of this copy,
+# but an untouched copy from an older ECC is stale, not edited: the recorded digest
+# is what tells the two apart.
+if [ -f "$CONFIG_PATH" ] && ! cmp -s "$HOOKS_SOURCE" "$CONFIG_PATH" && [ "$FORCE" != 1 ]; then
+  if [ -n "$recorded_digest" ] && [ "$recorded_digest" = "$(sha256_of "$CONFIG_PATH")" ]; then
+    run cp "$HOOKS_SOURCE" "$CONFIG_PATH"
+    record_digest "$source_digest"
+    echo "   updated $CONFIG_PATH (untouched copy of an older ECC)"
+  else
+    echo "   kept your edited $CONFIG_PATH (fresh copy at $CONFIG_PATH.dist; use --force to replace)"
+    [ "$DRY_RUN" = 1 ] || cp "$HOOKS_SOURCE" "$CONFIG_PATH.dist"
+  fi
+else
+  run cp "$HOOKS_SOURCE" "$CONFIG_PATH"
+  record_digest "$source_digest"
+fi
+echo "   -> $CONFIG_PATH"
+
+echo "2. hook bridge"
+run mkdir -p "$BUNDLE_DIR"
+# Copy the bundle's modules by pattern. An explicit file list silently drops a
+# module added later, and the installed bundle then fails to load: `protocol.js`
+# was extracted from `index.js` and the install shipped without it.
+run cp "$PLUGIN_SOURCE"/*.js "$PLUGIN_SOURCE"/*.mjs "$PLUGIN_SOURCE/package.json" "$BUNDLE_DIR/"
+# The patch is generated rather than committed: it carries this machine's ECC
+# checkout path and harness home, which are not known at author time.
+if [ "$DRY_RUN" = 1 ]; then
+  echo "   would write: $BUNDLE_DIR/cordis.patch.yml"
+else
+  cat > "$BUNDLE_DIR/cordis.patch.yml" <<YAML
+# Generated by ECC's .dsh/install.sh on $(date -u +%Y-%m-%dT%H:%M:%SZ).
+# Runs ECC's hooks.json on every DSH extension point. ECC_HOOK_PROFILE is ECC's
+# own gate switch: minimal (default) keeps the blocking quality gates off,
+# standard/strict turn them on.
+- insert:
+    - id: cc-hooks
+      name: dsh-cc-hooks
+      config:
+        configPath: '$CONFIG_PATH'
+        pluginRoot: '$ECC_ROOT'
+        env:
+          ECC_HOOKS_ENABLED: 'true'
+          ECC_HOOK_PROFILE: 'minimal'
+YAML
+fi
+echo "   -> $BUNDLE_DIR"
+
+if [ "$WITH_SKILLS" = 1 ]; then
+  echo "3. skills"
+  run mkdir -p "$DSH_HOME/skills"
+  linked=0
+  skipped=0
+  copied=0
+  for skill in "$ECC_ROOT"/skills/*/; do
+    name="$(basename "$skill")"
+    [ -f "$skill/SKILL.md" ] || continue
+    target="$DSH_HOME/skills/$name"
+    if [ -e "$target" ] && [ ! -L "$target" ]; then
+      echo "   skip $name (a real file or directory is already there)"
+      skipped=$((skipped + 1))
+      continue
+    fi
+    if [ -L "$target" ]; then
+      case "$(readlink "$target")" in
+        "$ECC_ROOT"/skills/*) : ;;   # our own link: safe to refresh
+        *) echo "   skip $name (existing link points elsewhere: $(readlink "$target"))"
+           skipped=$((skipped + 1))
+           continue ;;
+      esac
+    fi
+    run ln -sfn "${skill%/}" "$target"
+    # Git Bash without developer mode silently copies instead of linking, which
+    # costs the live-scan property the README promises. Surface it instead.
+    if [ "$DRY_RUN" = 0 ] && [ ! -L "$target" ]; then
+      copied=$((copied + 1))
+    fi
+    linked=$((linked + 1))
+  done
+  if [ "$copied" -gt 0 ]; then
+    echo "   ! $copied of $linked were copied, not linked (Windows without developer"
+    echo "     mode does this silently). Those skills will not change when you edit this"
+    echo "     checkout. A plain re-run skips them, because the guard above protects any"
+    echo "     existing directory: remove the copied target(s) under $DSH_HOME/skills and"
+    echo "     run --skills again, or enable developer mode so links are created instead."
+  fi
+  echo "   -> $linked linked, $skipped skipped (the catalog is injected into every request)"
+else
+  echo "3. skills: skipped — pass --skills to link them into $DSH_HOME/skills"
+fi
+
+echo "4. register the bundle"
+if command -v dsh >/dev/null 2>&1; then
+  # DSH_HOME is exported above so registration targets the same home we wrote into.
+  run dsh plugin --profile "$PROFILE" add "$BUNDLE_DIR"
+else
+  echo "   dsh is not on PATH: register it from the harness with the plugin manager,"
+  echo "   or run: DSH_HOME=$DSH_HOME dsh plugin --profile $PROFILE add $BUNDLE_DIR"
+fi
+
+echo
+echo "Verify:  node $PLUGIN_SOURCE/test.mjs"
+echo "         tail -3 $DSH_HOME/cc-hooks/cc-hooks.log   # after a session starts"
+echo "Remove:  dsh plugin --profile $PROFILE remove dsh-cc-hooks"
+echo "         rm -rf $BUNDLE_DIR $CONFIG_PATH $CONFIG_DIGEST_PATH"
+[ "$DRY_RUN" = 1 ] && echo "(dry run: nothing was written)"
+exit 0
