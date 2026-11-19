@@ -18,6 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 
+const { readFileWithSharingRetry, writeFileAtomic } = require('../atomic-write');
 const { canonicalJson, hashValue } = require('./canonical');
 const envelope = require('./envelope');
 
@@ -57,7 +58,7 @@ class FixtureStore {
       response_hash: hashValue(response),
       response,
     };
-    fs.writeFileSync(this.pathFor(key), canonicalJson(record) + '\n', 'utf8');
+    writeFileAtomic(this.pathFor(key), canonicalJson(record) + '\n');
     return record;
   }
 
@@ -69,7 +70,7 @@ class FixtureStore {
     }
     let record;
     try {
-      record = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      record = JSON.parse(readFileWithSharingRetry(filePath, 'utf8'));
     } catch (_error) {
       throw new ReplayError('tool.fixture_corrupt', `fixture ${key.slice(0, 16)} is not valid JSON`, { tool, key });
     }

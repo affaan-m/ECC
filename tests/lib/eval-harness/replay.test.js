@@ -53,6 +53,31 @@ test('replay mode never calls the implementation and fails closed on a missing f
   }
 });
 
+test('an interrupted recording preserves the prior replayable fixture', () => {
+  const dir = tempDir('interrupted-record');
+  const write = fs.writeFileSync;
+  try {
+    const store = new replay.FixtureStore(dir);
+    const existing = store.put('read_inventory', { sku: 'x' }, { count: 1 });
+    const before = fs.readFileSync(store.pathFor(existing.key));
+    fs.writeFileSync = (destination, data, options) => {
+      // Simulate a write that reaches disk only partially before exhausting space.
+      write(destination, data.slice(0, 10), options);
+      throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+    };
+    try {
+      assert.throws(() => store.put('read_inventory', { sku: 'x' }, { count: 2 }), { code: 'ENOSPC' });
+    } finally {
+      fs.writeFileSync = write;
+    }
+    assert.deepStrictEqual(fs.readFileSync(store.pathFor(existing.key)), before);
+    assert.deepStrictEqual(store.get('read_inventory', { sku: 'x' }).response, { count: 1 });
+    assert.deepStrictEqual(fs.readdirSync(dir), [existing.key + '.json']);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('a hash-mismatched or corrupt fixture fails closed', () => {
   const dir = tempDir('mismatch');
   try {
