@@ -11,7 +11,7 @@ const crypto = require('crypto');
 
 const { uiEditorJs } = require('./editor');
 const { renderUiCanvasHtml, uiCanvasCss, uiClientJs } = require('./ui');
-const { MAX_EDITS, MAX_HTML_BYTES, normalizeEdits, writeExport } = require('./feedback');
+const { MAX_EDITS, MAX_HTML_BYTES, normalizeEdit, normalizeEdits, writeExport } = require('./feedback');
 
 const UI_ASSETS = {
   '/ui-canvas.css': { type: 'text/css; charset=utf-8', body: uiCanvasCss },
@@ -28,6 +28,42 @@ function serveUiAsset(pathname, res) {
   return true;
 }
 
+function requireLosslessReplay(raw) {
+  const edit = normalizeEdit(raw, 0);
+  if (!edit) return; // Preserve omission of malformed/unknown edit kinds.
+  const reject = field => {
+    throw Object.assign(new Error(`replay cannot preserve the edit's ${field}; use a supported value`), { code: 'EUI_REPLAY_LOSSY' });
+  };
+  if (raw.selector !== edit.selector) reject('selector');
+  if (typeof raw.id === 'string' && raw.id !== edit.id) reject('identity');
+  if (edit.kind === 'text') {
+    if (raw.htmlAfter !== undefined) {
+      if (typeof raw.htmlAfter !== 'string' || raw.htmlAfter !== edit.htmlAfter) reject('markup');
+    } else if (raw.after !== undefined && raw.after !== null && raw.after !== edit.after) reject('text');
+  }
+  if (edit.kind === 'style') {
+    const after = raw.after === null || raw.after === undefined ? null : String(raw.after);
+    if (after !== edit.after) reject('style value');
+  }
+  const number = (value, normalized) => {
+    if (value === undefined || value === null) return;
+    const parsed = typeof value === 'number' ? value : Number.parseFloat(value);
+    if (!Number.isFinite(parsed) || parsed !== normalized) reject('numeric value');
+  };
+  if (edit.kind === 'resize') { number(raw.width, edit.width); number(raw.height, edit.height); }
+  if (edit.kind === 'nudge') { number(raw.dx, edit.dx); number(raw.dy, edit.dy); }
+  if (edit.kind === 'move') {
+    if (raw.to.parent !== edit.to.parent) reject('destination selector');
+    number(raw.to.index, edit.to.index);
+  }
+}
+
+function includedBatchIds(session, bakedIds) {
+  return (session.uiBatches || [])
+    .filter(batch => batch.edits.length > 0 && batch.edits.every(edit => bakedIds.has(edit.id)))
+    .map(batch => batch.id);
+}
+
 // UI Canvas edit batches arrive with the full DOM snapshot. Write it (and the
 // edit log) next to the artifact before the item is queued, and hand the agent
 // paths instead of megabytes of markup. Chat items pass through untouched.
@@ -39,6 +75,10 @@ function materializeUiExports(session, items) {
         || item.bakedEditIds.some(id => typeof id !== 'string' || id.length > 40))) {
       throw Object.assign(new Error('invalid or oversized applied-edit proof'), { code: 'EUI_PROOF_INVALID' });
     }
+    for (const raw of Array.isArray(item.edits) ? item.edits : []) requireLosslessReplay(raw);
+    if (includedBatchIds(session, new Set(item.bakedEditIds || [])).length > 49) {
+      throw Object.assign(new Error('too many unincorporated Apply batches; ask the agent to incorporate them before applying more'), { code: 'EUI_PROOF_INVALID' });
+    }
     if (typeof item.html !== 'string' || !item.html.trim()) throw Object.assign(new Error('html snapshot is required'), { code: 'EUI_HTML_MISSING' });
     if (Buffer.byteLength(item.html, 'utf8') > MAX_HTML_BYTES) throw Object.assign(new Error('html snapshot too large'), { code: 'EUI_HTML_TOO_LARGE' });
   }
@@ -47,7 +87,7 @@ function materializeUiExports(session, items) {
     // The on-disk log holds the same normalized edits the agent receives.
     const edits = normalizeEdits(item.edits);
     const bakedIds = new Set(item.bakedEditIds || []);
-    const includedBatches = (session.uiBatches || []).filter(batch => batch.edits.every(edit => bakedIds.has(edit.id))).map(batch => batch.id);
+    const includedBatches = includedBatchIds(session, bakedIds);
     const written = writeExport(session.file, {
       html: item.html,
       edits,
@@ -61,6 +101,7 @@ function materializeUiExports(session, items) {
 
 // Map an export failure to the HTTP status and message the browser shows.
 function exportErrorResponse(error) {
+  if (error.code === 'EUI_REPLAY_LOSSY') return { status: 422, error: error.message };
   if (error.code === 'EUI_PROOF_INVALID' || error.code === 'EUI_EDITS_TOO_LARGE') return { status: 413, error: error.message };
   if (error.code === 'EUI_HTML_TOO_LARGE') return { status: 413, error: 'html snapshot too large' };
   if (error.code === 'EUI_HTML_MISSING') return { status: 400, error: 'edits and finish items need an html snapshot' };
