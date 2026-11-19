@@ -74,7 +74,7 @@ flowchart TD
 | **Primary Label**  | `aria-label` / `<label>` | `.accessibilityLabel()`              | `contentDescription`                                        |
 | **Secondary Hint** | `aria-describedby`       | `.accessibilityHint()`               | `Modifier.semantics { stateDescription = ... }`             |
 | **Action Role**    | `role="button"`          | `.accessibilityAddTraits(.isButton)` | `Modifier.semantics { role = Role.Button }`                 |
-| **Live Updates**   | `aria-live="polite"`     | `.accessibilityLiveRegion(.polite)`  | `Modifier.semantics { liveRegion = LiveRegionMode.Polite }` |
+| **Live Updates**   | `aria-live="polite"`     | `AccessibilityNotification.Announcement(...).post()` (iOS 17+)  | `Modifier.semantics { liveRegion = LiveRegionMode.Polite }` |
 
 ## Examples
 
@@ -99,6 +99,19 @@ Button(action: deleteItem) {
 .accessibilityLabel("Delete item")
 .accessibilityHint("Permanently removes this item from your list")
 .accessibilityAddTraits(.isButton)
+```
+
+### iOS 17+: Announce a Status Update
+
+Keep the status visible in the UI. After a save succeeds, post the announcement once from the save completion handler so VoiceOver can announce the new status without moving focus.
+
+```swift
+import Accessibility
+
+@available(iOS 17.0, *)
+func announceSaveCompleted() {
+    AccessibilityNotification.Announcement("Changes saved.").post()
+}
 ```
 
 ### Android: Accessible Toggle
