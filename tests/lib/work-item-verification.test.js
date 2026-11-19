@@ -236,9 +236,23 @@ async function run() {
     fs.unlinkSync(artifact); fs.writeFileSync(artifact, validDoc());
     const canonicalArtifact = path.join(fs.realpathSync(root), 'matrix.md');
     const open = fs.openSync;
-    fs.openSync = function (filename, ...args) {
-      if (filename === canonicalArtifact) { fs.unlinkSync(artifact); makeFifo(); }
-      return open.call(fs, filename, ...args);
+    const readFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0);
+    fs.openSync = function (filename, flags, mode) {
+      if (filename === canonicalArtifact) {
+        assert.strictEqual(flags, readFlags, 'artifact reads must retain nonblocking/no-follow flags');
+        fs.unlinkSync(artifact); makeFifo();
+        return open(filename, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0));
+      }
+      // State persistence creates only private, exclusive staging files.
+      if (flags === 'wx') return open(filename, 'wx', mode);
+      if (flags === (fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0))) {
+        return open(filename, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0), mode);
+      }
+      if (flags === (fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0))) {
+        return open(filename, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+      }
+      assert.strictEqual(flags, 'r', 'unexpected file-open mode during verification');
+      return open(filename, 'r');
     };
     try { assert.strictEqual(store.verifyWorkItem('docs-task').attempt.outcome, 'unknown'); }
     finally { fs.openSync = open; }

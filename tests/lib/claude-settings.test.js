@@ -403,13 +403,15 @@ function runTests() {
     const settingsPath = path.join(tempDir, 'settings.json');
     const originalFstatSync = fs.fstatSync;
     const originalLstatSync = fs.lstatSync;
+    let identityDescriptor;
     let sawBigIntFstat = false;
     let sawBigIntLstat = false;
     const descriptorIno = 9007199254740992n;
     const pathIno = 9007199254740993n;
     try {
       fs.writeFileSync(settingsPath, '{"theme":"initial"}\n');
-      const settingsIdentity = fs.statSync(settingsPath, { bigint: true });
+      identityDescriptor = fs.openSync(settingsPath, 'r');
+      const settingsIdentity = originalFstatSync.call(fs, identityDescriptor, { bigint: true });
       fs.fstatSync = function(descriptor, options) {
         const stats = originalFstatSync.call(fs, descriptor, options);
         if (stats.dev !== settingsIdentity.dev || stats.ino !== settingsIdentity.ino) return stats;
@@ -436,12 +438,18 @@ function runTests() {
       );
       assert.strictEqual(sawBigIntFstat, true);
       assert.strictEqual(sawBigIntLstat, true);
-      assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), {
+      fs.fstatSync = originalFstatSync;
+      fs.lstatSync = originalLstatSync;
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(identityDescriptor, 'utf8')), {
         theme: 'initial',
       });
+      const currentIdentity = fs.lstatSync(settingsPath, { bigint: true });
+      assert.strictEqual(currentIdentity.dev, settingsIdentity.dev);
+      assert.strictEqual(currentIdentity.ino, settingsIdentity.ino);
     } finally {
       fs.fstatSync = originalFstatSync;
       fs.lstatSync = originalLstatSync;
+      if (identityDescriptor !== undefined) fs.closeSync(identityDescriptor);
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   })) passed++; else failed++;

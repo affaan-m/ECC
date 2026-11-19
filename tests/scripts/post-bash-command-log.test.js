@@ -31,6 +31,15 @@ function runHook(mode, payload, homeDir) {
   });
 }
 
+function readLogSnapshot(filename) {
+  const descriptor = fs.openSync(filename, 'r');
+  try {
+    return { content: fs.readFileSync(descriptor, 'utf8'), stat: fs.fstatSync(descriptor) };
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
 let passed = 0;
 let failed = 0;
 
@@ -371,7 +380,7 @@ if (
         assert.strictEqual(result.status, 0, result.stdout + result.stderr);
 
         const logFile = path.join(homeDir, '.claude', fileName);
-        assert.strictEqual(fs.statSync(logFile).mode & 0o777, 0o600, fileName);
+        assert.strictEqual(readLogSnapshot(logFile).stat.mode & 0o777, 0o600, fileName);
         assert.ok(!fs.existsSync(`${logFile}.1`), `${fileName} should not rotate`);
       }
     } finally {
@@ -396,8 +405,9 @@ if (
       const result = runHook('audit', { tool_input: { command: 'git log' } }, homeDir);
       assert.strictEqual(result.status, 0, result.stdout + result.stderr);
 
-      assert.strictEqual(fs.statSync(logFile).mode & 0o777, 0o600);
-      const logContent = fs.readFileSync(logFile, 'utf8');
+      const snapshot = readLogSnapshot(logFile);
+      assert.strictEqual(snapshot.stat.mode & 0o777, 0o600);
+      const logContent = snapshot.content;
       assert.ok(logContent.startsWith('[earlier] git status\n'), logContent);
       assert.ok(logContent.includes('git log'), logContent);
     } finally {
@@ -423,20 +433,21 @@ if (
       let result = runHook('audit', { tool_input: { command: 'echo second' } }, homeDir);
       assert.strictEqual(result.status, 0, result.stdout + result.stderr);
 
-      assert.strictEqual(fs.statSync(rotated).size, LOG_MAX_BYTES);
-      assert.ok(fs.readFileSync(rotated, 'utf8').startsWith('[first] generation\n'));
-      const fresh = fs.readFileSync(logFile, 'utf8');
-      assert.match(fresh, /^\[[^\]]+\] echo second\n$/);
-      if (checkModes) assert.strictEqual(fs.statSync(logFile).mode & 0o777, 0o600);
+      const previous = readLogSnapshot(rotated);
+      assert.strictEqual(previous.stat.size, LOG_MAX_BYTES);
+      assert.ok(previous.content.startsWith('[first] generation\n'));
+      const fresh = readLogSnapshot(logFile);
+      assert.match(fresh.content, /^\[[^\]]+\] echo second\n$/);
+      if (checkModes) assert.strictEqual(fresh.stat.mode & 0o777, 0o600);
 
       // Filling the new log again replaces the previous rotated copy.
       fs.truncateSync(logFile, LOG_MAX_BYTES);
       result = runHook('audit', { tool_input: { command: 'echo third' } }, homeDir);
       assert.strictEqual(result.status, 0, result.stdout + result.stderr);
 
-      assert.ok(fs.readFileSync(rotated, 'utf8').includes('echo second'));
+      assert.ok(readLogSnapshot(rotated).content.includes('echo second'));
       assert.ok(!fs.existsSync(`${logFile}.2`));
-      assert.match(fs.readFileSync(logFile, 'utf8'), /^\[[^\]]+\] echo third\n$/);
+      assert.match(readLogSnapshot(logFile).content, /^\[[^\]]+\] echo third\n$/);
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }
@@ -460,9 +471,10 @@ if (
       const result = runHook('audit', { tool_input: { command: 'echo next' } }, homeDir);
       assert.strictEqual(result.status, 0, result.stdout + result.stderr);
 
-      assert.ok(fs.readFileSync(`${logFile}.1`, 'utf8').startsWith('[legacy] history\n'));
-      assert.strictEqual(fs.statSync(`${logFile}.1`).mode & 0o777, 0o600);
-      assert.strictEqual(fs.statSync(logFile).mode & 0o777, 0o600);
+      const previous = readLogSnapshot(`${logFile}.1`);
+      assert.ok(previous.content.startsWith('[legacy] history\n'));
+      assert.strictEqual(previous.stat.mode & 0o777, 0o600);
+      assert.strictEqual(readLogSnapshot(logFile).stat.mode & 0o777, 0o600);
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }
@@ -486,11 +498,12 @@ if (
       assert.strictEqual(result.status, 0, result.stdout + result.stderr);
 
       assert.ok(fs.statSync(`${logFile}.1`).isDirectory());
-      assert.ok(fs.statSync(logFile).size > LOG_MAX_BYTES);
       const fd = fs.openSync(logFile, 'r');
       try {
+        const size = fs.fstatSync(fd).size;
+        assert.ok(size > LOG_MAX_BYTES);
         const tail = Buffer.alloc(64);
-        const read = fs.readSync(fd, tail, 0, tail.length, fs.statSync(logFile).size - tail.length);
+        const read = fs.readSync(fd, tail, 0, tail.length, size - tail.length);
         assert.ok(tail.subarray(0, read).toString('utf8').endsWith('echo kept\n'));
       } finally {
         fs.closeSync(fd);
