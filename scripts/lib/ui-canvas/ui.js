@@ -611,7 +611,7 @@ ${inspectorClientJs()}
     es.addEventListener('ended', e => {
       const data = JSON.parse(e.data);
       const ownFinish = data.finished && pendingDelivery && pendingDelivery.kind === 'finish' && data.deliveryId === pendingDelivery.id;
-      if (ownFinish) clearDelivery();
+      if (ownFinish) { clearDelivery(); statusEl.textContent = 'Saved and handed to ' + agentName() + '.'; }
       markEnded(ownFinish ? 'finished' : data.endedBy); es.close();
     });
     es.onerror = () => {

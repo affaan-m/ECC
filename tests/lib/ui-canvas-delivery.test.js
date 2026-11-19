@@ -172,6 +172,10 @@ async function main() {
     own.event('ended', { endedBy: 'user', finished: true, deliveryId: id }); own.lose(); await tick();
     assert.equal(own.saved().pendingDelivery, null); assert.equal(own.node('endedTitle').textContent, 'Saved and handed to agent');
     assert.doesNotMatch(own.node('sendStatus').textContent, /failed/);
+    const late = await start(); const lateId = late.requests[0].body.deliveryId; late.lose(); await tick();
+    assert.match(late.node('sendStatus').textContent, /failed/);
+    late.event('ended', { endedBy: 'user', finished: true, deliveryId: lateId });
+    assert.equal(late.saved().pendingDelivery, null); assert.doesNotMatch(late.node('sendStatus').textContent, /failed/);
     const other = await start(); other.event('ended', { endedBy: 'user' }); other.lose(); await tick();
     assert.ok(other.saved().pendingDelivery); assert.equal(other.node('endedTitle').textContent, 'Session ended');
   });
