@@ -5,7 +5,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const scriptPath = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'post-bash-command-log.js');
-const { sanitizeCommand } = require(scriptPath);
+const { LOG_MAX_BYTES, sanitizeCommand } = require(scriptPath);
 
 function test(name, fn) {
   try {
@@ -346,6 +346,97 @@ if (
       const logFile = path.join(homeDir, '.claude', 'cost-tracker.log');
       const logContent = fs.readFileSync(logFile, 'utf8');
       assert.match(logContent, /tool=Bash command=npm publish/);
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })
+)
+  passed++;
+else failed++;
+
+// POSIX permission bits do not apply on Windows.
+const checkModes = process.platform !== 'win32';
+
+if (
+  test('audit and cost logs are created readable by the owner only (#3846)', () => {
+    if (!checkModes) return;
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-bash-log-'));
+
+    try {
+      for (const [mode, fileName] of [
+        ['audit', 'bash-commands.log'],
+        ['cost', 'cost-tracker.log'],
+      ]) {
+        const result = runHook(mode, { tool_input: { command: 'ls' } }, homeDir);
+        assert.strictEqual(result.status, 0, result.stdout + result.stderr);
+
+        const logFile = path.join(homeDir, '.claude', fileName);
+        assert.strictEqual(fs.statSync(logFile).mode & 0o777, 0o600, fileName);
+        assert.ok(!fs.existsSync(`${logFile}.1`), `${fileName} should not rotate`);
+      }
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('an existing group/world-readable log is tightened on the next write (#3846)', () => {
+    if (!checkModes) return;
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-bash-log-'));
+    const logFile = path.join(homeDir, '.claude', 'bash-commands.log');
+
+    try {
+      fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      fs.writeFileSync(logFile, '[earlier] git status\n');
+      fs.chmodSync(logFile, 0o664);
+
+      const result = runHook('audit', { tool_input: { command: 'git log' } }, homeDir);
+      assert.strictEqual(result.status, 0, result.stdout + result.stderr);
+
+      assert.strictEqual(fs.statSync(logFile).mode & 0o777, 0o600);
+      const logContent = fs.readFileSync(logFile, 'utf8');
+      assert.ok(logContent.startsWith('[earlier] git status\n'), logContent);
+      assert.ok(logContent.includes('git log'), logContent);
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('a log at the size cap rotates to .1 and keeps one rotated copy (#3846)', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-bash-log-'));
+    const logFile = path.join(homeDir, '.claude', 'bash-commands.log');
+    const rotated = `${logFile}.1`;
+
+    try {
+      fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      fs.writeFileSync(logFile, '[first] generation\n');
+      // Sparse fill keeps the fixture cheap while reporting the full size.
+      fs.truncateSync(logFile, LOG_MAX_BYTES);
+
+      let result = runHook('audit', { tool_input: { command: 'echo second' } }, homeDir);
+      assert.strictEqual(result.status, 0, result.stdout + result.stderr);
+
+      assert.strictEqual(fs.statSync(rotated).size, LOG_MAX_BYTES);
+      assert.ok(fs.readFileSync(rotated, 'utf8').startsWith('[first] generation\n'));
+      const fresh = fs.readFileSync(logFile, 'utf8');
+      assert.match(fresh, /^\[[^\]]+\] echo second\n$/);
+      if (checkModes) assert.strictEqual(fs.statSync(logFile).mode & 0o777, 0o600);
+
+      // Filling the new log again replaces the previous rotated copy.
+      fs.truncateSync(logFile, LOG_MAX_BYTES);
+      result = runHook('audit', { tool_input: { command: 'echo third' } }, homeDir);
+      assert.strictEqual(result.status, 0, result.stdout + result.stderr);
+
+      assert.ok(fs.readFileSync(rotated, 'utf8').includes('echo second'));
+      assert.ok(!fs.existsSync(`${logFile}.2`));
+      assert.match(fs.readFileSync(logFile, 'utf8'), /^\[[^\]]+\] echo third\n$/);
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }

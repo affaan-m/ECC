@@ -190,9 +190,42 @@ function sanitizeCommand(command) {
     .replace(/\bgithub_pat_[A-Za-z0-9_]+\b/g, '<REDACTED>');
 }
 
+// The logs hold every Bash command, so they are owner-only and size-capped:
+// past LOG_MAX_BYTES the log moves to `<log>.1` (replacing the previous one)
+// and a fresh log starts. Same scheme as scripts/lib/gateguard-metrics.js,
+// inlined because hooks cannot require scripts/lib/ (see #3259).
+const LOG_MAX_BYTES = 10 * 1024 * 1024;
+const LOG_FILE_MODE = 0o600;
+
 function appendLine(filePath, line) {
+  const data = `${line}\n`;
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.appendFileSync(filePath, `${line}\n`, 'utf8');
+
+  let stat = null;
+  try {
+    stat = fs.statSync(filePath);
+  } catch {
+    // No log yet.
+  }
+  if (stat && stat.isFile() && stat.size > 0 && stat.size + Buffer.byteLength(data) > LOG_MAX_BYTES) {
+    fs.renameSync(filePath, `${filePath}.1`);
+  }
+
+  const fd = fs.openSync(filePath, 'a', LOG_FILE_MODE);
+  try {
+    // The mode above only applies when the file is created. Logs written by
+    // earlier versions were group/world readable, so tighten them here.
+    // Windows has no POSIX permission bits to tighten.
+    if (process.platform !== 'win32') {
+      const current = fs.fstatSync(fd);
+      if (current.isFile() && (current.mode & 0o077) !== 0) {
+        fs.fchmodSync(fd, LOG_FILE_MODE);
+      }
+    }
+    fs.writeSync(fd, data);
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 // Resolve the Claude profile directory the same way everywhere.
@@ -250,6 +283,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  LOG_MAX_BYTES,
   run,
   sanitizeCommand,
 };
