@@ -8,6 +8,7 @@ const http = require('node:http');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { createSessionStore } = require('../../scripts/lib/plan-canvas/sessions');
+const { UI_PROFILE } = require('../../scripts/ui-canvas');
 const { createPlanCanvasServer } = require('../../scripts/lib/plan-canvas/server');
 
 let passed = 0;
@@ -125,6 +126,15 @@ async function main() {
     await assert.rejects(cli('await', file, '--ack', 'fb-0'), error => { assert.match(error.stdout, /requires comma-separated UI batch IDs/); return true; });
     await assert.rejects(cli('await', file, '--ack', 'fb-999999'), error => { assert.match(error.stdout, /unknown UI batch ID/); return true; });
   }));
+  await test('latest-snapshot guidance acknowledges only its batch and proven coverage', () => {
+    const first = { kind: 'edits', id: 'fb-1', exportPath: '/first.html', editCount: 1 };
+    const latest = { kind: 'edits', id: 'fb-2', exportPath: '/latest.html', editCount: 1, includedBatches: [] };
+    const uncovered = UI_PROFILE.nextSteps.feedback({ items: [first, latest] });
+    assert.match(uncovered, /--ack fb-2 --reply/); assert.doesNotMatch(uncovered, /--ack [^ ]*fb-1/);
+    assert.match(uncovered, /Resolve any other Apply batches separately/);
+    const covered = UI_PROFILE.nextSteps.feedback({ items: [first, { ...latest, includedBatches: ['fb-1'] }] });
+    assert.match(covered, /--ack fb-2,fb-1 --reply/); assert.doesNotMatch(covered, /Resolve any other/);
+  });
   console.log(`Passed: ${passed}\nFailed: ${failed}`); process.exitCode = failed ? 1 : 0;
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

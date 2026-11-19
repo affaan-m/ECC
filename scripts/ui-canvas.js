@@ -83,7 +83,12 @@ const UI_PROFILE = {
         return `The human clicked Save and Finish. Read the final markup at ${finish.exportPath} (edit log: ${finish.editsPath}), reproduce that exact look in the real component with full functionality, and report in chat. Do not reopen the canvas.`;
       }
       if (applied) {
-        return `The human applied ${applied.editCount} edit(s) to the preview. Rewrite the mockup file from ${applied.exportPath} (keep it self-contained), then run \`ecc-ui-canvas await <file> --ack ${appliedItems.map(item => item.id).join(',')} --reply "<what you changed>"\` only after those batches are incorporated, to keep listening.`;
+        const ackIds = [...new Set([applied.id, ...(applied.includedBatches || [])])]
+          .filter(id => typeof id === 'string' && /^fb-[1-9][0-9]{0,15}$/.test(id));
+        const ack = ackIds.length ? ` --ack ${ackIds.join(',')}` : '';
+        const remaining = appliedItems.some(item => !ackIds.includes(item.id))
+          ? ' Resolve any other Apply batches separately; draining them does not acknowledge them.' : '';
+        return `The human applied ${applied.editCount} edit(s) to the preview. Rewrite the mockup file from ${applied.exportPath} (keep it self-contained), then run \`ecc-ui-canvas await <file>${ack} --reply "<what you changed>"\` only after those batches are incorporated, to keep listening.${remaining}`;
       }
       if (result.sessionEnded) {
         return 'The human sent this and ended the preview. Address it and report in chat; do not reopen the canvas uninvited.';
