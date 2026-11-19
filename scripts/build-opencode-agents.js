@@ -26,11 +26,7 @@ const agentNames = [
   'marketing-agent',
 ];
 
-fs.mkdirSync(outputDir, { recursive: true });
-
-for (const name of agentNames) {
-  const sourcePath = path.join(repoRoot, 'agents', `${name}.md`);
-  const source = fs.readFileSync(sourcePath, 'utf8');
+function convertAgent(source, sourcePath) {
   const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
   if (!match) throw new Error(`Expected YAML frontmatter in ${sourcePath}`);
 
@@ -49,6 +45,18 @@ for (const name of agentNames) {
     },
   };
 
-  const output = `---\n${yaml.dump(definition)}---\n${prompt}`;
-  fs.writeFileSync(path.join(outputDir, `${name}.md`), output);
+  return `---\n${yaml.dump(definition)}---\n${prompt}`;
 }
+
+function buildOpencodeAgents() {
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  for (const name of agentNames) {
+    const sourcePath = path.join(repoRoot, 'agents', `${name}.md`);
+    const source = fs.readFileSync(sourcePath, 'utf8');
+    const output = convertAgent(source, sourcePath);
+    fs.writeFileSync(path.join(outputDir, `${name}.md`), output);
+  }
+}
+
+module.exports = { buildOpencodeAgents, convertAgent };
