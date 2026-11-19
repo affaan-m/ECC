@@ -73,7 +73,7 @@ flowchart TD
 | **主标签**       | `aria-label` / `<label>` | `.accessibilityLabel()`              | `contentDescription`                                        |
 | **辅助提示**     | `aria-describedby`       | `.accessibilityHint()`               | `Modifier.semantics { stateDescription = ... }`             |
 | **操作角色**     | `role="button"`          | `.accessibilityAddTraits(.isButton)` | `Modifier.semantics { role = Role.Button }`                 |
-| **实时更新**     | `aria-live="polite"`     | `.accessibilityLiveRegion(.polite)`  | `Modifier.semantics { liveRegion = LiveRegionMode.Polite }` |
+| **实时更新**     | `aria-live="polite"`     | `AccessibilityNotification.Announcement(...).post()` (iOS 17 及更高版本)  | `Modifier.semantics { liveRegion = LiveRegionMode.Polite }` |
 
 ## 示例
 
@@ -98,6 +98,19 @@ Button(action: deleteItem) {
 .accessibilityLabel("Delete item")
 .accessibilityHint("Permanently removes this item from your list")
 .accessibilityAddTraits(.isButton)
+```
+
+### iOS 17 及更高版本：播报状态更新
+
+在界面上保留可见的状态提示。保存成功后，在完成处理程序中发送一次通知，让 VoiceOver 在不移动焦点的情况下播报新状态。
+
+```swift
+import Accessibility
+
+@available(iOS 17.0, *)
+func announceSaveCompleted() {
+    AccessibilityNotification.Announcement("Changes saved.").post()
+}
 ```
 
 ### Android：无障碍切换开关
