@@ -34,7 +34,16 @@ function result(command, args, input, cwd, extraEnv = {}, shell = false) {
   return JSON.parse(child.stdout);
 }
 function manifest(input, cwd, env = {}) {
-  return result(buildAntigravityCliHookCommand(), [], JSON.stringify(input), cwd, env, true);
+  const raw = JSON.stringify(input);
+  const generated = result(buildAntigravityCliHookCommand(), [], raw, cwd, env, true);
+  // Exercise the original function as a module too: generated Node source has
+  // no file identity for coverage and must keep the same boundary decisions.
+  const loaded = result(process.execPath, [
+    '-e', 'require(process.argv[1]).bootstrap()',
+    path.join(root, 'scripts/lib/antigravity-cli-bootstrap.js'), '--hook', 'config-protection',
+  ], raw, cwd, env);
+  assert.deepEqual(loaded, generated, 'Module and published bootstrap must agree');
+  return generated;
 }
 function sentinel(directory, marker) {
   const script = path.join(directory, 'scripts/antigravity/hook-bridge.js');
@@ -48,6 +57,20 @@ test('both published manifests use the same bounded first-party bootstrap', () =
     assert.equal(manifest['ecc-guardrails'].PreToolUse[0].hooks[0].command, buildAntigravityCliHookCommand());
   }
 });
+
+test('external canonical runtime preserves allow, deny and explicit bootstrap bypasses', () => workspace(temporary => {
+  fs.writeFileSync(path.join(temporary, 'app.js'), 'export default 1;');
+  fs.writeFileSync(path.join(temporary, 'eslint.config.js'), 'module.exports = [];');
+  for (const [file, expected] of [['app.js', 'allow'], ['eslint.config.js', 'deny']]) {
+    const payload = {
+      workspacePaths: [temporary],
+      toolCall: { name: 'edit_file', args: { Path: path.join(temporary, file) } },
+    };
+    assert.equal(manifest(payload, temporary, { ANTIGRAVITY_PLUGIN_ROOT: root }).decision, expected);
+  }
+  assert.equal(manifest({}, temporary, { ECC_HOOKS_ENABLED: 'false' }).decision, 'allow');
+  assert.equal(manifest({}, temporary, { ECC_DRY_RUN: '1' }).decision, 'allow');
+}));
 
 test('nested cwd cannot authorize a bridge anywhere inside the declared outer workspace', () => workspace(temporary => {
   const nested = path.join(temporary, 'src'); fs.mkdirSync(nested);

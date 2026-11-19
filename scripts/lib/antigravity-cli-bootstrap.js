@@ -147,4 +147,4 @@ function buildAntigravityCliHookCommand() {
   return `node -e "${source}" -- --hook config-protection`;
 }
 
-module.exports = { buildAntigravityCliHookCommand };
+module.exports = { bootstrap, buildAntigravityCliHookCommand };
