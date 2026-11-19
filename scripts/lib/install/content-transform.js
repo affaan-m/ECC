@@ -188,20 +188,21 @@ function transformInstallContent(operation, content) {
     const hasBundledSkillsPath = Array.isArray(config.skills?.paths)
       && config.skills.paths.includes('../skills');
     if (!hasInstructions && !hasBundledSkillsPath) return content;
-    const installedConfig = { ...config };
-    if (hasInstructions) {
-      installedConfig.instructions = opencodeHomeInstructions;
-    }
-    if (hasBundledSkillsPath) {
-      // OpenCode resolves config-relative strings from the active project.
-      const bundledSkills = hasProjection
-        ? path.join(path.dirname(operation.destinationPath), 'skills')
-        : './skills';
-      installedConfig.skills = {
-        ...config.skills,
-        paths: config.skills.paths.map(skillPath => skillPath === '../skills' ? bundledSkills : skillPath),
-      };
-    }
+    // OpenCode resolves relative paths from the active project. Preserve the
+    // old transform for install records created without a path projection.
+    const bundledSkills = hasProjection
+      ? path.join(path.dirname(operation.destinationPath), 'skills')
+      : './skills';
+    const installedConfig = {
+      ...config,
+      ...(hasInstructions ? { instructions: opencodeHomeInstructions } : {}),
+      ...(hasBundledSkillsPath ? {
+        skills: {
+          ...config.skills,
+          paths: config.skills.paths.map(skillPath => skillPath === '../skills' ? bundledSkills : skillPath),
+        },
+      } : {}),
+    };
     return `${JSON.stringify(installedConfig, null, 2)}\n`;
   }
   throw new Error(`Unknown install content transform: ${operation.contentTransform}`);
