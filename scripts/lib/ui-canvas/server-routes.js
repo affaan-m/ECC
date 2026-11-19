@@ -29,11 +29,17 @@ function serveUiAsset(pathname, res) {
 }
 
 function requireLosslessReplay(raw) {
-  const edit = normalizeEdit(raw, 0);
-  if (!edit) return; // Preserve omission of malformed/unknown edit kinds.
   const reject = field => {
     throw Object.assign(new Error(`replay cannot preserve the edit's ${field}; use a supported value`), { code: 'EUI_REPLAY_LOSSY' });
   };
+  if (raw && raw.kind === 'nudge') {
+    for (const value of [raw.dx, raw.dy]) {
+      const parsed = typeof value === 'number' ? value : Number.parseFloat(value);
+      if (!Number.isFinite(parsed)) reject('numeric value');
+    }
+  }
+  const edit = normalizeEdit(raw, 0);
+  if (!edit) return; // Preserve omission of unrelated malformed/unknown kinds.
   if (raw.selector !== edit.selector) reject('selector');
   if (typeof raw.id === 'string' && raw.id !== edit.id) reject('identity');
   if (edit.kind === 'text') {
