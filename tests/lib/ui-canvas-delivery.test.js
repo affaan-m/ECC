@@ -121,6 +121,30 @@ async function main() {
     h.node('send').handlers.click(); await tick(); h.answer({}); await tick();
     assert.equal(h.node('chatInput').value, '');
   });
+  await test('Finish freezes preview and inspector mutations immediately and restores editing on failure', async () => {
+    const h = client(); h.message({ type: 'uc:edits', edits: [first], canUndo: true });
+    h.node('finishBtn').handlers.click();
+    assert.equal(h.node('stage').inert, true); assert.equal(h.node('groups').inert, true);
+    assert.equal(h.node('chatInput').disabled, true);
+    assert.ok(h.packets.some(packet => packet.type === 'uc:set-mode' && packet.mode === 'interact'));
+    h.message({ type: 'uc:ready' });
+    assert.equal(h.packets.filter(packet => packet.type === 'uc:set-mode').at(-1).mode, 'interact', 'A frame reload must retain the Finish freeze');
+    h.node('removeBtn').handlers.click();
+    assert.ok(!h.packets.some(packet => packet.type === 'uc:remove'));
+    const packet = h.packets.find(item => item.type === 'uc:export');
+    h.message({ type: 'uc:export', requestId: packet.requestId, edits: [first], html: '<html></html>' }); await tick();
+    h.fail(); await tick();
+    assert.equal(h.node('stage').inert, false); assert.equal(h.node('groups').inert, false);
+    assert.equal(h.node('chatInput').disabled, false); assert.equal(h.node('finishBtn').disabled, false);
+    assert.deepEqual(h.saved().edits, [first]);
+    assert.ok(h.packets.some(packet => packet.type === 'uc:set-mode' && packet.mode === 'edit'));
+    h.message({ type: 'uc:toggle-mode' });
+    h.node('finishBtn').handlers.click();
+    const retry = h.packets.filter(item => item.type === 'uc:export').at(-1);
+    h.message({ type: 'uc:export', requestId: retry.requestId, edits: [first], html: '<html></html>' }); await tick();
+    h.fail(); await tick();
+    assert.equal(h.packets.filter(packet => packet.type === 'uc:set-mode').at(-1).mode, 'interact', 'Failure restores the prior interaction mode');
+  });
   await test('snapshot boundary prevents rapid nudge, style and resize coalescing', () => {
     const source = editorGesturesJs();
     const start = source.indexOf('  function nudgeBy(');

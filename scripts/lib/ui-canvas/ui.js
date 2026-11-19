@@ -61,6 +61,7 @@ function uiClientJs() {
 
   let ended = boot.status === 'ended';
   let sending = false;
+  let finishing = false;
   let mode = 'edit';
   let frameReady = false;
   let selection = null;
@@ -208,6 +209,7 @@ function uiClientJs() {
     interact: 'Interact mode: clicks, hovers and taps reach the component. Switch back to Edit to change things.'
   };
   function setMode(next) {
+    if (finishing) return;
     mode = next === 'interact' ? 'interact' : 'edit';
     document.querySelectorAll('.seg.modes button').forEach(b => b.setAttribute('aria-pressed', String(b.getAttribute('data-mode') === mode)));
     stage.setAttribute('data-mode', mode);
@@ -223,6 +225,7 @@ function uiClientJs() {
 
   // --- frame bridge ----------------------------------------------------------------
   function postToFrame(msg) {
+    if (finishing && ['uc:style', 'uc:size', 'uc:remove', 'uc:edit-text', 'uc:undo', 'uc:redo', 'uc:reset'].includes(msg.type)) return;
     if (frame.contentWindow) frame.contentWindow.postMessage(msg, '*');
   }
   function requestExport() {
@@ -243,7 +246,7 @@ function uiClientJs() {
     switch (msg.type) {
       case 'uc:ready':
         frameReady = true;
-        postToFrame({ type: 'uc:set-mode', mode });
+        postToFrame({ type: 'uc:set-mode', mode: finishing ? 'interact' : mode });
         postToFrame({ type: 'uc:restore', baked: submitted.flatMap(batch => batch.edits), batches: submitted, edits, deliveryRequest, scroll: lastScroll, selection: selection ? selection.selector : null, selectionRevision: selection ? selection.sourceRevision : null });
         if (paused) postToFrame({ type: 'uc:pause-animations', paused: true });
         break;
@@ -458,6 +461,16 @@ ${inspectorClientJs()}
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
   });
 
+  function freezeForFinish(active) {
+    finishing = active;
+    stage.inert = active;
+    $('groups').inert = active;
+    $('selBody').inert = active;
+    input.disabled = ended || active;
+    $('editTextBtn').disabled = ended || active || !selection || !selection.editable;
+    $('removeBtn').disabled = ended || active;
+    postToFrame({ type: 'uc:set-mode', mode: active ? 'interact' : mode });
+  }
   async function sendEdits(kind) {
     if (ended || sending) return;
     if (edits.some(edit => edit.submitted && edit.stale)) {
@@ -465,6 +478,7 @@ ${inspectorClientJs()}
       return;
     }
     const draft = input.value;
+    if (kind === 'finish') freezeForFinish(true);
     sending = true;
     sendBtn.disabled = true;
     $('applyBtn').disabled = true;
@@ -497,6 +511,7 @@ ${inspectorClientJs()}
         postToFrame({ type: 'uc:delivery-end', requestId: deliveryRequest, accepted: false, editIds: [] });
         deliveryRequest = null;
       }
+      if (kind === 'finish' && !ended) freezeForFinish(false);
       sending = false;
       sendBtn.disabled = ended;
       $('finishBtn').disabled = ended;
