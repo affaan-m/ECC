@@ -23,17 +23,20 @@ if (isDryRun) {
 
 // ── v1 markdown parsers ───────────────────────────────────────────────────────
 
+const BULLET_RE = /^(?:[-*]|\d+\.)\s+/;
+
 function extractSection(md, heading) {
-  const re = new RegExp(`## ${heading}\\n([\\s\\S]*?)(?=\\n## |$)`);
+  const re = new RegExp(`## ${heading}[ \\t]*\\r?\\n([\\s\\S]*?)(?=\\r?\\n## |$)`);
   const m = md.match(re);
   return m ? m[1].trim() : null;
 }
 
 function parseBullets(text) {
   if (!text) return [];
-  return text.split('\n')
-    .filter(l => /^[-*\d]\s/.test(l.trim()))
-    .map(l => l.replace(/^[-*\d]+\.?\s+/, '').trim())
+  return text.split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l => BULLET_RE.test(l))
+    .map(l => l.replace(BULLET_RE, '').trim())
     .filter(Boolean);
 }
 
@@ -56,6 +59,16 @@ function parseDecisionsTable(text) {
  * - Multi-session blocks: "Session N (date):\n- bullet\n"
  * Returns array of session-like objects {date?, leftOff}
  */
+function normalizeLeftOffBlock(body) {
+  const lines = body
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean)
+    .map(l => l.replace(BULLET_RE, '').trim())
+    .filter(Boolean);
+  return lines.join('\n');
+}
+
 function parseLeftOff(text) {
   if (!text) return [{ leftOff: null }];
 
@@ -66,17 +79,16 @@ function parseLeftOff(text) {
       .filter(b => b.trim())
       .map(block => {
         const dateMatch = block.match(/\((\d{4}-\d{2}-\d{2})\)/);
-        const bullets = parseBullets(block);
+        const body = block.replace(/^Session \d+[^\r\n]*(?:\r?\n|$)/, '');
         return {
           date: dateMatch?.[1] || null,
-          leftOff: bullets.length ? bullets.join('\n') : block.replace(/^Session \d+.*\n/, '').trim(),
+          leftOff: normalizeLeftOffBlock(body),
         };
       });
   }
 
   // Simple format
-  const bullets = parseBullets(text);
-  return [{ leftOff: bullets.length ? bullets.join('\n') : text.trim() }];
+  return [{ leftOff: normalizeLeftOffBlock(text) }];
 }
 
 // ── Main migration ─────────────────────────────────────────────────────────────
@@ -95,21 +107,36 @@ for (const [projectPath, info] of Object.entries(projects)) {
 
   // Already v2
   if (existsSync(contextJsonPath)) {
+    let existing = null;
     try {
-      const existing = JSON.parse(readFileSync(contextJsonPath, 'utf8'));
-      if (existing.version === 2) {
-        console.log(`  ✓ ${contextDir} — already v2, skipping`);
-        skipped++;
-        continue;
-      }
-    } catch { /* fall through to migrate */ }
+      existing = JSON.parse(readFileSync(contextJsonPath, 'utf8'));
+    } catch {
+      existing = null;
+    }
+    if (
+      existing
+      && typeof existing === 'object'
+      && !Array.isArray(existing)
+      && existing.version === 2
+      && Array.isArray(existing.sessions)
+      && existing.sessions.every(s => s && typeof s === 'object')
+    ) {
+      console.log(`  ✓ ${contextDir} — already v2, skipping`);
+      skipped++;
+      continue;
+    }
+    console.log(`  ✗ ${contextDir}: ${contextJsonPath} is not a readable ck context; skipping without changes`);
+    errors++;
+    continue;
   }
 
   console.log(`\n  → Migrating: ${contextDir}`);
 
   try {
     // Read v1 files
-    const contextMd = existsSync(contextMdPath) ? readFileSync(contextMdPath, 'utf8') : '';
+    const contextMd = existsSync(contextMdPath)
+      ? readFileSync(contextMdPath, 'utf8').replace(/\r\n/g, '\n')
+      : '';
     let meta = {};
     if (existsSync(metaPath)) {
       try {
