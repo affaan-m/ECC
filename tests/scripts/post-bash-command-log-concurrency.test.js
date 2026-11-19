@@ -87,7 +87,8 @@ test('a terminated rotating writer does not strand subsequent logging', () => fi
 test('contention stays bounded and records the command without racing a rotation', () => fixture(async (root, file, children) => {
   const owner = start(root, 'owner', children);
   await waitFor(root, ['owner-rotate-ready']);
-  if (fs.existsSync(`${file}.lock`)) fs.utimesSync(`${file}.lock`, new Date(0), new Date(0));
+  try { fs.utimesSync(`${file}.lock`, new Date(0), new Date(0)); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
   await finished(start(root, 'busy', children));
   assert.equal(fs.existsSync(`${file}.1`), false, 'the waiting writer must not rotate outside the lock');
   signal(root, 'owner-release');
