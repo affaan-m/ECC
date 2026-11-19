@@ -130,6 +130,7 @@ skills:
   - plankton-code-quality
   - platform-factory
   - plan-canvas
+  - ui-canvas
   - plan-orchestrate
   - postgres-patterns
   - product-lens
@@ -252,6 +253,7 @@ commands:
   - orch-review
   - plan
   - plan-canvas
+  - ui-canvas
   - plan-prd
   - pm2
   - projects

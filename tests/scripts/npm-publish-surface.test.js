@@ -96,6 +96,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/nasiko.js",
     "scripts/observability-readiness.js",
     "scripts/plan-canvas.js",
+    "scripts/ui-canvas.js",
     "scripts/operator-readiness-dashboard.js",
     "scripts/platform-audit.js",
     "scripts/preview-pack-smoke.js",

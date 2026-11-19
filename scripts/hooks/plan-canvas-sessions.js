@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Plan Canvas open-session surfacing (SessionStart)
+ * Plan Canvas and UI Canvas open-session surfacing (SessionStart)
  *
  * Cross-platform (Windows, macOS, Linux)
  *
@@ -58,11 +58,15 @@ function buildContext(sessions) {
   ];
   for (const session of sessions.slice(0, 5)) {
     const pending = session.pendingFeedback && session.pendingFeedback.length;
-    lines.push(`  - ${session.file}${pending ? ` (${pending} undelivered feedback item${pending === 1 ? '' : 's'})` : ''}`);
+    const tag = session.mode === 'ui' ? ' [ui canvas]' : '';
+    lines.push(`  - ${session.file}${tag}${pending ? ` (${pending} undelivered feedback item${pending === 1 ? '' : 's'})` : ''}`);
   }
   lines.push(
     'Resume with `node scripts/plan-canvas.js await <file>` (plan-canvas skill), or `end <file>` if the review is obsolete.'
   );
+  if (sessions.some(session => session.mode === 'ui')) {
+    lines.push('Sessions tagged [ui canvas] resume with `node scripts/ui-canvas.js await <file>` (ui-canvas skill) instead.');
+  }
   return lines.join('\n');
 }
 
