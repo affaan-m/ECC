@@ -155,21 +155,16 @@ function fileExists(projectDir, filePath) {
 }
 
 /**
- * Check if any file with given extension exists in the project root (non-recursive, top-level only)
+ * Read file extensions in the project root once (non-recursive, top-level only).
  * @param {string} projectDir - Project root directory
- * @param {string[]} extensions - File extensions to check
- * @returns {boolean}
+ * @returns {Set<string>}
  */
-function hasFileWithExtension(projectDir, extensions) {
+function readRootFileExtensions(projectDir) {
   try {
     const entries = fs.readdirSync(projectDir, { withFileTypes: true });
-    return entries.some(entry => {
-      if (!entry.isFile()) return false;
-      const ext = path.extname(entry.name);
-      return extensions.includes(ext);
-    });
+    return new Set(entries.filter(entry => entry.isFile()).map(entry => path.extname(entry.name)));
   } catch {
-    return false;
+    return new Set();
   }
 }
 
@@ -187,6 +182,102 @@ function getPackageJsonDeps(projectDir) {
   } catch {
     return [];
   }
+}
+
+/** Read one quoted TOML value, advancing monotonically even if unfinished. */
+function readTomlQuotedValue(content, start) {
+  const quote = content[start];
+  const delimiter = content.startsWith(quote.repeat(3), start) ? quote.repeat(3) : quote;
+  const multiline = delimiter.length === 3;
+  let index = start + delimiter.length;
+  // TOML trims a newline immediately after a multiline opening delimiter.
+  if (multiline && content.startsWith('\r\n', index)) index += 2;
+  else if (multiline && content[index] === '\n') index++;
+  let valueStart = index;
+  let value = '';
+  const continuation = /\\[ \t]*\r?\n[ \t\r\n]*/y;
+  while (index < content.length) {
+    if (quote === '"' && content[index] === '\\') {
+      if (multiline) {
+        continuation.lastIndex = index;
+        const match = continuation.exec(content);
+        if (match) {
+          value += content.slice(valueStart, index);
+          index = continuation.lastIndex;
+          valueStart = index;
+          continue;
+        }
+      }
+      index += 2;
+      continue;
+    }
+    if (content.startsWith(delimiter, index)) {
+      let end = index + delimiter.length;
+      // A multiline closing delimiter may be preceded by one or two quotes.
+      if (multiline) {
+        while (end < index + 5 && content[end] === quote) end++;
+      }
+      return { value: value + content.slice(valueStart, end - delimiter.length), end };
+    }
+    if (!multiline && (content[index] === '\n' || content[index] === '\r')) return null;
+    index++;
+  }
+  return null;
+}
+
+/**
+ * Find a dependency array while keeping quoted values and comments intact.
+ * This lightweight scan accepts inline tables too. Its cursor never rewinds,
+ * including when an editor has not written a closing quote or bracket yet.
+ * @param {string} content - pyproject.toml contents
+ * @returns {string[]} Quoted dependency values, or an empty array if unfinished
+ */
+function readTomlDependencyArray(content) {
+  const key = /dependencies\s*=\s*\[/y;
+  let values = null;
+  let index = 0;
+  while (index < content.length) {
+    const character = content[index];
+    if (character === '#') {
+      const newline = content.indexOf('\n', index);
+      if (newline < 0) break;
+      index = newline + 1;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      const quoted = readTomlQuotedValue(content, index);
+      if (!quoted) return [];
+      if (values !== null) {
+        values = { value: quoted.value, previous: values, length: values.length + 1 };
+      }
+      index = quoted.end;
+      continue;
+    }
+    if (values === null && character === 'd' && !/[A-Za-z0-9_-]/.test(content[index - 1] || '')) {
+      key.lastIndex = index;
+      const match = key.exec(content);
+      if (match) {
+        values = { length: 0 };
+        index = key.lastIndex;
+        continue;
+      }
+    }
+    // Dependency values are strings; an unquoted opening bracket here can be
+    // a later table header while the dependency array is still unfinished.
+    if (values !== null && character === '[') return [];
+    if (values !== null && character === ']') {
+      // Prepending immutable nodes keeps collection linear; restore source order once.
+      let current = values;
+      const reversed = Array.from({ length: values.length }, () => {
+        const value = current.value;
+        current = current.previous;
+        return value;
+      });
+      return reversed.map((_, offset) => reversed[reversed.length - 1 - offset]);
+    }
+    index++;
+  }
+  return [];
 }
 
 /**
@@ -225,17 +316,12 @@ function getPythonDeps(projectDir) {
     const tomlPath = path.join(projectDir, 'pyproject.toml');
     if (fs.existsSync(tomlPath)) {
       const content = fs.readFileSync(tomlPath, 'utf8');
-      const depMatches = content.match(/dependencies\s*=\s*\[([\s\S]*?)\]/);
-      if (depMatches) {
-        const block = depMatches[1];
-        block.match(/"([^"]+)"/g)?.forEach(m => {
-          const name = m
-            .replace(/"/g, '')
-            .split(/[\s>=<!~@[;]/)[0]
-            .trim()
-            .toLowerCase();
-          if (name) deps.push(name);
-        });
+      for (const dependency of readTomlDependencyArray(content)) {
+        const name = dependency
+          .split(/[\s>=<!~@[;]/)[0]
+          .trim()
+          .toLowerCase();
+        if (name) deps.push(name);
       }
     }
   } catch {
@@ -416,11 +502,12 @@ function detectProjectType(projectDir) {
   projectDir = projectDir || process.cwd();
   const languages = [];
   const frameworks = [];
+  const rootFileExtensions = readRootFileExtensions(projectDir);
 
   // Step 1: Detect languages
   for (const rule of LANGUAGE_RULES) {
     const hasMarker = rule.markers.some(m => fileExists(projectDir, m));
-    const hasExt = rule.extensions.length > 0 && hasFileWithExtension(projectDir, rule.extensions);
+    const hasExt = rule.extensions.some(extension => rootFileExtensions.has(extension));
 
     if (hasMarker || hasExt) {
       languages.push(rule.type);

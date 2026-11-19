@@ -36,7 +36,7 @@ function getAccumFile(rawSessionId) {
  * @param {string} rawInput - Raw JSON string from stdin
  * @returns {string} The original input (pass-through)
  */
-const JS_TS_EXT = /\.(ts|tsx|js|jsx)$/;
+const JS_TS_EXT = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 
 function appendPath(filePath, sessionId) {
   if (filePath && JS_TS_EXT.test(filePath)) {

@@ -5,9 +5,12 @@
 
 const assert = require('assert');
 const { spawnSync } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 const { treeDistance, lineRangeOverlap, graphDistance, collisionRisk, advise, closureRate } = require('../../scripts/lib/agent-proximity/distance');
-const { buildDependencyGraphFromSources, extractRelativeSpecifiers } = require('../../scripts/lib/agent-proximity/graph');
+const { buildDependencyGraph, buildDependencyGraphFromSources, extractRelativeSpecifiers } = require('../../scripts/lib/agent-proximity/graph');
 const { scanAirspace, embedAgents } = require('../../scripts/lib/agent-proximity');
 
 let passed = 0;
@@ -121,6 +124,47 @@ test('builds a dependency graph from require/import sources', () => {
 test('extractRelativeSpecifiers ignores bare (node_modules) specifiers', () => {
   const specs = extractRelativeSpecifiers("require('fs'); require('./local'); import x from 'lodash';");
   assert.deepStrictEqual(specs, ['./local']);
+});
+test('TypeScript runtime specifiers resolve to source files in both graph builders', () => {
+  const sources = {
+    'apps/web/page.ts': "import { value } from '../../packages/core/util.js';\nimport View from './view.jsx';",
+    'apps/web/view.tsx': 'export default function View() {}',
+    'packages/core/util.ts': 'export const value = 1;',
+    'packages/core/esm.mts': "export { value } from './util.js';",
+    'packages/core/cjs.cts': "const esm = require('./esm.mjs');",
+    'apps/web/main.ts': "import esm from '../../packages/core/esm.mjs';\nimport cjs from '../../packages/core/cjs.cjs';",
+  };
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ts-graph-'));
+  try {
+    for (const [file, source] of Object.entries(sources)) {
+      const target = path.join(root, file);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, source);
+    }
+    for (const graph of [buildDependencyGraphFromSources(sources), buildDependencyGraph(root, Object.keys(sources))]) {
+      assert.deepStrictEqual(graph.adjacency['apps/web/page.ts'], ['packages/core/util.ts', 'apps/web/view.tsx']);
+      assert.deepStrictEqual(graph.adjacency['apps/web/main.ts'], ['packages/core/esm.mts', 'packages/core/cjs.cts']);
+      assert.deepStrictEqual(graph.adjacency['packages/core/esm.mts'], ['packages/core/util.ts']);
+      assert.deepStrictEqual(graph.adjacency['packages/core/cjs.cts'], ['packages/core/esm.mts']);
+      assert.ok(collisionRisk(
+        { files: [{ path: 'apps/web/page.ts' }] },
+        { files: [{ path: 'packages/core/util.ts' }] },
+        graph
+      ).channels.dependency > 0, 'source edits must retain their dependency risk');
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+test('TypeScript source fallback preserves literal files and unrelated extensions', () => {
+  const graph = buildDependencyGraphFromSources({
+    'main.ts': "import './ready.js'; import './missing.js'; import './styles.css'; import './types.js';",
+    'ready.js': 'export {};',
+    'ready.ts': 'export {};',
+    'styles.ts': 'export {};',
+    'types.d.ts': 'export interface Options {}',
+  });
+  assert.deepStrictEqual(graph.adjacency['main.ts'], ['ready.js', 'types.d.ts']);
 });
 test('graphDistance: direct edge is 1, two hops is 2, unreachable is Infinity', () => {
   const g = { adjacency: { 'a.js': ['b.js'], 'b.js': ['c.js'], 'c.js': [], 'z.js': [] } };

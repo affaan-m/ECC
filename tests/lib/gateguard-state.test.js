@@ -19,7 +19,10 @@ const {
   dirGateKey,
   getDirGates,
   mergeDirGates,
-  capDirGates
+  capDirGates,
+  getBatchLocks,
+  mergeBatchLocks,
+  capBatchLocks
 } = require(path.join(__dirname, '..', '..', 'scripts', 'lib', 'gateguard-state.js'));
 
 console.log('=== Testing gateguard-state.js ===\n');
@@ -89,6 +92,31 @@ test('dir gates keep valid class-prefixed entries, newest wins on merge, capped 
   const capped = capDirGates(many);
   assert.strictEqual(Object.keys(capped).length, 50);
   assert.ok(!(dirGateKey('code', '/p/d0') in capped), 'oldest evicted');
+});
+
+test('batch locks keep valid { batch, at } entries, newest wins on merge, capped at 50', () => {
+  const locks = getBatchLocks(JSON.parse(JSON.stringify({
+    batch_locks: {
+      '/p/a.js': { batch: 'msg_1', at: 10, extra: true },
+      '/p/b.js': { batch: '', at: 10 },
+      '/p/c.js': { batch: 7, at: 10 },
+      '/p/d.js': { batch: 'msg_2', at: 'soon' },
+      '/p/e.js': 'msg_3',
+      constructor: { batch: 'msg_4', at: 10 }
+    }
+  })));
+  assert.deepStrictEqual(Object.entries(locks), [['/p/a.js', { batch: 'msg_1', at: 10 }]]);
+  assert.strictEqual(Object.getPrototypeOf(locks), null);
+  assert.deepStrictEqual(Object.keys(getBatchLocks(JSON.parse('{"batch_locks":{"__proto__":{"batch":"m","at":1}}}'))), []);
+  assert.deepStrictEqual(Object.keys(getBatchLocks({ batch_locks: [] })), []);
+  assert.deepStrictEqual(Object.keys(getBatchLocks(null)), []);
+  assert.strictEqual(mergeBatchLocks(locks, { '/p/a.js': { batch: 'msg_9', at: 20 } })['/p/a.js'].batch, 'msg_9');
+  assert.strictEqual(mergeBatchLocks({ '/p/a.js': { batch: 'msg_9', at: 20 } }, locks)['/p/a.js'].batch, 'msg_9', 'older entry never wins');
+  const many = {};
+  for (let i = 0; i < 60; i++) many[`/p/f${i}.js`] = { batch: `msg_${i}`, at: i };
+  const capped = capBatchLocks(many);
+  assert.strictEqual(Object.keys(capped).length, 50);
+  assert.ok(!('/p/f0.js' in capped), 'oldest evicted');
 });
 
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);

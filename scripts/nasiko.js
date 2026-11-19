@@ -51,7 +51,11 @@ function parseMutationArguments(argumentsList, command = 'install') {
   }
   if (!options.version) throw new Error(`Nasiko ${command} requires --version v0.1.0.`);
   if (options.installDir) validateInstallDirectory(options.installDir);
-  return options;
+  const dryRunEnv = process.env.ECC_DRY_RUN;
+  if (dryRunEnv !== undefined && dryRunEnv !== '0' && dryRunEnv !== '1') {
+    throw new Error('ECC_DRY_RUN must be "1" or "0" when set');
+  }
+  return { ...options, dryRun: options.dryRun || dryRunEnv === '1' };
 }
 
 function defaultExecutablePath() {

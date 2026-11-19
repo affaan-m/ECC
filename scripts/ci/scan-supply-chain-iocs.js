@@ -459,12 +459,27 @@ function walkFiles(rootDir, files = []) {
   return files;
 }
 
+// Symbolic links are not followed: pnpm's top-level entries and workspace
+// packages are links, and following them could loop or leave the scan root.
+// pnpm keeps the real package directories in its virtual store instead,
+// node_modules/.pnpm/<id>/node_modules/<name>, which is walked directly.
+function walkPnpmVirtualStore(storeDir, files) {
+  for (const entry of fs.readdirSync(storeDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    walkNodeModules(path.join(storeDir, entry.name, 'node_modules'), files);
+  }
+}
+
 function walkNodeModules(nodeModulesDir, files) {
-  if (!fs.existsSync(nodeModulesDir)) return;
+  if (!fs.existsSync(nodeModulesDir) || !fs.lstatSync(nodeModulesDir).isDirectory()) return;
 
   for (const entry of fs.readdirSync(nodeModulesDir, { withFileTypes: true })) {
-    if (entry.name.startsWith('.')) continue;
     const fullPath = path.join(nodeModulesDir, entry.name);
+    if (entry.name === '.pnpm' && entry.isDirectory()) {
+      walkPnpmVirtualStore(fullPath, files);
+      continue;
+    }
+    if (entry.name.startsWith('.')) continue;
     if (entry.isDirectory()) {
       if (entry.name.startsWith('@')) {
         for (const scopedEntry of fs.readdirSync(fullPath, { withFileTypes: true })) {
@@ -491,6 +506,12 @@ function inspectPackageDir(packageDir, files) {
     if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
       files.push(candidate);
     }
+  }
+
+  // npm nests a dependency under its dependent when versions conflict.
+  const nestedNodeModules = path.join(packageDir, 'node_modules');
+  if (fs.existsSync(nestedNodeModules) && fs.lstatSync(nestedNodeModules).isDirectory()) {
+    walkNodeModules(nestedNodeModules, files);
   }
 }
 
