@@ -68,14 +68,14 @@ function sameFile(left, right) {
     && left.mtimeMs === right.mtimeMs && left.ctimeMs === right.ctimeMs;
 }
 
-function readFile(file, limit, reason) {
+function readFile(file, limit, reason, { allowHardLinks = false } = {}) {
   const before = fs.lstatSync(file);
-  if (!before.isFile() || before.nlink !== 1 || before.size > limit) fail(reason);
+  if (!before.isFile() || (!allowHardLinks && before.nlink !== 1) || before.size > limit) fail(reason);
   const flags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0);
   const handle = fs.openSync(file, flags);
   try {
     const state = fs.fstatSync(handle);
-    if (!state.isFile() || state.nlink !== 1 || !sameFile(before, state)) fail(reason);
+    if (!state.isFile() || (!allowHardLinks && state.nlink !== 1) || !sameFile(before, state)) fail(reason);
     const buffer = Buffer.alloc(state.size + 1);
     let length = 0;
     while (length < buffer.length) {
@@ -90,8 +90,8 @@ function readFile(file, limit, reason) {
   }
 }
 
-function readManifest(file) {
-  return JSON.parse(UTF8.decode(readFile(file, MAX_MANIFEST_BYTES, 'unsafe-manifest').bytes));
+function readManifest(file, options) {
+  return JSON.parse(UTF8.decode(readFile(file, MAX_MANIFEST_BYTES, 'unsafe-manifest', options).bytes));
 }
 
 function exists(file) {
@@ -124,21 +124,57 @@ function projectConfig(root, file) {
   }
 }
 
-function formatterBin(root, formatter) {
-  const name = PACKAGE_NAMES[formatter];
-  let pkg;
+function formatterPackage(root, name) {
+  const nameParts = name.split('/');
+  let modules;
+  let localPackage;
+  let state;
   try {
-    pkg = locate(root, ['node_modules', ...name.split('/')], 'directory', 'unsafe-formatter');
+    modules = locate(root, ['node_modules'], 'directory', 'unsafe-formatter');
+    const parent = nameParts.length === 1
+      ? modules
+      : locate(modules, nameParts.slice(0, -1), 'directory', 'unsafe-formatter');
+    localPackage = path.join(parent, nameParts.at(-1));
+    state = fs.lstatSync(localPackage);
   } catch (error) {
     if (error.code === 'ENOENT') return null;
     fail('unsafe-formatter');
   }
+  if (state.isDirectory() && !state.isSymbolicLink()) return { directory: localPackage };
+  if (!state.isSymbolicLink()) fail('unsafe-formatter');
+
+  // pnpm's public package link points directly to its package inside the local virtual store.
+  // Check the link destination and then verify each store path component is a real directory.
   try {
-    const manifest = readManifest(path.join(pkg, 'package.json'));
+    const target = path.resolve(path.dirname(localPackage), fs.readlinkSync(localPackage));
+    const parts = path.relative(path.toNamespacedPath(modules), path.toNamespacedPath(target)).split(path.sep);
+    const slotPrefix = name.replace('/', '+') + '@';
+    if (parts.length !== nameParts.length + 3 || parts[0] !== '.pnpm'
+      || !parts[1].startsWith(slotPrefix) || parts[1].length === slotPrefix.length
+      || parts[2] !== 'node_modules'
+      || nameParts.some((part, index) => part !== parts[index + 3])) {
+      fail('unsafe-formatter');
+    }
+    return {
+      directory: locate(modules, parts, 'directory', 'unsafe-formatter'),
+      allowHardLinks: true,
+    };
+  } catch {
+    fail('unsafe-formatter');
+  }
+}
+
+function formatterBin(root, formatter) {
+  const name = PACKAGE_NAMES[formatter];
+  const pkg = formatterPackage(root, name);
+  if (!pkg) return null;
+  const { directory, allowHardLinks } = pkg;
+  try {
+    const manifest = readManifest(path.join(directory, 'package.json'), { allowHardLinks });
     const bin = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.[formatter];
     if (manifest.name !== name || typeof bin !== 'string') fail('unsafe-formatter');
     const parts = relativeParts(bin.replace(/^\.\//, ''), 'unsafe-formatter');
-    return locate(pkg, parts, 'file', 'unsafe-formatter');
+    return locate(directory, parts, 'file', 'unsafe-formatter');
   } catch {
     fail('unsafe-formatter');
   }

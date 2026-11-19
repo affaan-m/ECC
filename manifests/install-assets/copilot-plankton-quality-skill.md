@@ -13,7 +13,7 @@ From the project root, run the installed launcher with a project-relative file:
 node .github/ecc/scripts/quality/copilot-quality.cjs --file "src/example.ts"
 ```
 
-Check JavaScript, JSX, TypeScript, TSX, JSON, or Markdown one file at a time. Markdown uses Prettier. For the other formats the launcher prefers Biome if it finds a Biome config, then Prettier as the default, with Biome as a fallback if Prettier is absent and unconfigured. Install the desired formatter into the project's local dependencies before running the launcher. The launcher executes that trusted local package and requires no tool installation or downloads at run time.
+Check JavaScript, JSX, TypeScript, TSX, JSON, or Markdown one file at a time. Markdown uses Prettier. For the other formats the launcher prefers Biome if it finds a Biome config, then Prettier as the default, with Biome as a fallback if Prettier is absent and unconfigured. Install the desired formatter into the project's local dependencies before running the launcher. It recognizes direct packages in node_modules and pnpm's standard project-local node_modules/.pnpm layout. The launcher executes that trusted local package and requires no tool installation or downloads at run time.
 
 The JSON result identifies the formatter and reports coverage as formatter defaults. If the launcher detects configuration for that formatter, including ordinary config files in the project or an applicable Prettier setting in package.json, it stops with project-config-present. Run the repository's own formatter to apply those settings. Add --defaults to explicitly bypass the detected settings when a built-in defaults check is useful.
 

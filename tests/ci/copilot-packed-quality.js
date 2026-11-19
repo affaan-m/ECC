@@ -40,9 +40,14 @@ function installPackage(project, env, artifact) {
   return path.join(project, 'node_modules', 'ecc-universal');
 }
 
-function formatterFixture(project, formatter, concurrentFile) {
+function formatterFixture(project, formatter, concurrentFile, { pnpm = false } = {}) {
   const name = formatter === 'biome' ? '@biomejs/biome' : 'prettier';
-  const pkg = path.join(project, 'node_modules', ...name.split('/'));
+  const modules = path.join(project, 'node_modules');
+  const parts = name.split('/');
+  const localPackage = path.join(modules, ...parts);
+  const pkg = pnpm
+    ? path.join(modules, '.pnpm', name.replace('/', '+') + '@1.0.0', 'node_modules', ...parts)
+    : localPackage;
   fs.mkdirSync(path.join(pkg, 'bin'), { recursive: true });
   const manifest = path.join(pkg, 'package.json');
   fs.writeFileSync(manifest, JSON.stringify({ name, bin: { [formatter]: 'bin/fixture.cjs' } }));
@@ -80,7 +85,20 @@ if (input === 'fixture failure') {
   process.stdout.write(input.replace('const x=1;', 'const x = 1;'));
 }
 `);
-  return { manifest };
+  if (pnpm) {
+    fs.mkdirSync(path.dirname(localPackage), { recursive: true });
+    if (process.platform === 'win32') {
+      fs.symlinkSync(pkg, localPackage, 'junction');
+    } else {
+      fs.symlinkSync(path.relative(path.dirname(localPackage), pkg), localPackage, 'dir');
+    }
+    const contentStore = path.join(project, 'fixture-content-store', formatter);
+    fs.mkdirSync(contentStore, { recursive: true });
+    fs.linkSync(manifest, path.join(contentStore, 'package.json'));
+    fs.linkSync(path.join(pkg, 'bin', 'fixture.cjs'), path.join(contentStore, 'fixture.cjs'));
+    assert.equal(fs.statSync(manifest).nlink, 2);
+  }
+  return { manifest, localPackage };
 }
 
 function verifyInstalledQuality(root, packageRoot, env) {
@@ -118,7 +136,7 @@ function verifyInstalledQuality(root, packageRoot, env) {
   assert.equal(unavailable.status, 'unavailable');
   assert.equal(unavailable.reason, 'formatter-not-installed');
   assert.equal(unavailable.fixed, false);
-  const { manifest } = formatterFixture(project, 'prettier', target);
+  const { manifest, localPackage } = formatterFixture(project, 'prettier', target);
 
   const mismatch = invoke(['--file', file], 1);
   assert.equal(mismatch.reason, 'formatting-difference');
@@ -173,9 +191,29 @@ function verifyInstalledQuality(root, packageRoot, env) {
   fs.writeFileSync(manifest, JSON.stringify({ name: 'prettier', bin: '../..' + '/outside-package.cjs' }));
   assert.equal(invoke(['--file', file, '--defaults'], 2).reason, 'unsafe-formatter');
 
+  fs.rmSync(localPackage, { recursive: true });
+  const pnpm = formatterFixture(project, 'prettier', target, { pnpm: true });
+  assert.equal(invoke(['--file', file, '--defaults'], 1).reason, 'formatting-difference');
+  const hardLinkedSource = path.join(project, 'hard-linked.js');
+  fs.linkSync(target, hardLinkedSource);
+  assert.equal(invoke(['--file', file, '--defaults', '--fix'], 2).reason, 'unsafe-file');
+  fs.unlinkSync(hardLinkedSource);
+  fs.writeFileSync(pnpm.manifest, JSON.stringify({ name: 'prettier', bin: '../outside.cjs' }));
+  assert.equal(invoke(['--file', file, '--defaults'], 2).reason, 'unsafe-formatter');
+  fs.unlinkSync(localPackage);
+  for (const invalidPackage of [
+    path.join(root, 'external-formatter-package'),
+    path.join(project, 'node_modules', '.pnpm', 'another-package@1.0.0', 'node_modules', 'prettier'),
+  ]) {
+    fs.mkdirSync(invalidPackage, { recursive: true });
+    fs.symlinkSync(invalidPackage, localPackage, process.platform === 'win32' ? 'junction' : 'dir');
+    assert.equal(invoke(['--file', file, '--defaults'], 2).reason, 'unsafe-formatter');
+    fs.unlinkSync(localPackage);
+  }
+
   fs.writeFileSync(path.join(biomeProject, file), 'const x=1;\n');
   fs.writeFileSync(path.join(biomeProject, 'biome.json'), '{"formatter":{"indentWidth":4}}\n');
-  formatterFixture(biomeProject, 'biome', path.join(biomeProject, file));
+  formatterFixture(biomeProject, 'biome', path.join(biomeProject, file), { pnpm: true });
   assert.equal(invoke(['--file', file], 2, biomeProject).reason, 'project-config-present');
   const biomeFixed = invoke(['--file', file, '--defaults', '--fix'], 0, biomeProject);
   assert.equal(biomeFixed.formatter, 'biome');
