@@ -24,11 +24,14 @@ const {
   renderMarkdownArtifactHtml,
   renderSessionListHtml
 } = require('./ui');
+const { agentFromParam } = require('./agent-identity');
+const { exportErrorResponse, materializeUiExports, renderUiCanvasHtml, serveUiAsset } = require('../ui-canvas/server-routes');
 
 const DEFAULT_PORT = 4517;
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
-const MAX_BODY_BYTES = 1024 * 1024;
+// Sized for UI Canvas DOM snapshots (capped separately in ui-canvas/feedback.js).
+const MAX_BODY_BYTES = 8 * 1024 * 1024;
 // How long the "agent is thinking" indicator survives without the agent
 // checking back in, before presence decays to the honest queued/waiting.
 const DEFAULT_THINKING_STALE_MS = 90 * 1000;
@@ -291,10 +294,15 @@ function createPlanCanvasServer({
     for (const client of clients) client.write(frameText);
   }
 
+  function presencePayload(key) {
+    const session = store.get(key);
+    return { state: presenceFor(key), agent: (session && session.agent) || null };
+  }
+
   function broadcastPresence(key) {
-    const state = presenceFor(key);
-    lastPresence.set(key, state);
-    broadcast(key, 'presence', { state });
+    const payload = presencePayload(key);
+    lastPresence.set(key, payload.state);
+    broadcast(key, 'presence', payload);
   }
 
   // Re-broadcast only where an expiry actually changed the answer, so an
@@ -406,7 +414,15 @@ function createPlanCanvasServer({
       if (!fs.existsSync(path.resolve(body.file))) {
         return sendJson(res, 404, { error: `artifact not found: ${body.file}` });
       }
-      const { session, refused } = store.open(body.file, { reopen: Boolean(body.reopen) });
+      const mode = body.mode === 'ui' ? 'ui' : 'plan';
+      if (mode === 'ui' && !/\.html?$/i.test(body.file)) {
+        return sendJson(res, 400, { error: 'ui canvas sessions require an .html artifact' });
+      }
+      const { session, refused } = store.open(body.file, {
+        reopen: Boolean(body.reopen),
+        mode,
+        ui: body.ui && typeof body.ui === 'object' ? body.ui : null
+      });
       if (refused) {
         return sendJson(res, 409, {
           status: 'user-ended',
@@ -420,6 +436,7 @@ function createPlanCanvasServer({
         status: 'open',
         key: session.key,
         file: session.file,
+        mode: session.mode || 'plan',
         url: `/canvas/${session.key}`
       });
     }
@@ -436,6 +453,8 @@ function createPlanCanvasServer({
       const session = keyParam ? store.get(keyParam) : store.findByFile(file);
       if (!session) return sendJson(res, 200, { status: 'missing' });
       const key = session.key;
+      const descriptor = agentFromParam(url.searchParams.get('agent'));
+      if (descriptor) store.setAgent(key, descriptor);
       const timeoutRaw = url.searchParams.get('timeoutMs');
       const timeoutMs = timeoutRaw === null ? null : Math.max(0, Number.parseInt(timeoutRaw, 10) || 0);
 
@@ -517,7 +536,19 @@ function createPlanCanvasServer({
 
       if (action === 'feedback') {
         const body = await readJsonBody(req);
-        const result = store.queueFeedback(key, body.items, { endSession: Boolean(body.endSession) });
+        let items = Array.isArray(body.items) ? body.items : [];
+        // Checked before any export is written: a stale tab must not replace
+        // the design a finished session already handed over.
+        if (session.status === 'ended') return sendJson(res, 409, { error: 'session already ended' });
+        if (session.mode === 'ui') {
+          try {
+            items = materializeUiExports(session, items);
+          } catch (error) {
+            const failure = exportErrorResponse(error);
+            return sendJson(res, failure.status, { error: failure.error });
+          }
+        }
+        const result = store.queueFeedback(key, items, { endSession: Boolean(body.endSession) });
         if (!result) return sendJson(res, 409, { error: 'session already ended' });
         wake.emit(`wake:${key}`);
         broadcast(key, 'chat-sync', { chat: store.get(key).chat });
@@ -581,7 +612,7 @@ function createPlanCanvasServer({
       connection: 'keep-alive'
     });
     res.write(`event: chat-sync\ndata: ${JSON.stringify({ chat: session.chat })}\n\n`);
-    res.write(`event: presence\ndata: ${JSON.stringify({ state: presenceFor(key) })}\n\n`);
+    res.write(`event: presence\ndata: ${JSON.stringify(presencePayload(key))}\n\n`);
     if (!sseClients.has(key)) sseClients.set(key, new Set());
     sseClients.get(key).add(res);
     lastPresence.set(key, presenceFor(key));
@@ -621,7 +652,9 @@ function createPlanCanvasServer({
         });
         return sendHtml(res, 200, html, { csp: 'artifact' });
       }
-      const sdkTag = '<script src="/sdk.js"></script>';
+      const sdkTag = session.mode === 'ui'
+        ? '<script src="/ui-editor.js" data-ecc-ui-canvas="editor"></script>'
+        : '<script src="/sdk.js"></script>';
       const injected = content.includes('</body>')
         ? content.replace('</body>', `${sdkTag}\n</body>`)
         : `${content}\n${sdkTag}`;
@@ -696,11 +729,12 @@ function createPlanCanvasServer({
           res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' });
           return res.end(artifactSdkJs());
         }
+        if (req.method === 'GET' && serveUiAsset(pathname, res)) return undefined;
         const canvasMatch = pathname.match(/^\/canvas\/([a-f0-9]{12})$/);
         if (req.method === 'GET' && canvasMatch) {
           const session = store.get(canvasMatch[1]);
           if (!session) return sendHtml(res, 404, '<h1>Unknown session</h1>');
-          return sendHtml(res, 200, renderCanvasHtml(session));
+          return sendHtml(res, 200, session.mode === 'ui' ? renderUiCanvasHtml(session) : renderCanvasHtml(session));
         }
         const eventsMatch = pathname.match(/^\/events\/([a-f0-9]{12})$/);
         if (req.method === 'GET' && eventsMatch) {

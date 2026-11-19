@@ -53,6 +53,7 @@
   "files": [
     ".adal/",
     ".agents/",
+    ".antigravity-plugin/",
     ".claude-plugin/",
     ".codex/",
     ".codex-plugin/",
@@ -113,6 +114,7 @@
     "rules/",
     "schemas/",
     "scripts/agent-convert.js",
+    "scripts/antigravity/",
     "scripts/catalog.js",
     "scripts/config-health.py",
     "scripts/config_health_constants.py",
@@ -165,6 +167,7 @@
     "scripts/list-installed.js",
     "scripts/loop-status.js",
     "scripts/plan-canvas.js",
+    "scripts/ui-canvas.js",
     "scripts/orchestration-status.js",
     "scripts/orchestrate-codex-worker.sh",
     "scripts/orchestrate-worktrees.js",
@@ -335,6 +338,7 @@
     "skills/perl-security/",
     "skills/perl-testing/",
     "skills/plan-canvas/",
+    "skills/ui-canvas/",
     "skills/plankton-code-quality/",
     "skills/platform-factory/",
     "skills/parallel-execution-optimizer/",
@@ -523,6 +527,7 @@
     "ecc-install": "scripts/install-apply.js",
     "ecc-memory-mcp": "scripts/memory-mcp.mjs",
     "ecc-plan-canvas": "scripts/plan-canvas.js",
+    "ecc-ui-canvas": "scripts/ui-canvas.js",
     "ecc-universal": "scripts/ecc.js"
   },
   "scripts": {

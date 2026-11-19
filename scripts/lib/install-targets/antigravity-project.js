@@ -77,7 +77,7 @@ module.exports = createInstallTargetAdapter({
 
     return modules.flatMap(module => {
       const paths = Array.isArray(module.paths) ? module.paths : [];
-      return paths
+      const operations = paths
         .filter(supportsAntigravitySourcePath)
         .flatMap(sourceRelativePath => {
           const normalizedSourcePath = normalizeRelativePath(sourceRelativePath);
@@ -223,6 +223,10 @@ module.exports = createInstallTargetAdapter({
 
           return [];
         });
+      return module.id === 'hooks-runtime' ? [...operations,
+        createManagedScaffoldOperation(module.id, 'scripts/antigravity/hook-bridge.js',
+          path.join(targetRoot, 'scripts', 'antigravity', 'hook-bridge.js'), 'preserve-relative-path'),
+      ] : operations;
     });
   },
 });
