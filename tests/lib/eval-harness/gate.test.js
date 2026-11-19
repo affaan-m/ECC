@@ -29,7 +29,7 @@ test('directory digests frame file contents, so NUL bytes cannot merge or split 
     assert.notEqual(gate.digestDir(empty),gate.digestDir(nul));
   } finally {cleanup(root);}
 });
-test('directory digests order entries by code point, independent of the host locale',()=>{
+test('directory digests order entries by UTF-16 code unit, independent of the host locale',()=>{
   const root=tempDir('gate-digest-locale');
   try {
     for (const name of ['a.js','B.js','z.js','ä.js','_x.js','-x.js']) fs.writeFileSync(path.join(root,name),name);

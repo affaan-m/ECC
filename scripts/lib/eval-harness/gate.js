@@ -52,8 +52,9 @@ class GateError extends Error {
   }
 }
 
-// Code-point order: localeCompare follows the host locale (sv_SE sorts `ä` after `z`),
-// which would give the same tree a different digest on another machine.
+// UTF-16 code-unit order (plain `<`). localeCompare follows the host locale
+// (sv_SE sorts `ä` after `z`), which would give the same tree a different
+// digest on another machine.
 function compareNames(a, b) {
   if (a.name === b.name) return 0;
   return a.name < b.name ? -1 : 1;
