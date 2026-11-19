@@ -96,7 +96,7 @@ test('fills the requested tail after short reads', () => {
 
 test('decodes UTF-8 after joining short reads across multibyte characters', () => {
   const unicode = path.join(dir, 'unicode.txt');
-  const text = '你好🌍abc';
+  const text = '你好\u{1F30D}abc';
   fs.writeFileSync(unicode, text);
   withReadSync((read, fd, buffer, offset, length, position) =>
     read(fd, buffer, offset, Math.min(length, 2), position), () => {
