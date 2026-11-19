@@ -370,7 +370,9 @@ function readInstallState(filePath) {
 function writeInstallState(filePath, state) {
   assertValidInstallState(state, filePath);
   const { writeFileAtomic } = require('./atomic-write');
-  writeFileAtomic(filePath, `${JSON.stringify(state, null, 2)}\n`);
+  // Installs are not on a latency-sensitive hook path; concurrent installers
+  // on Windows need room to outlast each other's replacement locks.
+  writeFileAtomic(filePath, `${JSON.stringify(state, null, 2)}\n`, { renameRetryBudgetMs: 10000 });
   return state;
 }
 
