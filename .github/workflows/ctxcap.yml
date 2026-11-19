@@ -1,0 +1,41 @@
+name: ctxcap
+
+# Measures what this repository's agent context files cost in tokens and fails a
+# PR that grows them, so a 40-line addition to AGENTS.md shows up as a number in
+# review instead of landing silently. The committed ctxcap-baseline.json is what
+# a PR is compared against; update it in the same PR as an intentional increase.
+on:
+  pull_request:
+    paths:
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - '.github/copilot-instructions.md'
+      - '.cursor/rules/**'
+      - 'ctxcap-baseline.json'
+      - '.ctxcap.json'
+      - '.github/workflows/ctxcap.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ctxcap-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  context-budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write # the one comment; fork PRs get a read-only token and use the job summary
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the delta is measured against the merge base
+          persist-credentials: false
+      - uses: Naeha-S/ctxcap@v1
+        with:
+          fail-on: increase
+          upload-sarif: false
