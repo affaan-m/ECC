@@ -261,6 +261,8 @@ function recoverLogLock(lockPath) {
   let releaseGuard;
   try { releaseGuard = publishLogLock(`${lockPath}.recover`); }
   catch { return null; }
+  // The recovery guard is not recursively reclaimed. A crash here may leave
+  // it behind, so later calls preserve events through append-only fallback.
   try {
     const identity = inspectLogLock(lockPath);
     if (!identity) return null; // Never take a live or unverifiable owner's lock.
@@ -306,7 +308,8 @@ function appendLine(filePath, line) {
   const release = acquireLogLock(filePath);
   if (!release) {
     // Preserve the command after a bounded wait or unsupported lock operation.
-    // Only the lock owner rotates; size enforcement resumes on a later call.
+    // Only the lock owner rotates; size enforcement resumes when the lock
+    // becomes available. An orphan recovery guard can defer this indefinitely.
     appendOnly(filePath, data);
     return;
   }

@@ -111,3 +111,21 @@ test('an exclusive-create collision never removes another file', () => fixture(a
   assert.equal(fs.readFileSync(temporary, 'utf8'), 'foreign-creation');
   assert.match(fs.readFileSync(file, 'utf8'), /echo collision/);
 }));
+
+test('an orphan recovery guard preserves its locks and records later commands without rotation', () => fixture(async (root, file, children) => {
+  const owner = start(root, 'owner', children);
+  await waitFor(root, ['owner-rotate-ready']);
+  owner.kill('SIGKILL');
+  await owner.done;
+  const lockBytes = fs.readFileSync(`${file}.lock`, 'utf8');
+  const guard = `${file}.lock.recover`;
+  fs.writeFileSync(guard, JSON.stringify({ pid: owner.pid }), { flag: 'wx', mode: 0o600 });
+  const guardBytes = fs.readFileSync(guard, 'utf8');
+  await finished(start(root, 'orphan-guard', children));
+  assert.equal(fs.existsSync(`${file}.1`), false);
+  assert.equal(fs.readFileSync(`${file}.lock`, 'utf8'), lockBytes);
+  assert.equal(fs.readFileSync(guard, 'utf8'), guardBytes);
+  const retained = fs.readFileSync(file, 'utf8');
+  assert.ok(retained.startsWith('old-history\n'));
+  assert.match(retained, /echo orphan-guard/);
+}));
