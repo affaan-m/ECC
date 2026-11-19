@@ -201,6 +201,65 @@ if (test('still fails closed on unverifiable Git tracking when a rule file exist
   }
 })) passed++; else failed++;
 
+if (test('still takes the Git trust path and reports the loader diagnostic when .claude is a file', () => {
+  const root = createProject();
+  try {
+    assert.strictEqual(spawnSync('git', ['init', '-q'], { cwd: root }).status, 0);
+    fs.rmSync(path.join(root, '.claude'), { recursive: true, force: true });
+    fs.writeFileSync(path.join(root, '.claude'), 'not a directory\n');
+    const input = { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'pwd' } };
+    // Git unavailable: the early return must not apply, so the trust check runs and fails closed.
+    const unverified = runHook(root, input, { PATH: '' });
+    assert.strictEqual(unverified.stdout, unverified.raw);
+    assert.match(unverified.stderr, /could not verify whether local rules are tracked/);
+    // Once the trust check passes, the loader reports the non-directory .claude.
+    const loaded = runtime.loadRules(root);
+    assert.deepStrictEqual(loaded.rules, []);
+    assert.match(loaded.diagnostics.join('\n'), /rule directory must be a real directory/);
+  } finally {
+    removeProject(root);
+  }
+})) passed++; else failed++;
+
+if (test('still takes the Git trust path and reports the loader diagnostic when .claude is a symlink', () => {
+  if (process.platform === 'win32') return;
+  const root = createProject();
+  const target = createProject('ecc-hookify-linked-');
+  try {
+    assert.strictEqual(spawnSync('git', ['init', '-q'], { cwd: root }).status, 0);
+    writeRule(target, 'linked', 'name: linked\nevent: bash\naction: block\npattern: .*');
+    fs.rmSync(path.join(root, '.claude'), { recursive: true, force: true });
+    fs.symlinkSync(path.join(target, '.claude'), path.join(root, '.claude'), 'dir');
+    const input = { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'pwd' } };
+    const unverified = runHook(root, input, { PATH: '' });
+    assert.strictEqual(unverified.stdout, unverified.raw);
+    assert.match(unverified.stderr, /could not verify whether local rules are tracked/);
+    const loaded = runtime.loadRules(root);
+    assert.deepStrictEqual(loaded.rules, []);
+    assert.match(loaded.diagnostics.join('\n'), /rule directory must be a real directory/);
+  } finally {
+    removeProject(root);
+    removeProject(target);
+  }
+})) passed++; else failed++;
+
+if (test('ignores a wrongly-cased rule file name without a diagnostic', () => {
+  const root = createProject();
+  try {
+    assert.strictEqual(spawnSync('git', ['init', '-q'], { cwd: root }).status, 0);
+    fs.writeFileSync(
+      path.join(root, '.claude', 'Hookify.X.local.md'),
+      '---\nname: cased\nevent: bash\naction: block\npattern: .*\n---\nMust not load.\n'
+    );
+    const result = runHook(root, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'pwd' } }, { PATH: '' });
+    assert.strictEqual(result.stdout, result.raw);
+    assert.strictEqual(result.stderr, '');
+    assert.deepStrictEqual(runtime.loadRules(root), { rules: [], diagnostics: [] });
+  } finally {
+    removeProject(root);
+  }
+})) passed++; else failed++;
+
 if (test('trusted CLAUDE_PROJECT_DIR takes precedence over payload cwd', () => {
   const trusted = createProject();
   const untrusted = createProject();
