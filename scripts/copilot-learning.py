@@ -63,16 +63,24 @@ def is_link(entry):
     return stat.S_ISLNK(entry.st_mode) or bool(attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
 
 
-def read_file(file, max_bytes):
-    before = file.lstat()
+def snapshot_stamp(entry):
+    return (entry.st_dev, entry.st_ino, entry.st_mode, entry.st_nlink,
+            entry.st_size, entry.st_mtime_ns, entry.st_ctime_ns)
+
+
+def read_file(file, max_bytes, before=None):
+    before = file.lstat() if before is None else before
     if is_link(before) or not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > max_bytes:
         raise LearningError("Unsafe or oversized learning file.")
-    descriptor = os.open(file, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    descriptor = os.open(file, flags)
     with os.fdopen(descriptor, "rb") as handle:
         opened = os.fstat(handle.fileno())
-        if (opened.st_ino, opened.st_dev) != (before.st_ino, before.st_dev):
+        if snapshot_stamp(opened) != snapshot_stamp(before):
             raise LearningError("Learning file changed while opening.")
         data = handle.read(max_bytes + 1)
+        if snapshot_stamp(os.fstat(handle.fileno())) != snapshot_stamp(before):
+            raise LearningError("Learning file changed while reading.")
     if len(data) > max_bytes:
         raise LearningError("Learning file exceeded its read limit.")
     text = data.decode("utf-8")
@@ -81,12 +89,22 @@ def read_file(file, max_bytes):
     return text
 
 
-def private_directory(base, parts):
+def optional_entry(path):
+    try:
+        return path.lstat()
+    except FileNotFoundError:
+        return None
+
+
+def private_directory(base, parts, create):
     current = base
     for part in parts:
         current = current / part
-        current.mkdir(mode=0o700, exist_ok=True)
-        entry = current.lstat()
+        if create:
+            current.mkdir(mode=0o700, exist_ok=True)
+        entry = optional_entry(current)
+        if entry is None:
+            return None
         if is_link(entry) or not stat.S_ISDIR(entry.st_mode):
             raise LearningError("Learning directory must not be a link or reparse point.")
     return current
@@ -99,29 +117,117 @@ def config_home():
     return Path(configured) if configured else Path.home() / ".copilot"
 
 
-def store_home():
-    config = config_home()
-    config.mkdir(parents=True, mode=0o700, exist_ok=True)
-    return private_directory(config.resolve(), ["ecc", "homunculus"])
+def store_home(create):
+    configured = config_home()
+    if create:
+        configured.mkdir(parents=True, mode=0o700, exist_ok=True)
+    present = optional_entry(configured) is not None
+    config = configured.resolve(strict=present)
+    if present and not config.is_dir():
+        raise LearningError("The Copilot home must be a directory.")
+    home = private_directory(config, ["ecc", "homunculus"], create) if present else None
+    return config / "ecc" / "homunculus", home
 
 
-def preflight_tree(root):
+def fail_walk(error):
+    raise error
+
+
+def preflight_tree(root, copy_to=None):
     count = 0
     total = 0
-    for parent, directories, files in os.walk(root, followlinks=False):
+    directory_stamps = []
+    for parent, directories, files in os.walk(root, followlinks=False, onerror=fail_walk):
         for name in directories + files:
             count += 1
             if count > MAX_ENTRIES:
                 raise LearningError("Learning store entry limit exceeded.")
             file = Path(parent) / name
             entry = file.lstat()
-            if is_link(entry) or not (stat.S_ISDIR(entry.st_mode) or stat.S_ISREG(entry.st_mode)):
+            is_directory = stat.S_ISDIR(entry.st_mode)
+            if is_link(entry) or not (is_directory or stat.S_ISREG(entry.st_mode)):
                 raise LearningError("Learning store contains an unsafe filesystem entry.")
-            if stat.S_ISREG(entry.st_mode):
-                total += entry.st_size
-                if total > MAX_STORE_BYTES:
-                    raise LearningError("Learning store byte limit exceeded.")
-                read_file(file, MAX_FILE_BYTES)
+            destination = copy_to / file.relative_to(root) if copy_to is not None else None
+            if is_directory:
+                if destination is not None:
+                    destination.mkdir(mode=0o700)
+                    directory_stamps.append((destination, entry))
+                continue
+
+            remaining = min(MAX_FILE_BYTES, MAX_STORE_BYTES - total)
+            data = read_file(file, remaining, before=entry).encode("utf-8")
+            total += len(data)
+            if destination is not None:
+                with destination.open("xb") as handle:
+                    handle.write(data)
+                os.utime(destination, ns=(entry.st_atime_ns, entry.st_mtime_ns))
+
+    # Prune uses file mtime when a pending instinct has no created date.
+    # Preserve directory timestamps after their children have been written.
+    for destination, entry in reversed(directory_stamps):
+        os.utime(destination, ns=(entry.st_atime_ns, entry.st_mtime_ns))
+
+
+def is_mutation_preview(args):
+    return not getattr(args, "apply", False) and (
+        args.command in ("import", "evolve", "promote", "prune")
+        or args.command == "projects" and args.project_action is not None
+    )
+
+
+def copy_preview_store(home, snapshot):
+    lock = home.parent / ".learning.lock"
+    before = home.parent.lstat()
+    if optional_entry(lock) is not None:
+        raise LearningError("The learning store is busy.")
+    preflight_tree(home, copy_to=snapshot)
+    if optional_entry(lock) is not None or snapshot_stamp(home.parent.lstat()) != snapshot_stamp(before):
+        raise LearningError("The learning store changed while preparing the preview.")
+
+
+@contextlib.contextmanager
+def preview_directory(config):
+    candidates = [os.environ.get(key) for key in ("TMPDIR", "TEMP", "TMP")]
+    if os.name == "nt":
+        candidates.append(Path.home() / "AppData" / "Local" / "Temp")
+        if os.environ.get("SystemRoot"):
+            candidates.append(Path(os.environ["SystemRoot"]) / "Temp")
+    else:
+        candidates.extend(("/tmp", "/var/tmp"))
+    for candidate in filter(None, candidates):
+        try:
+            parent = Path(candidate).resolve(strict=True)
+            if not parent.is_dir() or parent.is_relative_to(config):
+                continue
+            # Passing an explicit parent avoids tempfile probing an unsafe
+            # TMPDIR by creating a file before we can validate its location.
+            temporary = tempfile.TemporaryDirectory(prefix="ecc-copilot-learning-preview-", dir=parent)
+        except (OSError, RuntimeError):
+            continue
+        with temporary as location:
+            yield Path(location)
+        return
+    raise LearningError("No temporary directory is available outside the Copilot home.")
+
+
+@contextlib.contextmanager
+def execution_home(args):
+    preview = is_mutation_preview(args)
+    logical_home, home = store_home(create=not preview)
+    if preview:
+        with preview_directory(logical_home.parent.parent) as snapshot:
+            if home is not None:
+                copy_preview_store(home, snapshot)
+            yield snapshot, logical_home
+        return
+
+    lock = home.parent / ".learning.lock"
+    lock.mkdir(mode=0o700)
+    try:
+        preflight_tree(home)
+        yield home, logical_home
+    finally:
+        lock.rmdir()
 
 
 def workspace_path(value, workspace, must_exist=False):
@@ -266,18 +372,10 @@ def dispatch(backend, args, transfer):
     return getattr(backend, "cmd_" + args.command)(args)
 
 
-def main():
-    os.umask(0o077)
-    args = parser().parse_args()
-    workspace = Path.cwd().resolve()
-    transfer = validate_arguments(args, workspace)
-    home = store_home()
-    lock = home.parent / ".learning.lock"
-    lock.mkdir(mode=0o700)
+def run_backend(args, transfer, workspace, home, logical_home):
+    backend = load_backend(home, workspace)
     temporary = None
     try:
-        preflight_tree(home)
-        backend = load_backend(home, workspace)
         if args.command == "import":
             temporary = import_content(backend, args, transfer, home)
             transfer = temporary
@@ -285,8 +383,10 @@ def main():
         with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
             code = dispatch(backend, args, transfer)
         output = captured.getvalue()
-        if not safe_text(output):
-            raise LearningError("Learning output contains unsafe data.")
+        if home != logical_home:
+            output = output.replace(str(home), str(logical_home))
+        if len(output.encode("utf-8")) > MAX_OUTPUT_BYTES or not safe_text(output):
+            raise LearningError("Learning output is oversized or contains unsafe data.")
         if args.command == "export" and transfer and code == 0:
             # No implicit directory provisioning or overwriting user files.
             with transfer.open("x", encoding="utf-8") as handle:
@@ -297,7 +397,15 @@ def main():
     finally:
         if temporary:
             temporary.unlink(missing_ok=True)
-        lock.rmdir()
+
+
+def main():
+    os.umask(0o077)
+    args = parser().parse_args()
+    workspace = Path.cwd().resolve()
+    transfer = validate_arguments(args, workspace)
+    with execution_home(args) as (home, logical_home):
+        return run_backend(args, transfer, workspace, home, logical_home)
 
 
 if __name__ == "__main__":

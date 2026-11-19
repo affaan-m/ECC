@@ -27,7 +27,8 @@ Global scope refers to this store. This workflow runs only on explicit
 invocation and uses reviewed instincts as its input.
 
 Imports, evolution, promotion, pruning, and project mutations preview by
-default. Use `--apply` only for the authorized operation and scope. Review
-candidate evidence against the repository before separately authorizing a
-skill or policy change. Transfer files use workspace-relative paths.
+default. Mutation previews use a private disposable copy of existing learning
+data and leave the live store untouched. Use `--apply` only for the authorized
+operation and scope. Review candidate evidence against the repository before
+separately authorizing a skill or policy change. Transfer files use workspace-relative paths.
 Exports with `--output` create new files.
