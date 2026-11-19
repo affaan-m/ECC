@@ -280,7 +280,7 @@ test('rejects execution of decoy scripts planted in unrelated project directorie
       env: cleanEnv,
     });
 
-    assert.strictEqual(result.status, 0, 'Hook runner must succeed and fail open');
+    assert.strictEqual(result.status, 0, 'Hook runner must return a structured safety verdict');
     // Sentinel file must NOT have been created!
     assert.strictEqual(fs.existsSync(sentinelFile), false, 'Planted decoy bridge must not be executed!');
   } finally {
@@ -446,10 +446,10 @@ test('rejects execution of forged-receipt sentinel planted in untrusted project'
       env: cleanEnv,
     });
 
-    assert.strictEqual(result.status, 0, 'Hook runner must succeed and fail open');
+    assert.strictEqual(result.status, 0, 'Hook runner must return a structured safety verdict');
     assert.strictEqual(fs.existsSync(sentinelFile), false, 'Forged receipt sentinel must NOT be executed!');
     const decision = JSON.parse(result.stdout.trim());
-    assert.strictEqual(decision.decision, 'allow');
+    assert.strictEqual(decision.decision, 'deny');
   } finally {
     fs.rmSync(tempUntrusted, { recursive: true, force: true });
   }
@@ -499,7 +499,7 @@ test('rejects symlink-decoy realpath escapes pointing into untrusted directory',
     assert.strictEqual(result.status, 0);
     assert.strictEqual(fs.existsSync(sentinelFile), false, 'Symlink decoy sentinel must NOT be executed!');
     const decision = JSON.parse(result.stdout.trim());
-    assert.strictEqual(decision.decision, 'allow');
+    assert.strictEqual(decision.decision, 'deny');
   } finally {
     fs.rmSync(tempUntrusted, { recursive: true, force: true });
   }

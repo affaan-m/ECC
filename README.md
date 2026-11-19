@@ -1342,8 +1342,11 @@ Treat `stable`, `beta`, `experimental`, and `instruction-only` below as capabili
 | Gemini, Zed, Qwen, Hermes, OpenClaw, Kimi, Mistral Vibe, CodeBuddy, JoyCode | Experimental/minimal adapters | Harness-specific selective target | File placement and instruction portability are tested; full Claude feature parity is not claimed. |
 
 The additional Antigravity CLI bridge and plugin metadata are experimental. Its manifest-command and
-agent-transform fixtures pass locally; native loader and lifecycle acceptance remain pending. Existing
-project/global installers retain their owned hook and MCP configuration. CLI-specific agent tool names
+agent-transform fixtures pass locally; native loader and lifecycle acceptance remain pending. Enabled
+bridge calls require complete JSON and an explicit `workspacePaths` context containing the hook working
+directory; unbound, incomplete, or invalid safety calls deny instead of guessing. The bootstrap reads at
+most 1 MiB and accepts up to 32 absolute workspace roots. Existing project/global installers retain their
+owned hook and MCP configuration. CLI-specific agent tool names
 require explicit `ANTIGRAVITY_RUNTIME=cli`; the default project tool mapping remains unchanged. Unsupported
 editor search, fetch, and subagent capabilities are omitted instead of mapped to broader tools.
 
