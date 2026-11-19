@@ -431,7 +431,8 @@ ${inspectorClientJs()}
   }
   async function sendChat() {
     if (ended || sending) return;
-    const text = input.value.trim();
+    const draft = input.value;
+    const text = draft.trim();
     if (!text) { statusEl.textContent = 'Type a message first.'; return; }
     const item = { kind: 'chat', text };
     if (selection && anchorEnabled) item.anchor = { selector: selection.selector, tag: selection.tag, snippet: selection.snippet, size: selection.size };
@@ -442,7 +443,7 @@ ${inspectorClientJs()}
     statusEl.textContent = 'Sending…';
     try {
       const body = await postFeedback([item], false);
-      input.value = '';
+      if (input.value === draft) input.value = '';
       statusEl.textContent = describeDelivery(body);
       if (body.presence) applyPresence(body.presence, agent);
     } catch (err) {
@@ -463,6 +464,7 @@ ${inspectorClientJs()}
       statusEl.textContent = 'Some applied changes no longer match the file. Ask the agent to resolve them before applying more.';
       return;
     }
+    const draft = input.value;
     sending = true;
     sendBtn.disabled = true;
     $('applyBtn').disabled = true;
@@ -471,10 +473,10 @@ ${inspectorClientJs()}
     try {
       const snapshot = await requestExport();
       const item = { kind, edits: (snapshot.edits || edits).filter(edit => !edit.submitted), bakedEditIds: snapshot.bakedEditIds || [], html: snapshot.html, viewport: { preset: vp.preset, width: actual.width, height: actual.height } };
-      const note = input.value.trim();
+      const note = draft.trim();
       if (note) item.text = note;
       const body = await postFeedback([item], kind === 'finish');
-      input.value = '';
+      if (input.value === draft) input.value = '';
       if (kind === 'finish') {
         markEnded('finished');
       } else {

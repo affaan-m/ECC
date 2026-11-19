@@ -29,6 +29,7 @@ function client({ boot = {}, stored = {} } = {}) {
   const node = id => { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); };
   node('uc-session').textContent = JSON.stringify({ key: 'abcdefabcdef', status: 'open', chat: [], presets: { desktop: { width: 1200, height: 900 } }, ...boot });
   const packets = [];
+  const requests = [];
   const frame = { postMessage: packet => packets.push(packet) };
   node('artifact').contentWindow = frame;
   let saved = stored;
@@ -42,11 +43,11 @@ function client({ boot = {}, stored = {} } = {}) {
     localStorage: { getItem: () => null, setItem() {} },
     setTimeout: () => 1, clearTimeout() {},
     EventSource: class { constructor() { events = {}; } addEventListener(type, run) { events[type] = run; } },
-    fetch: () => new Promise(resolve => { answer = resolve; }),
+    fetch: (url, options) => { requests.push({ url, body: JSON.parse(options.body) }); return new Promise(resolve => { answer = resolve; }); },
   };
   vm.runInNewContext(uiClientJs(), context);
   return {
-    node, packets, saved: () => saved,
+    node, packets, requests, saved: () => saved,
     message: data => message({ source: frame, data }),
     event: (name, data = {}) => events[name]({ data: JSON.stringify(data) }),
     answer: body => answer({ ok: true, json: async () => body }),
@@ -101,6 +102,24 @@ async function main() {
     h.fail(); await tick();
     assert.deepEqual(h.saved().edits, [first, later]);
     assert.equal(h.packets.find(packet => packet.type === 'uc:delivery-end').accepted, false);
+  });
+  await test('Apply captures the original note before export and preserves newer draft input', async () => {
+    const h = client(); h.node('chatInput').value = '  Original Apply note  ';
+    h.message({ type: 'uc:edits', edits: [first], canUndo: true }); h.node('applyBtn').handlers.click();
+    h.node('chatInput').value = 'New draft while export is pending';
+    const packet = h.packets.find(item => item.type === 'uc:export');
+    h.message({ type: 'uc:export', requestId: packet.requestId, edits: [first], html: '<html></html>' }); await tick();
+    assert.equal(h.requests[0].body.items[0].text, 'Original Apply note');
+    h.answer({ batches: [{ id: 'fb-1', edits: [first] }] }); await tick();
+    assert.equal(h.node('chatInput').value, 'New draft while export is pending');
+  });
+  await test('chat response preserves a newer draft and clears only unchanged submitted raw text', async () => {
+    const h = client(); h.node('chatInput').value = '  Original chat  '; h.node('send').handlers.click(); await tick();
+    assert.equal(h.requests[0].body.items[0].text, 'Original chat');
+    h.node('chatInput').value = 'New chat draft'; h.answer({}); await tick();
+    assert.equal(h.node('chatInput').value, 'New chat draft');
+    h.node('send').handlers.click(); await tick(); h.answer({}); await tick();
+    assert.equal(h.node('chatInput').value, '');
   });
   await test('snapshot boundary prevents rapid nudge, style and resize coalescing', () => {
     const source = editorGesturesJs();
