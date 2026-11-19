@@ -35,6 +35,10 @@ Check whether a reranking step exists between vector retrieval and the LLM call.
 ### Step 3: Verify
 Before trusting the pipeline's output, require a RAGAS-or-equivalent evaluation harness on a representative sample of real queries. Use what already exists in the project — do not install new packages without approval. If retrieval is missing or the project cannot run its evaluation, flag that as a blocking gap rather than skipping the check.
 
+The evaluation must exercise the same query-construction and context-assembly path that production sends to the model. A benchmark that calls a low-level search helper directly is insufficient when production accepts whole documents or otherwise transforms the user's input first. Use production-shaped fixtures — long, multi-topic, and header-heavy where those properties occur in production — and compare the topics in the input with the topics represented in the retrieved context.
+
+Require per-topic recall for multi-topic inputs and a per-source-type breakdown of the context that fills each result. Flag a single-query-only benchmark as incomplete when production inputs contain multiple sections or topics. When one whole-document query loses later topics or lets repeated template/case-law text crowd out relevant sources, recommend per-section retrieval with fused results as the next diagnostic or remediation step.
+
 The minimum metric set is **faithfulness**, **context_recall**, and **context_precision**, but there is no universal near-1.0 threshold. Verify that the project defines and justifies:
 
 - a versioned baseline dataset and current baseline score;
@@ -45,7 +49,7 @@ The minimum metric set is **faithfulness**, **context_recall**, and **context_pr
 - per-topic or per-section recall for multi-topic inputs, plus a source-type breakdown of the final context so noisy sources cannot hide missing authoritative evidence;
 - an allowed regression delta for each metric.
 
-A benchmark that calls the search function directly with single-topic queries is insufficient evidence for a production workflow that accepts whole documents. Report that coverage gap even when aggregate retrieval scores are high. Measure the final assembled context, not only the candidate search results. If later topics disappear during query construction, consider per-section retrieval with fused, deduplicated results, then rerun the same production-path evaluation before recommending the change.
+Measure the final assembled context, not only the candidate search results. Rerun the same production-path evaluation before recommending a retrieval change, even when aggregate search scores are high.
 
 Flag absolute scores below the project's threshold and statistically or operationally meaningful regressions from its baseline. If the project has no thresholds yet, report that evaluation policy gap and recommend establishing a baseline before treating the pipeline as production-ready.
 
