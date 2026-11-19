@@ -104,7 +104,7 @@ listening" so the human knows you are connected.
   request to repaint is the target for a one-property change.
 
 ```json
-{ "kind": "edits", "editCount": 3, "edits": [ { "kind": "resize", "selector": "img.art", "width": 220, "height": 220, "before": { "width": 260, "height": 260 } } ],
+{ "id": "fb-123", "kind": "edits", "editCount": 3, "edits": [ { "kind": "resize", "selector": "img.art", "width": 220, "height": 220, "before": { "width": 260, "height": 260 } } ],
   "viewport": { "preset": "mobile", "width": 393, "height": 852 },
   "exportPath": "/abs/.claude/previews/pricing-card.apply-mf3k2x-9a1c.edited.html", "editsPath": "/abs/.claude/previews/pricing-card.apply-mf3k2x-9a1c.edits.json" }
 ```
@@ -115,13 +115,20 @@ listening" so the human knows you are connected.
   their inline-style changes), tidy it into real CSS if it is messy, keep it
   self-contained, and reply. Each Apply writes its own
   `<name>.apply-<batch>.*` pair, so a queued earlier batch keeps its own
-  snapshot. The canvas keeps showing the applied edits until your write to
-  the mockup reloads it, then drops them, so nothing is applied twice.
+  snapshot. The canvas keeps showing submitted edits until it recognizes the
+  exact exported snapshot or you explicitly acknowledge the incorporated batch.
+  After incorporating a batch, acknowledge its feedback ID with
+  `ecc-ui-canvas await <file> --ack fb-123 --reply "Applied the requested changes."`.
+  Multiple IDs may be comma-separated. Do not acknowledge a queued batch while
+  answering an earlier chat. Exact copies of exported snapshots are recognized
+  automatically; an unrelated file save is not acknowledgment. If a submitted
+  batch no longer matches the file, resolve it before applying more changes.
 
 ```json
 { "kind": "finish", "editCount": 5, "edits": [ "…" ], "viewport": { "preset": "desktop", "width": 1412, "height": 806 },
   "exportPath": "…/pricing-card.edited.html", "editsPath": "…/pricing-card.edits.json" }
 ```
+
 
 - `finish` means the human clicked **Save and Finish**. The session is over
   (`sessionEnded: true`). Read `exportPath`, diff it against your original

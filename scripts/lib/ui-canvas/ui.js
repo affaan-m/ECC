@@ -85,10 +85,19 @@ function uiClientJs() {
     } catch (_e) { /* storage blocked: the canvas still works for this page load */ }
   }
   const stored = readStore();
-  let edits = Array.isArray(stored.edits) ? stored.edits : [];
-  // Applied edits the agent has not written into the file yet. They replay
-  // silently on any reload until the file itself changes.
-  let submitted = Array.isArray(stored.submitted) ? stored.submitted : [];
+  const acknowledged = new Set((boot.uiAcknowledged || []).map(batch => batch.id));
+  const acknowledgedEdits = new Set((boot.uiAcknowledged || []).flatMap(batch => batch.editIds));
+  let submitted = Array.isArray(boot.uiBatches) ? boot.uiBatches : [];
+  const acceptedEdits = new Set(submitted.flatMap(batch => batch.edits.map(edit => edit.id)));
+  let edits = (Array.isArray(stored.edits) ? stored.edits : []).filter(edit => !acceptedEdits.has(edit.id) && !acknowledgedEdits.has(edit.id));
+  // Older shells stored only a flat submitted log, with no proof of whether
+  // the file already contains it. Recover it visibly without replaying it.
+  for (const edit of Array.isArray(stored.submitted) ? stored.submitted : []) {
+    if (!acceptedEdits.has(edit.id) && !acknowledgedEdits.has(edit.id)) edits.push({ ...edit, stale: true, unverified: true });
+  }
+  let deliveryRequest = null;
+  function persistEdits() { writeStore({ edits, submittedBatches: submitted, submitted: [] }); }
+  persistEdits();
 
   // --- theme --------------------------------------------------------------------
   const themeKey = 'ecc-plan-canvas:theme';
@@ -220,7 +229,8 @@ function uiClientJs() {
     return new Promise((resolve, reject) => {
       const requestId = 'x' + (++exportSeq);
       exportWaiters.set(requestId, resolve);
-      postToFrame({ type: 'uc:export', requestId });
+      deliveryRequest = requestId;
+      postToFrame({ type: 'uc:export', requestId, lock: true });
       setTimeout(() => {
         if (exportWaiters.delete(requestId)) reject(new Error('the preview did not answer; reload and try again'));
       }, 5000);
@@ -234,7 +244,7 @@ function uiClientJs() {
       case 'uc:ready':
         frameReady = true;
         postToFrame({ type: 'uc:set-mode', mode });
-        postToFrame({ type: 'uc:restore', baked: submitted, edits, scroll: lastScroll, selection: selection ? selection.selector : null });
+        postToFrame({ type: 'uc:restore', baked: submitted.flatMap(batch => batch.edits), batches: submitted, edits, deliveryRequest, scroll: lastScroll, selection: selection ? selection.selector : null, selectionRevision: selection ? selection.sourceRevision : null });
         if (paused) postToFrame({ type: 'uc:pause-animations', paused: true });
         break;
       case 'uc:selection':
@@ -283,10 +293,13 @@ ${inspectorClientJs()}
     const list = $('editList');
     list.innerHTML = '';
     $('editCount').textContent = String(edits.length);
-    $('undoBtn').disabled = ended || !canUndo;
-    $('redoBtn').disabled = ended || !canRedo;
-    $('applyBtn').disabled = ended || !edits.some(e => !e.stale);
-    $('resetBtn').disabled = ended || !edits.length;
+    $('undoBtn').disabled = ended || sending || !canUndo;
+    $('redoBtn').disabled = ended || sending || !canRedo;
+    const unresolved = edits.some(edit => edit.submitted && edit.stale);
+    if (unresolved && !sending) statusEl.textContent = 'Some applied changes no longer match the file. Ask the agent to resolve them before applying more.';
+    $('finishBtn').disabled = ended || sending || unresolved;
+    $('applyBtn').disabled = ended || sending || unresolved || !edits.some(e => !e.stale);
+    $('resetBtn').disabled = ended || sending || !edits.length;
     if (!edits.length) {
       const empty = document.createElement('div');
       empty.className = 'empty';
@@ -446,6 +459,10 @@ ${inspectorClientJs()}
 
   async function sendEdits(kind) {
     if (ended || sending) return;
+    if (edits.some(edit => edit.submitted && edit.stale)) {
+      statusEl.textContent = 'Some applied changes no longer match the file. Ask the agent to resolve them before applying more.';
+      return;
+    }
     sending = true;
     sendBtn.disabled = true;
     $('applyBtn').disabled = true;
@@ -453,7 +470,7 @@ ${inspectorClientJs()}
     statusEl.textContent = kind === 'finish' ? 'Saving the final design…' : 'Capturing the preview…';
     try {
       const snapshot = await requestExport();
-      const item = { kind, edits: snapshot.edits || edits, html: snapshot.html, viewport: { preset: vp.preset, width: actual.width, height: actual.height } };
+      const item = { kind, edits: (snapshot.edits || edits).filter(edit => !edit.submitted), bakedEditIds: snapshot.bakedEditIds || [], html: snapshot.html, viewport: { preset: vp.preset, width: actual.width, height: actual.height } };
       const note = input.value.trim();
       if (note) item.text = note;
       const body = await postFeedback([item], kind === 'finish');
@@ -461,10 +478,12 @@ ${inspectorClientJs()}
       if (kind === 'finish') {
         markEnded('finished');
       } else {
-        postToFrame({ type: 'uc:forget' });
-        submitted = submitted.concat((snapshot.edits || edits).filter(e => !e.stale));
-        edits = [];
-        writeStore({ edits: [], submitted });
+        const ids = (snapshot.edits || []).filter(edit => !edit.stale).map(edit => edit.id);
+        submitted = submitted.concat((body.batches || []).filter(batch => !acknowledged.has(batch.id)));
+        edits = edits.filter(edit => !ids.includes(edit.id));
+        persistEdits();
+        postToFrame({ type: 'uc:delivery-end', requestId: deliveryRequest, accepted: true, editIds: ids });
+        deliveryRequest = null;
         renderEdits();
         statusEl.textContent = describeDelivery(body) + ' The preview updates when it writes the file.';
         if (body.presence) applyPresence(body.presence, agent);
@@ -472,6 +491,10 @@ ${inspectorClientJs()}
     } catch (err) {
       statusEl.textContent = (kind === 'finish' ? 'Save failed (' : 'Apply failed (') + err.message + ').';
     } finally {
+      if (deliveryRequest) {
+        postToFrame({ type: 'uc:delivery-end', requestId: deliveryRequest, accepted: false, editIds: [] });
+        deliveryRequest = null;
+      }
       sending = false;
       sendBtn.disabled = ended;
       $('finishBtn').disabled = ended;
@@ -537,13 +560,21 @@ ${inspectorClientJs()}
     const es = new EventSource('/events/' + key);
     es.addEventListener('chat-sync', e => renderChat(JSON.parse(e.data).chat || []));
     es.addEventListener('presence', e => { const data = JSON.parse(e.data); applyPresence(data.state, data.agent); });
-    // The file changed on disk: the agent has written the applied edits in,
-    // so they must not replay on top of the new markup.
-    es.addEventListener('reload', () => {
-      submitted = [];
-      writeStore({ submitted: [] });
-      reloadArtifact();
+    es.addEventListener('ui-ack', e => {
+      const data = JSON.parse(e.data);
+      const batches = data.batches || [];
+      const ids = new Set(batches.map(batch => batch.id));
+      const editIds = new Set(batches.flatMap(batch => batch.editIds));
+      batches.forEach(batch => acknowledged.add(batch.id));
+      const changed = submitted.some(batch => ids.has(batch.id)) || edits.some(edit => editIds.has(edit.id));
+      submitted = submitted.filter(batch => !ids.has(batch.id));
+      edits = edits.filter(edit => !editIds.has(edit.id));
+      persistEdits();
+      renderEdits();
+      if (changed && frameReady) reloadArtifact();
     });
+    // An unrelated agent save is not acknowledgment of queued Apply batches.
+    es.addEventListener('reload', reloadArtifact);
     es.addEventListener('ended', e => { markEnded(JSON.parse(e.data).endedBy); es.close(); });
     es.onerror = () => {
       if (ended) return;
@@ -582,6 +613,8 @@ function renderUiCanvasHtml(session, { clientPath = '/ui-client.js', cssPath = '
     chat: session.chat,
     agent: session.agent || null,
     ui: session.ui || { viewport: 'desktop', title: '' },
+    uiBatches: session.uiBatches || [],
+    uiAcknowledged: session.uiAcknowledged || [],
     presets: VIEWPORT_PRESETS
   }).replace(/</g, '\\u003c');
   const artifactSrc = `/artifact/${session.key}/`;

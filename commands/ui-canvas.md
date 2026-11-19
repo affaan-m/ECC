@@ -25,7 +25,7 @@ export.
 4. On `chat`: signal `typing --state thinking`, edit the mockup file (the
    preview live-reloads and keeps their pending edits), answer with
    `await <file> --reply "…"`, repeat.
-5. On `edits`: rewrite the mockup from `exportPath`, reply, keep listening.
+5. On `edits`: rewrite the mockup from `exportPath`, then acknowledge its feedback ID with `await <file> --ack fb-123 --reply "…"` and keep listening. Acknowledge only batches actually incorporated; unrelated saves retain queued edits.
 6. On `finish`: read `exportPath` and `editsPath`, implement that exact
    design in the real component, commit per repo rules, report in chat.
 

@@ -161,7 +161,7 @@ function editorGesturesJs() {
     dropEl.style.display = 'none';
     var plan = g.plan;
     if (!plan) return;
-    var sameSpot = plan.container === g.fromParent && (plan.index === g.fromIndex || plan.index === g.fromIndex + 1);
+    var sameSpot = plan.container === g.fromParent && plan.index === g.fromIndex;
     if (sameSpot) return;
     var fromSelector = selectorFor(g.el);
     var fromParentSelector = selectorFor(g.fromParent);
@@ -179,7 +179,7 @@ function editorGesturesJs() {
   function nudgeBy(dx, dy) {
     if (!selected) return;
     var last = edits.length ? edits[edits.length - 1] : null;
-    if (last && last.kind === 'nudge' && last._el === selected && !last.stale && Date.now() - Date.parse(last.at) < 1500) {
+    if (last && !last._exported && last.kind === 'nudge' && last._el === selected && !last.stale && Date.now() - Date.parse(last.at) < 1500) {
       applyInline(selected, { left: (px(selected.style.left) + dx) + 'px', top: (px(selected.style.top) + dy) + 'px' });
       last.dx += dx;
       last.dy += dy;
@@ -217,7 +217,7 @@ function editorGesturesJs() {
     var cs = getComputedStyle(selected);
     var before = cs.getPropertyValue(property);
     var last = edits.length ? edits[edits.length - 1] : null;
-    if (last && last.kind === 'style' && last.property === property && last._el === selected && !last.stale && Date.now() - Date.parse(last.at) < 2500) {
+    if (last && !last._exported && last.kind === 'style' && last.property === property && last._el === selected && !last.stale && Date.now() - Date.parse(last.at) < 2500) {
       selected.style.setProperty(property, value === null ? RESET_VALUES[property] : value);
       last.after = value;
       last.at = new Date().toISOString();
@@ -235,7 +235,7 @@ function editorGesturesJs() {
   function setSize(width, height) {
     if (!selected) return;
     var last = edits.length ? edits[edits.length - 1] : null;
-    if (last && last.kind === 'resize' && last._el === selected && !last.stale && Date.now() - Date.parse(last.at) < 2500) {
+    if (last && !last._exported && last.kind === 'resize' && last._el === selected && !last.stale && Date.now() - Date.parse(last.at) < 2500) {
       if (width !== null && width !== undefined) last.width = Math.round(width);
       if (height !== null && height !== undefined) last.height = Math.round(height);
       var next = sizeStyles(selected, last.width, last.height);

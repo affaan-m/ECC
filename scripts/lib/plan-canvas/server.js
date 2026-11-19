@@ -11,6 +11,7 @@
 
 const { EventEmitter } = require('events');
 const fs = require('fs');
+const crypto = require('crypto');
 const http = require('http');
 const path = require('path');
 
@@ -362,6 +363,24 @@ function createPlanCanvasServer({
 
   // --- artifact watching --------------------------------------------------
 
+  function acknowledgeUiBatches(session, ids, reload = false, replyText) {
+    const result = store.acknowledgeUiBatches(session.key, ids, replyText);
+    if (result && result.batches.length) broadcast(session.key, 'ui-ack', { batches: result.batches, reload });
+    return result;
+  }
+
+  function acknowledgeUiSnapshot(session, content) {
+    if (session.mode !== 'ui' || !(session.uiBatches || []).length) return;
+    const hash = crypto.createHash('sha256').update(content).digest('hex');
+    const index = session.uiBatches.findIndex(batch => batch.snapshotHash === hash);
+    // Only the exact batch and earlier batches the editor successfully
+    // replayed are known to be present; unresolved selectors stay queued.
+    if (index >= 0) {
+      const batch = session.uiBatches[index];
+      acknowledgeUiBatches(session, [batch.id, ...(batch.includedBatches || []).filter(id => session.uiBatches.some(known => known.id === id))]);
+    }
+  }
+
   function watchSession(session) {
     if (watchers.has(session.key)) return;
     const dir = path.dirname(session.file);
@@ -371,7 +390,10 @@ function createPlanCanvasServer({
       const watcher = fs.watch(dir, (eventType, filename) => {
         if (filename && filename !== base) return;
         clearTimeout(debounce);
-        debounce = setTimeout(() => broadcast(session.key, 'reload', {}), 150);
+        debounce = setTimeout(() => {
+          try { acknowledgeUiSnapshot(session, fs.readFileSync(session.file)); } catch { /* missing or partial saves do not acknowledge */ }
+          broadcast(session.key, 'reload', {});
+        }, 150);
       });
       watcher.on('error', () => watchers.delete(session.key));
       watchers.set(session.key, watcher);
@@ -562,6 +584,7 @@ function createPlanCanvasServer({
           status: 'queued',
           accepted: result.accepted.length,
           pending: result.pending,
+          batches: result.accepted.filter(item => item.kind === 'edits').map(item => ({ id: item.id, edits: item.edits.filter(edit => !edit.stale) })),
           presence: presenceFor(key)
         });
       }
@@ -573,14 +596,25 @@ function createPlanCanvasServer({
 
       if (action === 'reply') {
         const body = await readJsonBody(req);
-        if (!body.text || typeof body.text !== 'string') {
-          return sendJson(res, 400, { error: 'text is required' });
+        const ids = body.acknowledge;
+        if (ids !== undefined && (session.mode !== 'ui' || !Array.isArray(ids) || !ids.length || ids.length > 50
+            || ids.some(id => typeof id !== 'string' || !/^fb-[1-9][0-9]{0,15}$/.test(id)))) {
+          return sendJson(res, 400, { error: 'acknowledge requires known UI batch IDs' });
         }
-        const entry = store.addAgentReply(key, body.text);
+        if (body.text !== undefined && (typeof body.text !== 'string' || !body.text.trim())) {
+          return sendJson(res, 400, { error: 'text must be a nonempty string' });
+        }
+        if (body.text === undefined && ids === undefined) return sendJson(res, 400, { error: 'text is required' });
+        let acknowledgment = null;
+        try {
+          if (ids) acknowledgment = acknowledgeUiBatches(session, ids, true, body.text);
+        } catch { return sendJson(res, 500, { error: 'could not persist UI acknowledgment' }); }
+        if (ids && acknowledgment === null) return sendJson(res, 400, { error: 'unknown UI batch ID' });
+        const entry = ids ? acknowledgment.entry : store.addAgentReply(key, body.text);
         clearAgentActivity(key);
         broadcast(key, 'chat-sync', { chat: store.get(key).chat });
         broadcastPresence(key);
-        return sendJson(res, 200, { status: 'sent', at: entry.at });
+        return sendJson(res, 200, { status: 'sent', ...(entry ? { at: entry.at } : {}) });
       }
 
       // Agents drive the chat indicator explicitly: `thinking` while they work,
@@ -613,6 +647,7 @@ function createPlanCanvasServer({
     });
     res.write(`event: chat-sync\ndata: ${JSON.stringify({ chat: session.chat })}\n\n`);
     res.write(`event: presence\ndata: ${JSON.stringify(presencePayload(key))}\n\n`);
+    if (session.mode === 'ui') res.write(`event: ui-ack\ndata: ${JSON.stringify({ batches: session.uiAcknowledged || [] })}\n\n`);
     if (!sseClients.has(key)) sseClients.set(key, new Set());
     sseClients.get(key).add(res);
     lastPresence.set(key, presenceFor(key));
@@ -652,8 +687,9 @@ function createPlanCanvasServer({
         });
         return sendHtml(res, 200, html, { csp: 'artifact' });
       }
+      acknowledgeUiSnapshot(session, content);
       const sdkTag = session.mode === 'ui'
-        ? '<script src="/ui-editor.js" data-ecc-ui-canvas="editor"></script>'
+        ? `<script src="/ui-editor.js" data-ecc-ui-canvas="editor" data-source-sha256="${crypto.createHash('sha256').update(content).digest('hex')}"></script>`
         : '<script src="/sdk.js"></script>';
       const injected = content.includes('</body>')
         ? content.replace('</body>', `${sdkTag}\n</body>`)
