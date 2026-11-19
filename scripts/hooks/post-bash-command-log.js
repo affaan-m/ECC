@@ -208,7 +208,12 @@ function appendLine(filePath, line) {
     // No log yet.
   }
   if (stat && stat.isFile() && stat.size > 0 && stat.size + Buffer.byteLength(data) > LOG_MAX_BYTES) {
-    fs.renameSync(filePath, `${filePath}.1`);
+    try {
+      fs.renameSync(filePath, `${filePath}.1`);
+    } catch {
+      // Rotation is best effort (another process may have rotated first, or
+      // Windows may refuse the rename); still record this command.
+    }
   }
 
   const fd = fs.openSync(filePath, 'a', LOG_FILE_MODE);

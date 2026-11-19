@@ -445,6 +445,38 @@ if (
   passed++;
 else failed++;
 
+if (
+  test('a failed rotation still records the command (#3846)', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-bash-log-'));
+    const logFile = path.join(homeDir, '.claude', 'bash-commands.log');
+
+    try {
+      // A non-empty directory at <log>.1 makes the rename fail on every platform.
+      fs.mkdirSync(path.join(`${logFile}.1`, 'blocker'), { recursive: true });
+      fs.writeFileSync(logFile, '[first] generation\n');
+      fs.truncateSync(logFile, LOG_MAX_BYTES);
+
+      const result = runHook('audit', { tool_input: { command: 'echo kept' } }, homeDir);
+      assert.strictEqual(result.status, 0, result.stdout + result.stderr);
+
+      assert.ok(fs.statSync(`${logFile}.1`).isDirectory());
+      assert.ok(fs.statSync(logFile).size > LOG_MAX_BYTES);
+      const fd = fs.openSync(logFile, 'r');
+      try {
+        const tail = Buffer.alloc(64);
+        const read = fs.readSync(fd, tail, 0, tail.length, fs.statSync(logFile).size - tail.length);
+        assert.ok(tail.subarray(0, read).toString('utf8').endsWith('echo kept\n'));
+      } finally {
+        fs.closeSync(fd);
+      }
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })
+)
+  passed++;
+else failed++;
+
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);
 process.exit(failed > 0 ? 1 : 0);
