@@ -56,7 +56,7 @@ Una vez que tienes tu plan establecido y el contexto limpiado (opción predeterm
 Un patrón que adopté: en lugar de poner todo en CLAUDE.md (alcance de usuario) o `.claude/rules/` (alcance de proyecto), que carga en cada sesión, usa flags de CLI para inyectar contexto dinámicamente.
 
 ```bash
-claude --system-prompt "$(cat memory.md)"
+claude --append-system-prompt-file memory.md
 ```
 
 Esto te permite ser más quirúrgico sobre qué contexto se carga y cuándo. El contenido del system prompt tiene mayor autoridad que los mensajes del usuario, que tienen mayor autoridad que los resultados de herramientas.
@@ -65,13 +65,13 @@ Esto te permite ser más quirúrgico sobre qué contexto se carga y cuándo. El 
 
 ```bash
 # Desarrollo diario
-alias claude-dev='claude --system-prompt "$(cat ~/.claude/contexts/dev.md)"'
+alias claude-dev='claude --append-system-prompt-file ~/.claude/contexts/dev.md'
 
 # Modo de revisión de PR
-alias claude-review='claude --system-prompt "$(cat ~/.claude/contexts/review.md)"'
+alias claude-review='claude --append-system-prompt-file ~/.claude/contexts/review.md'
 
 # Modo de investigación/exploración
-alias claude-research='claude --system-prompt "$(cat ~/.claude/contexts/research.md)"'
+alias claude-research='claude --append-system-prompt-file ~/.claude/contexts/research.md'
 ```
 
 **Avanzado: Hooks de Persistencia de Memoria**

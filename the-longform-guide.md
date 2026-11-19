@@ -56,8 +56,10 @@ Once you have your plan set and context cleared (default option in plan mode in 
 One pattern I picked up: instead of solely putting everything in CLAUDE.md (user scope) or `.claude/rules/` (project scope) which loads every session, use CLI flags to inject context dynamically.
 
 ```bash
-claude --system-prompt "$(cat memory.md)"
+claude --append-system-prompt-file memory.md
 ```
+
+> Use `--append-system-prompt-file` (or `--append-system-prompt`), not `--system-prompt`. The `--system-prompt` flags replace Claude Code's entire default prompt, including its tool-use instructions.
 
 This lets you be more surgical about what context loads when. System prompt content has higher authority than user messages, which have higher authority than tool results.
 
@@ -65,13 +67,13 @@ This lets you be more surgical about what context loads when. System prompt cont
 
 ```bash
 # Daily development
-alias claude-dev='claude --system-prompt "$(cat ~/.claude/contexts/dev.md)"'
+alias claude-dev='claude --append-system-prompt-file ~/.claude/contexts/dev.md'
 
 # PR review mode
-alias claude-review='claude --system-prompt "$(cat ~/.claude/contexts/review.md)"'
+alias claude-review='claude --append-system-prompt-file ~/.claude/contexts/review.md'
 
 # Research/exploration mode
-alias claude-research='claude --system-prompt "$(cat ~/.claude/contexts/research.md)"'
+alias claude-research='claude --append-system-prompt-file ~/.claude/contexts/research.md'
 ```
 
 **Advanced: Memory Persistence Hooks**

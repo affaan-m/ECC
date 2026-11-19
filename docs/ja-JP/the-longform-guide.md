@@ -56,7 +56,7 @@ Claudeが現在の状態を要約するファイルを作成します。レビ�
 私が身につけたパターン：CLAUDE.md（ユーザースコープ）や`.claude/rules/`（プロジェクトスコープ）にすべてを入れる代わりに — 毎セッション読み込まれる — CLIフラグを使ってコンテキストを動的に注入。
 
 ```bash
-claude --system-prompt "$(cat memory.md)"
+claude --append-system-prompt-file memory.md
 ```
 
 これにより、どのコンテキストをいつ読み込むかについて、より外科的に対応できます。システムプロンプトの内容はユーザーメッセージより権限が高く、ユーザーメッセージはツール結果より権限が高いです。
@@ -65,13 +65,13 @@ claude --system-prompt "$(cat memory.md)"
 
 ```bash
 # 日常開発
-alias claude-dev='claude --system-prompt "$(cat ~/.claude/contexts/dev.md)"'
+alias claude-dev='claude --append-system-prompt-file ~/.claude/contexts/dev.md'
 
 # PRレビューモード
-alias claude-review='claude --system-prompt "$(cat ~/.claude/contexts/review.md)"'
+alias claude-review='claude --append-system-prompt-file ~/.claude/contexts/review.md'
 
 # リサーチ/探索モード
-alias claude-research='claude --system-prompt "$(cat ~/.claude/contexts/research.md)"'
+alias claude-research='claude --append-system-prompt-file ~/.claude/contexts/research.md'
 ```
 
 **上級：メモリ永続化フック**
