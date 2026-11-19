@@ -2,6 +2,8 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const os = require('os');
+const { spawnSync } = require('node:child_process');
 const path = require('path');
 const yaml = require('js-yaml');
 const vm = require('vm');
@@ -148,6 +150,27 @@ for (const workflowPath of workflowPaths) {
     assert.match(verify, /name:\s*ecc-release-artifacts/);
     assert.match(verify, /\$\{\{ steps\.pack\.outputs\.package_file \}\}/);
     assert.match(verify, /tests\/ci\/packed-artifact-lifecycle\.js/);
+  });
+
+  test(`${workflowPath} uploads every local dependency of the lifecycle runner`, () => {
+    const upload = yaml.load(source).jobs.verify.steps.find(step => step.name === 'Upload release artifacts');
+    const files = upload.with.path.split('\n').filter(file => file.startsWith('tests/ci/'));
+    const downloaded = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-release-fixture-'));
+    try {
+      for (const file of files) {
+        const destination = path.join(downloaded, file);
+        fs.mkdirSync(path.dirname(destination), { recursive: true });
+        fs.copyFileSync(path.join(repoRoot, file), destination);
+      }
+      const runner = path.join(downloaded, 'tests/ci/packed-artifact-lifecycle.js');
+      const result = spawnSync(process.execPath, ['-e', 'require(process.argv[1])', runner], {
+        cwd: downloaded, encoding: 'utf8', timeout: 15000,
+      });
+      assert.ifError(result.error);
+      assert.strictEqual(result.status, 0, result.stderr || result.stdout);
+    } finally {
+      fs.rmSync(downloaded, { recursive: true, force: true });
+    }
   });
 
   test(`${workflowPath} fails retries when npm already has different bytes`, () => {

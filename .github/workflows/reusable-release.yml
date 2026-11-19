@@ -155,6 +155,8 @@ jobs:
             release_body.md
             ${{ steps.pack.outputs.package_file }}
             tests/ci/packed-artifact-lifecycle.js
+            tests/ci/copilot-packed-lifecycle.js
+            tests/ci/copilot-packed-lifecycle-security.js
           if-no-files-found: error
 
       - name: Verify existing npm artifact matches candidate
