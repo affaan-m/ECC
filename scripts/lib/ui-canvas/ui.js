@@ -19,6 +19,7 @@ const path = require('path');
 
 const { escapeHtml } = require('../plan-canvas/markdown');
 const { VIEWPORT_PRESETS } = require('./feedback');
+const { deliveryClientJs } = require('./delivery');
 const { inspectorClientJs } = require('./inspector');
 const { uiCanvasCss } = require('./ui-css');
 
@@ -100,6 +101,7 @@ function uiClientJs() {
   function persistEdits() { writeStore({ edits, submittedBatches: submitted, submitted: [] }); }
   persistEdits();
 
+${deliveryClientJs()}
   // --- theme --------------------------------------------------------------------
   const themeKey = 'ecc-plan-canvas:theme';
   function applyTheme(t) {
@@ -247,7 +249,7 @@ function uiClientJs() {
       case 'uc:ready':
         frameReady = true;
         postToFrame({ type: 'uc:set-mode', mode: finishing ? 'interact' : mode });
-        postToFrame({ type: 'uc:restore', baked: submitted.flatMap(batch => batch.edits), batches: submitted, edits, deliveryRequest, scroll: lastScroll, selection: selection ? selection.selector : null, selectionRevision: selection ? selection.sourceRevision : null });
+        postToFrame({ type: 'uc:restore', baked: submitted.flatMap(batch => batch.edits), batches: submitted, edits, deliveryRequest, pendingSnapshotHash: pendingDelivery && pendingDelivery.snapshotHash, pendingSourceRevision: pendingDelivery && pendingDelivery.sourceRevision, pendingEditIds: pendingDelivery ? pendingDelivery.item.edits.map(edit => edit.id) : [], scroll: lastScroll, selection: selection ? selection.selector : null, selectionRevision: selection ? selection.sourceRevision : null });
         if (paused) postToFrame({ type: 'uc:pause-animations', paused: true });
         break;
       case 'uc:selection':
@@ -257,7 +259,10 @@ function uiClientJs() {
         renderAnchor();
         break;
       case 'uc:edits':
-        edits = Array.isArray(msg.edits) ? msg.edits : [];
+        {
+          const acceptedIds = new Set(submitted.flatMap(batch => batch.edits.map(edit => edit.id)));
+          edits = (Array.isArray(msg.edits) ? msg.edits : []).filter(edit => !acknowledgedEdits.has(edit.id) && (edit.submitted || !acceptedIds.has(edit.id)));
+        }
         canUndo = Boolean(msg.canUndo);
         canRedo = Boolean(msg.canRedo);
         writeStore({ edits });
@@ -296,13 +301,13 @@ ${inspectorClientJs()}
     const list = $('editList');
     list.innerHTML = '';
     $('editCount').textContent = String(edits.length);
-    $('undoBtn').disabled = ended || sending || !canUndo;
-    $('redoBtn').disabled = ended || sending || !canRedo;
+    $('undoBtn').disabled = ended || sending || Boolean(pendingDelivery) || !canUndo;
+    $('redoBtn').disabled = ended || sending || Boolean(pendingDelivery) || !canRedo;
     const unresolved = edits.some(edit => edit.submitted && edit.stale);
     if (unresolved && !sending) statusEl.textContent = 'Some applied changes no longer match the file. Ask the agent to resolve them before applying more.';
-    $('finishBtn').disabled = ended || sending || unresolved;
-    $('applyBtn').disabled = ended || sending || unresolved || !edits.some(e => !e.stale);
-    $('resetBtn').disabled = ended || sending || !edits.length;
+    $('finishBtn').disabled = ended || sending || !frameReady || (!pendingDelivery && unresolved) || Boolean(pendingDelivery && pendingDelivery.kind === 'edits');
+    $('applyBtn').disabled = ended || sending || finishing || !frameReady || (!pendingDelivery && (unresolved || !edits.some(e => !e.stale)));
+    $('resetBtn').disabled = ended || sending || Boolean(pendingDelivery) || !edits.length;
     if (!edits.length) {
       const empty = document.createElement('div');
       empty.className = 'empty';
@@ -412,17 +417,17 @@ ${inspectorClientJs()}
   }
   $('anchorClear').addEventListener('click', () => { anchorEnabled = false; renderAnchor(); });
 
-  async function postFeedback(items, endSession) {
+  async function postFeedback(items, endSession, deliveryId) {
     const res = await fetch('/api/session/' + key + '/feedback', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ items, endSession: Boolean(endSession) })
+      body: JSON.stringify({ items, endSession: Boolean(endSession), ...(deliveryId ? { deliveryId } : {}) })
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || ('HTTP ' + res.status));
+      throw Object.assign(new Error(body.error || ('HTTP ' + res.status)), { definitive: true });
     }
-    return res.json().catch(() => ({}));
+    return res.json();
   }
   function pendingSummaries() {
     return edits.filter(e => !e.stale).slice(-30).map(summarize);
@@ -473,7 +478,9 @@ ${inspectorClientJs()}
   }
   async function sendEdits(kind) {
     if (ended || sending) return;
-    if (edits.some(edit => edit.submitted && edit.stale)) {
+    if (!frameReady) { statusEl.textContent = 'Wait for the preview to finish reloading, then try again.'; return; }
+    if (pendingDelivery && pendingDelivery.kind !== kind) { statusEl.textContent = 'Retry the previous delivery first.'; return; }
+    if (!pendingDelivery && edits.some(edit => edit.submitted && edit.stale)) {
       statusEl.textContent = 'Some applied changes no longer match the file. Ask the agent to resolve them before applying more.';
       return;
     }
@@ -485,33 +492,40 @@ ${inspectorClientJs()}
     $('finishBtn').disabled = true;
     statusEl.textContent = kind === 'finish' ? 'Saving the final design…' : 'Capturing the preview…';
     try {
-      const snapshot = await requestExport();
-      const item = { kind, edits: (snapshot.edits || edits).filter(edit => !edit.submitted), bakedEditIds: snapshot.bakedEditIds || [], html: snapshot.html, viewport: { preset: vp.preset, width: actual.width, height: actual.height } };
+      const snapshot = pendingDelivery ? null : await requestExport();
+      const item = pendingDelivery ? pendingDelivery.item : { kind, edits: (snapshot.edits || edits).filter(edit => !edit.submitted), bakedEditIds: snapshot.bakedEditIds || [], html: snapshot.html, viewport: { preset: vp.preset, width: actual.width, height: actual.height } };
       const note = draft.trim();
-      if (note) item.text = note;
-      const body = await postFeedback([item], kind === 'finish');
-      if (input.value === draft) input.value = '';
+      if (!pendingDelivery && note) item.text = note;
+      const delivery = await prepareDelivery(kind, item, snapshot && snapshot.sourceRevision);
+      const body = await postFeedback([delivery.item], kind === 'finish', delivery.id);
+      if (!Array.isArray(body.acceptedEditIds)) throw new Error('The delivery receipt was not readable; retry to confirm it.');
+      clearDelivery();
+      if (input.value === draft && draft.trim() === body.acceptedText) input.value = '';
       if (kind === 'finish') {
         markEnded('finished');
       } else {
-        const ids = (snapshot.edits || []).filter(edit => !edit.stale).map(edit => edit.id);
+        const ids = body.acceptedEditIds;
         submitted = submitted.concat((body.batches || []).filter(batch => !acknowledged.has(batch.id)));
         edits = edits.filter(edit => !ids.includes(edit.id));
         persistEdits();
-        postToFrame({ type: 'uc:delivery-end', requestId: deliveryRequest, accepted: true, editIds: ids });
         deliveryRequest = null;
+        reloadArtifact();
         renderEdits();
         statusEl.textContent = describeDelivery(body) + ' The preview updates when it writes the file.';
         if (body.presence) applyPresence(body.presence, agent);
       }
     } catch (err) {
-      statusEl.textContent = (kind === 'finish' ? 'Save failed (' : 'Apply failed (') + err.message + ').';
+      if (kind === 'finish' && ended && !pendingDelivery) statusEl.textContent = 'Saved and handed to ' + agentName() + '.';
+      else {
+        if (err.definitive) clearDelivery();
+        statusEl.textContent = (kind === 'finish' ? 'Save failed (' : 'Apply failed (') + err.message + ').' + (pendingDelivery ? ' Retry to confirm the saved snapshot.' : '');
+      }
     } finally {
       if (deliveryRequest) {
-        postToFrame({ type: 'uc:delivery-end', requestId: deliveryRequest, accepted: false, editIds: [] });
-        deliveryRequest = null;
+        postToFrame({ type: 'uc:delivery-end', requestId: deliveryRequest, accepted: false, retryPending: Boolean(pendingDelivery), editIds: [] });
+        if (!pendingDelivery) deliveryRequest = null;
       }
-      if (kind === 'finish' && !ended) freezeForFinish(false);
+      if (kind === 'finish' && !ended && !pendingDelivery) freezeForFinish(false);
       sending = false;
       sendBtn.disabled = ended;
       $('finishBtn').disabled = ended;
@@ -552,6 +566,7 @@ ${inspectorClientJs()}
     if (finished) setTimeout(() => { try { window.close(); } catch (_e) { /* not script-opened */ } }, 900);
   }
   if (ended) markEnded(boot.endedBy);
+  else if (pendingDelivery && pendingDelivery.kind === 'finish') freezeForFinish(true);
 
   // --- server events ----------------------------------------------------------------------
   function presenceLabel(state) {
@@ -582,6 +597,7 @@ ${inspectorClientJs()}
       const batches = data.batches || [];
       const ids = new Set(batches.map(batch => batch.id));
       const editIds = new Set(batches.flatMap(batch => batch.editIds));
+      editIds.forEach(id => acknowledgedEdits.add(id));
       batches.forEach(batch => acknowledged.add(batch.id));
       const changed = submitted.some(batch => ids.has(batch.id)) || edits.some(edit => editIds.has(edit.id));
       submitted = submitted.filter(batch => !ids.has(batch.id));
@@ -592,7 +608,12 @@ ${inspectorClientJs()}
     });
     // An unrelated agent save is not acknowledgment of queued Apply batches.
     es.addEventListener('reload', reloadArtifact);
-    es.addEventListener('ended', e => { markEnded(JSON.parse(e.data).endedBy); es.close(); });
+    es.addEventListener('ended', e => {
+      const data = JSON.parse(e.data);
+      const ownFinish = data.finished && pendingDelivery && pendingDelivery.kind === 'finish' && data.deliveryId === pendingDelivery.id;
+      if (ownFinish) clearDelivery();
+      markEnded(ownFinish ? 'finished' : data.endedBy); es.close();
+    });
     es.onerror = () => {
       if (ended) return;
       renderActivity('offline');
@@ -632,6 +653,7 @@ function renderUiCanvasHtml(session, { clientPath = '/ui-client.js', cssPath = '
     ui: session.ui || { viewport: 'desktop', title: '' },
     uiBatches: session.uiBatches || [],
     uiAcknowledged: session.uiAcknowledged || [],
+    uiDeliveries: session.uiDeliveries || {},
     presets: VIEWPORT_PRESETS
   }).replace(/</g, '\\u003c');
   const artifactSrc = `/artifact/${session.key}/`;

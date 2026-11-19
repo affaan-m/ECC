@@ -189,24 +189,29 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
   // Queue feedback from the browser. Chat-shaped items are mirrored into the
   // session transcript immediately so the conversation panel stays coherent
   // across reloads.
-  function queueFeedback(key, rawItems, { endSession = false } = {}) {
+  function queueFeedback(key, rawItems, { endSession = false, deliveryId = null, fingerprint = null } = {}) {
     const session = get(key);
     if (!session || session.status === 'ended') return null;
     const normalize = session.mode === 'ui' ? normalizeUiFeedbackItem : normalizeFeedbackItem;
     const describe = session.mode === 'ui' ? uiChatLineFor : chatLineFor;
+    const previous = { ...session };
+    const previousCounter = state.feedbackCounter;
+    let counter = previousCounter;
     const accepted = [];
     for (const raw of Array.isArray(rawItems) ? rawItems : []) {
-      state.feedbackCounter += 1;
-      const item = normalize(raw, state.feedbackCounter);
+      counter += 1;
+      const item = normalize(raw, counter);
       if (item) accepted.push(item);
     }
-    session.pendingFeedback.push(...accepted);
+    state.feedbackCounter = counter;
+    session.pendingFeedback = [...session.pendingFeedback, ...accepted];
     if (session.mode === 'ui') {
-      session.uiBatches = session.uiBatches || [];
+      session.uiBatches = [...(session.uiBatches || [])];
       for (const item of accepted) {
         if (item.kind === 'edits') session.uiBatches.push({ id: item.id, snapshotHash: item.snapshotHash, includedBatches: item.includedBatches || [], edits: item.edits.filter(edit => !edit.stale) });
       }
     }
+    session.chat = [...session.chat];
     for (const item of accepted) {
       session.chat.push({ role: 'user', kind: item.kind, text: describe(item), at: item.at });
     }
@@ -216,8 +221,20 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     } else if (accepted.length > 0) {
       session.status = 'feedback';
     }
+    if (deliveryId) {
+      const item = accepted[0];
+      session.uiDeliveries = { ...(session.uiDeliveries || {}), [deliveryId]: {
+        fingerprint, kind: item.kind, itemIds: accepted.map(entry => entry.id),
+        editIds: item.edits.filter(edit => !edit.stale).map(edit => edit.id), text: item.text
+      } };
+    }
     session.updatedAt = nowIso();
-    persist();
+    try { persist(); } catch (error) {
+      for (const name of Object.keys(session)) if (!Object.hasOwn(previous, name)) delete session[name];
+      Object.assign(session, previous);
+      state.feedbackCounter = previousCounter;
+      throw error;
+    }
     return { accepted, pending: session.pendingFeedback.length, session };
   }
 
@@ -246,6 +263,7 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     const session = get(key);
     if (!session) return { status: 'missing' };
     if (session.pendingFeedback.length > 0) {
+      const previous = { pendingFeedback: session.pendingFeedback, status: session.status, updatedAt: session.updatedAt };
       const items = session.pendingFeedback;
       session.pendingFeedback = [];
       const result = { status: 'feedback', items };
@@ -256,7 +274,7 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
         session.status = 'open';
       }
       session.updatedAt = nowIso();
-      persist();
+      try { persist(); } catch (error) { Object.assign(session, previous); throw error; }
       return result;
     }
     if (session.status === 'ended') {

@@ -24,8 +24,8 @@ async function fixture(run) {
   fs.writeFileSync(file, '<html><body>original</body></html>');
   const store = createSessionStore({ stateDir: path.join(directory, 'state') });
   const { session } = store.open(file, { mode: 'ui' });
-  const server = createPlanCanvasServer({ store });
-  const { port } = await server.listen(0);
+  let server = createPlanCanvasServer({ store });
+  let { port } = await server.listen(0);
   function request(method, suffix, body) {
     return new Promise((resolve, reject) => {
       const payload = body ? JSON.stringify(body) : null;
@@ -40,7 +40,21 @@ async function fixture(run) {
     const response = await request('POST', 'feedback', { items: [{ kind: 'edits', edits, html, bakedEditIds }] });
     assert.equal(response.status, 200); return response.body.batches[0].id;
   }
-  try { await run({ store, session, file, directory, port, request, apply }); }
+  async function loseResponse(body) {
+    return new Promise((resolve, reject) => {
+      const req = http.request({ host: '127.0.0.1', port, method: 'POST', path: `/api/session/${session.key}/feedback`, headers: { 'content-type': 'application/json' } }, response => {
+        response.destroy(); resolve(response.statusCode);
+      });
+      req.on('error', reject); req.end(JSON.stringify(body));
+    });
+  }
+  async function restart() {
+    await server.close();
+    const reopened = createSessionStore({ stateDir: path.join(directory, 'state') });
+    server = createPlanCanvasServer({ store: reopened }); ({ port } = await server.listen(0));
+    return reopened.get(session.key);
+  }
+  try { await run({ store, session, file, directory, port, request, apply, loseResponse, restart }); }
   finally { await server.close(); fs.rmSync(directory, { recursive: true, force: true }); }
 }
 
@@ -134,7 +148,108 @@ async function main() {
     assert.match(uncovered, /Resolve any other Apply batches separately/);
     const covered = UI_PROFILE.nextSteps.feedback({ items: [first, { ...latest, includedBatches: ['fb-1'] }] });
     assert.match(covered, /--ack fb-2,fb-1 --reply/); assert.doesNotMatch(covered, /Resolve any other/);
+    const oversized = UI_PROFILE.nextSteps.feedback({ items: [{ ...latest, includedBatches: Array.from({ length: 50 }, (_, index) => `fb-${index + 10}`) }] });
+    assert.doesNotMatch(oversized, /--ack /); assert.match(oversized, /groups of at most 50/);
   });
+  await test('failed Apply and Finish persistence restore session/counter so retry queues one batch', () => fixture(async ({ session, store, directory, request }) => {
+    const before = JSON.stringify(session); const original = session;
+    const stateFile = path.join(directory, 'state', 'sessions.json'); const beforeState = fs.readFileSync(stateFile, 'utf8');
+    const obstacle = path.join(directory, 'state', 'sessions.json.tmp'); fs.mkdirSync(obstacle);
+    const item = { kind: 'edits', edits: [edit('a')], html: '<html>one nudge</html>' };
+    const deliveryId = 'c'.repeat(32);
+    assert.equal((await request('POST', 'feedback', { items: [item], deliveryId })).status, 500);
+    assert.equal(store.get(session.key), original, 'Session object identity is preserved');
+    assert.equal(JSON.stringify(session), before); assert.equal(fs.readFileSync(stateFile, 'utf8'), beforeState);
+    assert.equal((await request('POST', 'feedback', { items: [{ ...item, kind: 'finish' }], endSession: true, deliveryId })).status, 500);
+    assert.equal(JSON.stringify(session), before, 'Failed Finish must not end the session');
+    fs.rmdirSync(obstacle);
+    const retry = await request('POST', 'feedback', { items: [item], deliveryId }); assert.equal(retry.status, 200);
+    assert.equal(retry.body.batches[0].id, 'fb-1', 'Failed saves must restore feedbackCounter too');
+    assert.equal(session.pendingFeedback.length, 1); assert.equal(session.uiBatches.length, 1); assert.equal(session.chat.length, 1);
+    assert.equal(session.uiBatches[0].edits[0].id, 'a'); assert.equal(session.status, 'feedback');
+    assert.equal(Object.keys(session.uiDeliveries).length, 1);
+  }));
+  await test('readable matching artifact survives acknowledgment write failure without retiring its batch', () => fixture(async ({ session, file, directory, request, apply }) => {
+    const html = '<html><body><article id="a" style="position:relative;left:1px">A</article></body></html>';
+    const id = await apply([edit('a')], html); fs.writeFileSync(file, html);
+    const obstacle = path.join(directory, 'state', 'sessions.json.tmp'); fs.mkdirSync(obstacle);
+    const result = await request('GET', `/artifact/${session.key}/`);
+    assert.equal(result.status, 200); assert.match(result.body, /left:1px/);
+    assert.deepEqual(session.uiBatches.map(batch => batch.id), [id]);
+    assert.equal((session.uiAcknowledged || []).length, 0);
+    assert.ok(result.body.includes(`data-source-sha256="${session.uiBatches[0].snapshotHash}"`), 'Current frame can recognize the exact already-represented batch without clearing durable queue state');
+    fs.rmdirSync(obstacle);
+    assert.equal((await request('GET', `/artifact/${session.key}/`)).status, 200);
+    assert.deepEqual(session.uiBatches, []);
+  }));
+  await test('lost successful Apply response retries the same token without another batch or export', () => fixture(async ({ session, directory, request, loseResponse, restart }) => {
+    const item = { kind: 'edits', edits: [edit('a')], html: '<html>original immutable snapshot</html>', text: 'original note' };
+    const body = { items: [item], deliveryId: 'a'.repeat(32), endSession: false };
+    assert.equal(await loseResponse(body), 200);
+    const files = fs.readdirSync(directory).sort(); const originalId = session.pendingFeedback[0].id;
+    const reopened = await restart();
+    const retry = await request('POST', 'feedback', { deliveryId: body.deliveryId, items: [{ html: item.html, text: item.text, edits: item.edits, kind: item.kind }] });
+    assert.equal(retry.status, 200); assert.equal(retry.body.batches[0].id, originalId);
+    assert.deepEqual(retry.body.acceptedEditIds, ['a']); assert.equal(retry.body.acceptedText, 'original note');
+    assert.equal(reopened.pendingFeedback.length, 1); assert.equal(reopened.uiBatches.length, 1); assert.equal(reopened.chat.length, 1);
+    assert.deepEqual(fs.readdirSync(directory).sort(), files);
+    assert.equal((await request('POST', 'feedback', { ...body, items: [{ ...item, html: '<html>changed payload</html>' }] })).status, 409);
+    assert.deepEqual(fs.readdirSync(directory).sort(), files); assert.equal(reopened.pendingFeedback.length, 1);
+  }));
+  await test('lost Finish response retries before ended rejection and cannot rewrite its final export', () => fixture(async ({ session, request, loseResponse, restart }) => {
+    const item = { kind: 'finish', edits: [edit('a')], html: '<html>final immutable design</html>', text: 'final note' };
+    const body = { items: [item], deliveryId: 'b'.repeat(32), endSession: true };
+    assert.equal(await loseResponse(body), 200); assert.equal(session.status, 'ended');
+    const finalPath = session.pendingFeedback[0].exportPath; const preserved = finalPath + '.preserved';
+    fs.renameSync(finalPath, preserved); fs.mkdirSync(finalPath);
+    const reopened = await restart(); const retry = await request('POST', 'feedback', body);
+    assert.equal(retry.status, 200); assert.deepEqual(retry.body.acceptedEditIds, ['a']); assert.equal(retry.body.sessionEnded, true);
+    assert.equal(reopened.pendingFeedback.length, 1); assert.equal(reopened.chat.length, 1); assert.ok(fs.statSync(finalPath).isDirectory());
+    assert.equal((await request('POST', 'feedback', { ...body, deliveryId: 'd'.repeat(32) })).status, 409);
+    assert.equal((await request('POST', 'feedback', { ...body, items: [{ ...item, text: 'changed note' }] })).status, 409);
+    assert.ok(fs.statSync(finalPath).isDirectory()); fs.rmdirSync(finalPath); fs.renameSync(preserved, finalPath);
+  }));
+  await test('failed drain preserves live feedback and the next await delivers it once', () => fixture(async ({ session, directory, request, apply }) => {
+    await apply([edit('a')], '<html>retained feedback</html>'); const before = JSON.stringify(session);
+    const obstacle = path.join(directory, 'state', 'sessions.json.tmp'); fs.mkdirSync(obstacle);
+    assert.equal((await request('GET', `/api/await?key=${session.key}&timeoutMs=1`)).status, 500);
+    assert.equal(JSON.stringify(session), before);
+    fs.rmdirSync(obstacle);
+    const received = await request('GET', `/api/await?key=${session.key}&timeoutMs=1`);
+    assert.equal(received.body.status, 'feedback'); assert.equal(received.body.items.length, 1);
+    assert.equal((await request('GET', `/api/await?key=${session.key}&timeoutMs=1`)).body.status, 'waiting');
+  }));
+  await test('postcommit drain failure cannot turn durable acceptance into a rejection', () => fixture(async ({ session, store, directory, request }) => {
+    const parked = request('GET', `/api/await?key=${session.key}&timeoutMs=1000`);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const original = store.queueFeedback; const obstacle = path.join(directory, 'state', 'sessions.json.tmp');
+    store.queueFeedback = (...args) => { const result = original(...args); fs.mkdirSync(obstacle); return result; };
+    const body = { deliveryId: 'e'.repeat(32), items: [{ kind: 'edits', edits: [edit('a')], html: '<html>accepted before wake fault</html>' }] };
+    const accepted = await request('POST', 'feedback', body);
+    assert.equal(accepted.status, 200); assert.deepEqual(accepted.body.acceptedEditIds, ['a']);
+    assert.equal((await parked).body.status, 'waiting'); assert.equal(session.pendingFeedback.length, 1);
+    store.queueFeedback = original; fs.rmdirSync(obstacle);
+    const retry = await request('POST', 'feedback', body);
+    assert.equal(retry.status, 200); assert.equal(session.uiBatches.length, 1); assert.equal(session.chat.length, 1);
+    assert.equal((await request('GET', `/api/await?key=${session.key}&timeoutMs=1`)).body.items.length, 1);
+  }));
+  await test('delivery tokens are validated, session scoped, and cannot bypass explicit End', () => fixture(async ({ session, store, directory, request }) => {
+    const item = { kind: 'edits', edits: [edit('a')], html: '<html>one</html>' }; const before = fs.readdirSync(directory).sort();
+    for (const deliveryId of [null, '', 'a'.repeat(31), 'A'.repeat(32), {}, 3]) {
+      assert.equal((await request('POST', 'feedback', { deliveryId, items: [item] })).status, 400);
+      assert.deepEqual(fs.readdirSync(directory).sort(), before);
+    }
+    const deliveryId = 'f'.repeat(32); const first = await request('POST', 'feedback', { deliveryId, items: [item] });
+    const secondFile = path.join(directory, 'second.html'); fs.writeFileSync(secondFile, '<html>second</html>');
+    const second = store.open(secondFile, { mode: 'ui' }).session;
+    const accepted = await request('POST', `/api/session/${second.key}/feedback`, { deliveryId, items: [item] });
+    assert.equal(accepted.status, 200); assert.notEqual(accepted.body.batches[0].id, first.body.batches[0].id);
+    await request('POST', 'end');
+    const files = fs.readdirSync(directory).sort();
+    assert.equal((await request('POST', 'feedback', { deliveryId: '0'.repeat(32), endSession: true, items: [{ ...item, kind: 'finish' }] })).status, 409);
+    assert.deepEqual(fs.readdirSync(directory).sort(), files);
+    assert.equal(session.pendingFeedback.length, 1);
+  }));
   console.log(`Passed: ${passed}\nFailed: ${failed}`); process.exitCode = failed ? 1 : 0;
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

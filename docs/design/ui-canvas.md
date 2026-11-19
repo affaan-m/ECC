@@ -137,3 +137,11 @@ changes. The agent may acknowledge specific incorporated batches using UI Canvas
 `await --ack fb-123`; merely draining feedback or saving another change is not
 acknowledgment. An exact exported snapshot can acknowledge only the batch and
 older batches proven completely represented in that snapshot.
+
+Apply and Finish preserve an immutable pending delivery in browser session storage
+before posting it. Session-scoped delivery tokens bind the exact payload: a lost
+response may be retried without duplicating a batch or overwriting its export,
+and a changed payload cannot reuse the token. Only authoritative accepted edit
+IDs are retired, so later edits and draft text remain pending. Unknown outcomes
+retain the captured undo/coalescing barrier until confirmed; an uncertain Finish
+stays read-only. Chat remains outside this delivery-deduplication contract.

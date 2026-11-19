@@ -412,7 +412,7 @@ function uiEditorJs() {
     }
     if (edit.kind === 'move') {
       var target = resolveForEdit(edit.to.parent, edit.sourceRevision);
-      if (!target) return false;
+      if (!target || target === el || el.contains(target)) return false;
       edit._fromParent = el.parentElement;
       edit._fromIndex = indexIn(el.parentElement, el);
       insertAt(target, el, edit.to.index);
@@ -500,16 +500,21 @@ function uiEditorJs() {
     // Replay submitted batches atomically. A missing target must not leave
     // the represented part of a batch applied twice on a partially edited file.
     var batches = Array.isArray(payload.batches) ? payload.batches : [{ edits: baked }];
+    var represented = Object.create(null);
+    batches.forEach(function (batch) {
+      if (sourceRevision && batch.snapshotHash === sourceRevision) { represented[batch.id] = true; (batch.includedBatches || []).forEach(function (id) { represented[id] = true; }); }
+    });
     for (var b = 0; b < batches.length; b++) {
       var applied = [], failed = false;
       var batchEdits = batches[b].edits || [];
-      for (var n = 0; n < batchEdits.length; n++) {
+      for (var n = 0; !represented[batches[b].id] && n < batchEdits.length; n++) {
         var candidate = copyEdit(batchEdits[n]);
-        if (!applyEdit(candidate, null)) { failed = true; break; }
+        try { if (!applyEdit(candidate, null)) { failed = true; break; } }
+        catch (_error) { try { revertEdit(candidate); } catch (_rollbackError) { /* keep batch unresolved */ } failed = true; break; }
         applied.push(candidate);
       }
       if (failed) {
-        for (var r = applied.length - 1; r >= 0; r--) revertEdit(applied[r]);
+        for (var r = applied.length - 1; r >= 0; r--) { try { revertEdit(applied[r]); } catch (_rollbackError) { /* keep batch unresolved */ } }
         batchEdits.forEach(function (edit) { edits.push(Object.assign(copyEdit(edit), { stale: true, submitted: true })); });
       } else {
         batchEdits.forEach(function (edit) { bakedEditIds.push(edit.id); });
@@ -523,7 +528,9 @@ function uiEditorJs() {
       if (incoming[i].submitted) continue;
       var edit = copyEdit(incoming[i]);
       delete edit.stale;
-      if (edit.unverified || !applyEdit(edit, null)) edit.stale = true;
+      var pending = deliveryRequest && (payload.pendingEditIds || []).indexOf(edit.id) >= 0;
+      var inSource = pending && sourceRevision && payload.pendingSnapshotHash === sourceRevision;
+      if (edit.unverified || (!inSource && ((pending && payload.pendingSourceRevision !== sourceRevision) || !applyEdit(edit, null)))) edit.stale = true;
       if (deliveryRequest) edit._exported = true;
       edits.push(edit);
       var seq = parseInt(String(edit.id).slice(1), 10);
@@ -740,20 +747,22 @@ ${editorGesturesJs()}
       case 'uc:redo': redo(); break;
       case 'uc:reset': resetAll(); break;
       case 'uc:forget':
+        if (deliveryRequest) break;
         // Compatibility with an older shell: a scoped acknowledgment should
         // always supply IDs so edits created after capture stay undoable.
-        edits = edits.filter(function (edit) { return !Array.isArray(msg.editIds) || msg.editIds.indexOf(edit.id) < 0; });
+        edits = edits.filter(function (edit) { return edit.submitted || (Array.isArray(msg.editIds) && msg.editIds.indexOf(edit.id) < 0); });
         postEdits();
         postSelection();
         break;
       case 'uc:delivery-end':
         if (deliveryRequest !== msg.requestId) break;
         if (msg.accepted) {
-          bakedEditIds = bakedEditIds.concat(msg.editIds);
-          edits = edits.filter(function (edit) { return msg.editIds.indexOf(edit.id) < 0; });
+          var captured = edits.filter(function (edit) { return msg.editIds.indexOf(edit.id) >= 0; });
+          var proven = msg.editIds.every(function (id) { return bakedEditIds.indexOf(id) >= 0 || captured.some(function (edit) { return edit.id === id && !edit.stale; }); });
+          if (proven) { bakedEditIds = bakedEditIds.concat(msg.editIds); edits = edits.filter(function (edit) { return msg.editIds.indexOf(edit.id) < 0; }); }
+          else captured.forEach(function (edit) { edit.stale = true; edit.submitted = true; });
         }
-        deliveryRequest = null;
-        edits.forEach(function (edit) { delete edit._exported; });
+        if (!msg.retryPending) { deliveryRequest = null; edits.forEach(function (edit) { delete edit._exported; }); }
         postEdits();
         postSelection();
         break;
@@ -766,7 +775,7 @@ ${editorGesturesJs()}
           deliveryRequest = msg.requestId;
           edits.forEach(function (edit) { edit._exported = true; });
         }
-        post({ type: 'uc:export', requestId: msg.requestId, html: exportHtml(), edits: edits.map(publicEdit), bakedEditIds: bakedEditIds.slice() });
+        post({ type: 'uc:export', requestId: msg.requestId, html: exportHtml(), sourceRevision: sourceRevision, edits: edits.map(publicEdit), bakedEditIds: bakedEditIds.slice() });
         break;
       case 'uc:scroll-to': window.scrollTo(msg.x || 0, msg.y || 0); break;
       default: break;

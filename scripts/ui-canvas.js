@@ -88,6 +88,7 @@ const UI_PROFILE = {
         const ack = ackIds.length ? ` --ack ${ackIds.join(',')}` : '';
         const remaining = appliedItems.some(item => !ackIds.includes(item.id))
           ? ' Resolve any other Apply batches separately; draining them does not acknowledge them.' : '';
+        if (ackIds.length > 50) return `Incorporate the latest snapshot at ${applied.exportPath}, then acknowledge its represented IDs in groups of at most 50: ${ackIds.join(',')}. Handle each await result before acknowledging the next group.${remaining}`;
         return `The human applied ${applied.editCount} edit(s) to the preview. Rewrite the mockup file from ${applied.exportPath} (keep it self-contained), then run \`ecc-ui-canvas await <file>${ack} --reply "<what you changed>"\` only after those batches are incorporated, to keep listening.${remaining}`;
       }
       if (result.sessionEnded) {

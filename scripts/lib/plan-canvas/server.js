@@ -25,6 +25,7 @@ const {
   renderMarkdownArtifactHtml,
   renderSessionListHtml
 } = require('./ui');
+const { deliveryFingerprint } = require('../ui-canvas/delivery');
 const { agentFromParam } = require('./agent-identity');
 const { exportErrorResponse, materializeUiExports, renderUiCanvasHtml, serveUiAsset } = require('../ui-canvas/server-routes');
 
@@ -363,6 +364,14 @@ function createPlanCanvasServer({
 
   // --- artifact watching --------------------------------------------------
 
+  function deliveryResponse(session, receipt, pending) {
+    const active = new Set(receipt.itemIds);
+    return { status: 'queued', accepted: receipt.itemIds.length, pending,
+      acceptedEditIds: receipt.editIds, acceptedText: receipt.text || '',
+      batches: (session.uiBatches || []).filter(batch => active.has(batch.id)),
+      presence: presenceFor(session.key), sessionEnded: session.status === 'ended' };
+  }
+
   function acknowledgeUiBatches(session, ids, reload = false, replyText) {
     const result = store.acknowledgeUiBatches(session.key, ids, replyText);
     if (result && result.batches.length) broadcast(session.key, 'ui-ack', { batches: result.batches, reload });
@@ -480,7 +489,9 @@ function createPlanCanvasServer({
       const timeoutRaw = url.searchParams.get('timeoutMs');
       const timeoutMs = timeoutRaw === null ? null : Math.max(0, Number.parseInt(timeoutRaw, 10) || 0);
 
-      const first = store.takeFeedback(key);
+      let first;
+      try { first = store.takeFeedback(key); }
+      catch { return sendJson(res, 500, { error: 'could not persist feedback delivery; re-run await' }); }
       if (first.status !== 'waiting') {
         if (first.status === 'feedback') markThinking(key);
         broadcastPresence(key);
@@ -508,8 +519,8 @@ function createPlanCanvasServer({
         noteConnectionClosed();
       };
       const onWake = () => {
-        const result = store.takeFeedback(key);
-        if (result.status !== 'waiting') finish(result);
+        try { const result = store.takeFeedback(key); if (result.status !== 'waiting') finish(result); }
+        catch { finish({ status: 'waiting', note: 'feedback remains queued; re-run await after storage recovers' }); }
       };
       // Settle held polls on shutdown so server.close() can complete; the
       // CLI tells agents to simply re-run await.
@@ -559,6 +570,20 @@ function createPlanCanvasServer({
       if (action === 'feedback') {
         const body = await readJsonBody(req);
         let items = Array.isArray(body.items) ? body.items : [];
+        const deliveryId = body.deliveryId;
+        let fingerprint = null;
+        if (deliveryId !== undefined) {
+          if (session.mode !== 'ui' || typeof deliveryId !== 'string' || !/^[a-f0-9]{32}$/.test(deliveryId)
+              || (body.endSession !== undefined && typeof body.endSession !== 'boolean')
+              || items.length !== 1 || !['edits', 'finish'].includes(items[0] && items[0].kind)
+              || Boolean(body.endSession) !== (items[0].kind === 'finish')) return sendJson(res, 400, { error: 'invalid UI delivery token or payload' });
+          fingerprint = deliveryFingerprint(items, body.endSession);
+          const receipt = session.uiDeliveries && session.uiDeliveries[deliveryId];
+          if (receipt) {
+            if (receipt.fingerprint !== fingerprint) return sendJson(res, 409, { error: 'delivery token payload changed' });
+            return sendJson(res, 200, deliveryResponse(session, receipt, session.pendingFeedback.length));
+          }
+        }
         // Checked before any export is written: a stale tab must not replace
         // the design a finished session already handed over.
         if (session.status === 'ended') return sendJson(res, 409, { error: 'session already ended' });
@@ -570,21 +595,24 @@ function createPlanCanvasServer({
             return sendJson(res, failure.status, { error: failure.error });
           }
         }
-        const result = store.queueFeedback(key, items, { endSession: Boolean(body.endSession) });
+        let result;
+        try { result = store.queueFeedback(key, items, { endSession: Boolean(body.endSession), deliveryId, fingerprint }); }
+        catch { return sendJson(res, 500, { error: 'could not persist feedback' }); }
         if (!result) return sendJson(res, 409, { error: 'session already ended' });
-        wake.emit(`wake:${key}`);
-        broadcast(key, 'chat-sync', { chat: store.get(key).chat });
-        if (body.endSession) broadcast(key, 'ended', { endedBy: 'user' });
-        // A parked `await` takes the batch synchronously on the wake above, so
-        // presence is already `thinking` by now; with nobody listening it
-        // reports `queued`. Either way the browser must be told, which the
-        // original handler never did, leaving a stale pill on screen.
-        broadcastPresence(key);
+        // Acceptance is already durable. Notification failures must not turn
+        // a committed delivery into a rejection that invites a fresh token.
+        try { wake.emit(`wake:${key}`); } catch { /* accepted feedback remains discoverable */ }
+        try {
+          broadcast(key, 'chat-sync', { chat: store.get(key).chat });
+          if (body.endSession) broadcast(key, 'ended', { endedBy: 'user', ...(deliveryId ? { deliveryId, finished: items[0].kind === 'finish' } : {}) });
+          broadcastPresence(key);
+        } catch { /* accepted feedback remains discoverable */ }
+        if (deliveryId) return sendJson(res, 200, deliveryResponse(session, session.uiDeliveries[deliveryId], session.pendingFeedback.length));
         return sendJson(res, 200, {
           status: 'queued',
           accepted: result.accepted.length,
-          pending: result.pending,
-          batches: result.accepted.filter(item => item.kind === 'edits').map(item => ({ id: item.id, edits: item.edits.filter(edit => !edit.stale) })),
+          pending: session.pendingFeedback.length,
+          batches: result.accepted.filter(item => item.kind === 'edits').map(item => ({ id: item.id, snapshotHash: item.snapshotHash, includedBatches: item.includedBatches || [], edits: item.edits.filter(edit => !edit.stale) })),
           presence: presenceFor(key)
         });
       }
@@ -687,7 +715,7 @@ function createPlanCanvasServer({
         });
         return sendHtml(res, 200, html, { csp: 'artifact' });
       }
-      acknowledgeUiSnapshot(session, content);
+      try { acknowledgeUiSnapshot(session, content); } catch { /* readable snapshots remain available while acknowledgment persistence recovers */ }
       const sdkTag = session.mode === 'ui'
         ? `<script src="/ui-editor.js" data-ecc-ui-canvas="editor" data-source-sha256="${crypto.createHash('sha256').update(content).digest('hex')}"></script>`
         : '<script src="/sdk.js"></script>';
