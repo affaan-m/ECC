@@ -90,6 +90,21 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
   }
 
   if (hasPrefix(normalizedSourcePath, 'skills')) {
+    if (['skills/unified-memory', 'skills/unified-memory/SKILL.md'].includes(normalizedSourcePath)) {
+      return [
+        createManagedOperation({
+          moduleId: module.id,
+          sourceRelativePath: 'manifests/install-assets/copilot-unified-memory-skill.md',
+          destinationPath: path.join(targetRoot, 'skills', 'unified-memory', 'SKILL.md'),
+        }),
+        createManagedOperation({
+          moduleId: module.id,
+          sourceRelativePath: 'scripts/copilot-memory.cjs',
+          destinationPath: path.join(targetRoot, 'ecc', 'scripts', 'memory', 'copilot-memory.cjs'),
+        }),
+      ];
+    }
+
     return [
       createManagedOperation({
         moduleId: module.id,
