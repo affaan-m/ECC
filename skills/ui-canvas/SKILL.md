@@ -129,7 +129,6 @@ listening" so the human knows you are connected.
   "exportPath": "…/pricing-card.edited.html", "editsPath": "…/pricing-card.edits.json" }
 ```
 
-
 - `finish` means the human clicked **Save and Finish**. The session is over
   (`sessionEnded: true`). Read `exportPath`, diff it against your original
   mockup, read `editsPath` for the intent behind each change, and reproduce
