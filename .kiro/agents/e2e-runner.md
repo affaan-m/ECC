@@ -50,6 +50,31 @@ npx playwright test --trace on             # Run with trace
 npx playwright show-report                 # View HTML report
 ```
 
+## Alternative: e2e
+
+Use e2e when the flow runs on iOS or Android, or when you want tests written as plain-language goals. An agent step that a later assertion verifies records its actions, and later runs replay them with no model calls until the app changes.
+
+```bash
+# Setup: asks for web or mobile and a model provider, then writes a config and an example test
+npx e2e init
+# In an agent shell with no terminal, skip the prompts (Web engine by default).
+# --skills none --mcp none keeps init from adding an agent skill or MCP server; ask the user before enabling them.
+npx e2e init --yes --skills none --mcp none --install                   # Web
+npx e2e init --yes --engine mobile --skills none --mcp none --install   # iOS or Android
+
+npx e2e run                                  # Run all E2E tests
+npx e2e run tests/checkout.e2e.ts --headed   # Run specific file, see browser
+npx e2e run --last-failed                    # Re-run failed tests
+npx e2e run --no-cache                       # Run agent steps live instead of replaying
+npx e2e run --repeat-each 5 --no-cache       # Check for flakiness with live agent runs
+```
+
+`--yes` uses Vercel AI Gateway, so agent steps need `AI_GATEWAY_API_KEY` (or a linked Vercel project's OIDC token); pass `--gateway <id>` to use another provider. With `--engine mobile`, `init` targets iOS on macOS and Android elsewhere, and both its config and `tests/example.e2e.ts` use the Settings app. Before running tests, set `mobile({ platform })` and `app.bundleId` in `e2e.config.ts`, and replace or remove the Settings example test. The engine does not install the build: install it on the device first, or install it in a fixture with `device.installApp()`, which needs `app.appPath` set in `e2e.config.ts` or a path passed in (`device.installApp('./build/MyApp.app')`).
+
+`init` leaves an existing `e2e.config.ts` and its tests unchanged, and `--engine` and `--gateway` apply only to a new config, so on a project that already has one they add no packages. Edit that config instead. To switch the model provider, replace the model in `agents.default` and install the provider's package (for example `@openrouter/ai-sdk-provider` for OpenRouter). To add mobile tests to a web-only config, install `@e2e-dev/mobile` and add a target with `engine: mobile({ platform })` and `app.bundleId`, then install the build as above.
+
+Repeated runs with the replay cache on replay recorded agent steps, so check e2e tests for flakiness with `--no-cache`.
+
 ## Workflow
 
 ### 1. Plan

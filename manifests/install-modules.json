@@ -70,6 +70,7 @@
         "scripts/harness-audit.js",
         "scripts/skills-health.js",
         "scripts/lib/skill-evolution",
+        "scripts/lib/install/claude-settings-lock.js",
         "scripts/lib/astra-review",
         "scripts/ci/validate-skill-host-compat.js",
         "scripts/ci/validate-skills.js"
