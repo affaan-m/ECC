@@ -81,6 +81,29 @@ test('an unfinished multiline description never exposes a fake dependency array'
   '[project]\ndescription = """A 6" display helper.\ndependencies = ["django"]\n',
   [], []);
 
+const largeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-python-large-array-'));
+try {
+  const expected = Array.from({ length: 50000 }, (_, index) => `dependency-${index}`);
+  fs.writeFileSync(path.join(largeRoot, 'pyproject.toml'),
+    `[project]\ndependencies = ${JSON.stringify(expected)}\n`);
+  const script = 'const { getPythonDeps } = require(process.argv[1]); '
+    + 'process.stdout.write(JSON.stringify(getPythonDeps(process.argv[2])));';
+  const result = spawnSync(process.execPath, ['-e', script,
+    require.resolve('../../scripts/lib/project-detect'), largeRoot], {
+    encoding: 'utf8', timeout: 5000, maxBuffer: 2 * 1024 * 1024,
+  });
+  assert.ifError(result.error);
+  assert.strictEqual(result.status, 0, result.stderr);
+  assert.deepStrictEqual(JSON.parse(result.stdout), expected);
+  passed += 1;
+  console.log('  ✓ large dependency arrays preserve source order without repeated copying');
+} catch (error) {
+  failed += 1;
+  console.log(`  ✗ large dependency arrays: ${error.message}`);
+} finally {
+  fs.rmSync(largeRoot, { recursive: true, force: true });
+}
+
 const unfinishedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-python-unfinished-'));
 try {
   const script = 'const { getPythonDeps } = require(process.argv[1]); '

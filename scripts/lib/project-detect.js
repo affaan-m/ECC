@@ -199,7 +199,7 @@ function readTomlQuotedValue(content, start) {
   if (multiline && content.startsWith('\r\n', index)) index += 2;
   else if (multiline && content[index] === '\n') index++;
   let valueStart = index;
-  const parts = [];
+  let value = '';
   const continuation = /\\[ \t]*\r?\n[ \t\r\n]*/y;
   while (index < content.length) {
     if (quote === '"' && content[index] === '\\') {
@@ -207,7 +207,7 @@ function readTomlQuotedValue(content, start) {
         continuation.lastIndex = index;
         const match = continuation.exec(content);
         if (match) {
-          parts.push(content.slice(valueStart, index));
+          value += content.slice(valueStart, index);
           index = continuation.lastIndex;
           valueStart = index;
           continue;
@@ -222,8 +222,7 @@ function readTomlQuotedValue(content, start) {
       if (multiline) {
         while (end < index + 5 && content[end] === quote) end++;
       }
-      parts.push(content.slice(valueStart, end - delimiter.length));
-      return { value: parts.join(''), end };
+      return { value: value + content.slice(valueStart, end - delimiter.length), end };
     }
     if (!multiline && (content[index] === '\n' || content[index] === '\r')) return null;
     index++;
@@ -253,7 +252,9 @@ function readTomlDependencyArray(content) {
     if (character === '"' || character === "'") {
       const quoted = readTomlQuotedValue(content, index);
       if (!quoted) return [];
-      if (values !== null) values.push(quoted.value);
+      if (values !== null) {
+        values = { value: quoted.value, previous: values, length: values.length + 1 };
+      }
       index = quoted.end;
       continue;
     }
@@ -261,7 +262,7 @@ function readTomlDependencyArray(content) {
       key.lastIndex = index;
       const match = key.exec(content);
       if (match) {
-        values = [];
+        values = { length: 0 };
         index = key.lastIndex;
         continue;
       }
@@ -269,7 +270,16 @@ function readTomlDependencyArray(content) {
     // Dependency values are strings; an unquoted opening bracket here can be
     // a later table header while the dependency array is still unfinished.
     if (values !== null && character === '[') return [];
-    if (values !== null && character === ']') return values;
+    if (values !== null && character === ']') {
+      // Prepending immutable nodes keeps collection linear; restore source order once.
+      let current = values;
+      const reversed = Array.from({ length: values.length }, () => {
+        const value = current.value;
+        current = current.previous;
+        return value;
+      });
+      return reversed.map((_, offset) => reversed[reversed.length - 1 - offset]);
+    }
     index++;
   }
   return [];
