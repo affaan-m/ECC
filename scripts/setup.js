@@ -59,6 +59,14 @@ Migration installs and verifies the destination before removing the source scope
 `);
 }
 
+function resolveDryRunOption(dryRun) {
+  const dryRunEnv = process.env.ECC_DRY_RUN;
+  if (dryRunEnv !== undefined && dryRunEnv !== '0' && dryRunEnv !== '1') {
+    throw new Error('ECC_DRY_RUN must be "1" or "0" when set');
+  }
+  return dryRun || dryRunEnv === '1';
+}
+
 function parseArgs(argv) {
   const options = {
     dryRun: false,
@@ -112,7 +120,7 @@ function parseArgs(argv) {
   if (options.moveScope && options.scope === undefined) {
     throw new Error('--move-scope requires an explicit --scope destination.');
   }
-  return options;
+  return { ...options, dryRun: resolveDryRunOption(options.dryRun) };
 }
 
 function questionWithCancellation(terminal, prompt) {

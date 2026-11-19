@@ -58,6 +58,27 @@ function tarGzipFixture({
   ]));
 }
 
+function writeNasikoInstallFixture(canonicalRoot) {
+  const { getQualifiedRelease, normalizePlatform } = require('../../scripts/lib/nasiko-release');
+  const normalized = normalizePlatform();
+  const release = getQualifiedRelease('v0.1.0');
+  const executable = path.join(canonicalRoot, normalized.binaryName);
+  const metadataPath = path.join(canonicalRoot, '.ecc-nasiko-install.json');
+  fs.writeFileSync(executable, 'placeholder binary', { mode: 0o700 });
+  fs.writeFileSync(metadataPath, `${JSON.stringify({
+    version: 'v0.1.0',
+    platform: release.os,
+    architecture: release.arch,
+    manifestDigest: release.manifestDigest,
+    artifactDigest: release.manifestDigest,
+    binaryDigest: release.binaryDigest,
+    installedPath: executable,
+    license: release.license,
+    sourceUrl: release.sourceUrl,
+  }, null, 2)}\n`, { mode: 0o600 });
+  return { executable, metadataPath };
+}
+
 async function main() {
   console.log('\n=== Testing Nasiko CLI lifecycle bridge ===\n');
 
@@ -522,6 +543,45 @@ async function main() {
       assert.ok(packageJson.files.includes('scripts/lib/'));
       assert.ok(!packageJson.dependencies?.nasiko);
       assert.ok(!packageJson.optionalDependencies?.nasiko);
+    }],
+    ['global ecc --dry-run keeps nasiko install and uninstall read-only', () => {
+      const { normalizePlatform } = require('../../scripts/lib/nasiko-release');
+      const installRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-nasiko-global-dry-run-'));
+      try {
+        const canonicalRoot = fs.realpathSync(installRoot);
+        const executable = path.join(canonicalRoot, normalizePlatform().binaryName);
+        const baseEnv = Object.fromEntries(
+          Object.entries(process.env).filter(([key]) => key !== 'ECC_DRY_RUN')
+        );
+        const installPreview = spawnSync(process.execPath, [
+          path.join(REPO_ROOT, 'scripts', 'ecc.js'),
+          '--dry-run', 'nasiko', 'install', '--version', 'v0.1.0', '--yes',
+          '--install-dir', canonicalRoot, '--json',
+        ], { encoding: 'utf8', env: baseEnv });
+        assert.strictEqual(installPreview.status, 0, installPreview.stderr);
+        assert.strictEqual(JSON.parse(installPreview.stdout).dryRun, true);
+        assert.strictEqual(fs.existsSync(executable), false);
+
+        const { metadataPath } = writeNasikoInstallFixture(canonicalRoot);
+        const uninstallPreview = spawnSync(process.execPath, [
+          path.join(REPO_ROOT, 'scripts', 'ecc.js'),
+          '--dry-run', 'nasiko', 'uninstall', '--version', 'v0.1.0', '--yes',
+          '--install-dir', canonicalRoot, '--json',
+        ], { encoding: 'utf8', env: baseEnv });
+        assert.strictEqual(uninstallPreview.status, 0, uninstallPreview.stderr);
+        assert.strictEqual(JSON.parse(uninstallPreview.stdout).dryRun, true);
+        assert.strictEqual(fs.existsSync(executable), true);
+        assert.strictEqual(fs.existsSync(metadataPath), true);
+
+        const invalid = spawnSync(process.execPath, [
+          path.join(REPO_ROOT, 'scripts', 'nasiko.js'),
+          'install', '--version', 'v0.1.0', '--install-dir', canonicalRoot,
+        ], { encoding: 'utf8', env: { ...baseEnv, ECC_DRY_RUN: 'yes' } });
+        assert.strictEqual(invalid.status, 1);
+        assert.match(invalid.stderr, /ECC_DRY_RUN must be "1" or "0"/);
+      } finally {
+        fs.rmSync(installRoot, { recursive: true, force: true });
+      }
     }],
   ];
 
