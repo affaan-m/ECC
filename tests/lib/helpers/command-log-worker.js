@@ -3,9 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const [root, role] = process.argv.slice(2);
 const file = path.join(root, '.claude', 'bash-commands.log');
-if (role === 'collision') {
+if (['collision', 'release-collision', 'stale-collision'].includes(role)) {
   require('crypto').randomBytes = size => Buffer.alloc(size);
-  fs.writeFileSync(`${file}.lock.create-${process.pid}-${'00'.repeat(8)}`, 'foreign-creation', { flag: 'wx', mode: 0o600 });
+  const phase = { collision: 'create', 'release-collision': 'release', 'stale-collision': 'stale' }[role];
+  fs.writeFileSync(`${file}.lock.${phase}-${process.pid}-${'00'.repeat(8)}`, `foreign-${phase}`, { flag: 'wx', mode: 0o600 });
 }
 const signal = name => fs.writeFileSync(path.join(root, name), '', { mode: 0o600 });
 const rename = fs.renameSync;

@@ -108,7 +108,7 @@ test('an exclusive-create collision never removes another file', () => fixture(a
   const child = start(root, 'collision', children);
   await finished(child);
   const temporary = `${file}.lock.create-${child.pid}-${'00'.repeat(8)}`;
-  assert.equal(fs.readFileSync(temporary, 'utf8'), 'foreign-creation');
+  assert.equal(fs.readFileSync(temporary, 'utf8'), 'foreign-create');
   assert.match(fs.readFileSync(file, 'utf8'), /echo collision/);
 }));
 
@@ -128,4 +128,28 @@ test('an orphan recovery guard preserves its locks and records later commands wi
   const retained = fs.readFileSync(file, 'utf8');
   assert.ok(retained.startsWith('old-history\n'));
   assert.match(retained, /echo orphan-guard/);
+}));
+
+test('release quarantine collisions preserve foreign bytes and the owned lock', () => fixture(async (root, file, children) => {
+  const child = start(root, 'release-collision', children);
+  await finished(child);
+  const quarantine = `${file}.lock.release-${child.pid}-${'00'.repeat(8)}`;
+  assert.equal(fs.readFileSync(quarantine, 'utf8'), 'foreign-release');
+  assert.equal(fs.readFileSync(`${file}.lock`, 'utf8'), JSON.stringify({ pid: child.pid }));
+  assert.match(fs.readFileSync(file, 'utf8'), /echo release-collision/);
+}));
+
+test('stale quarantine collisions preserve foreign bytes and defer recovery without losing the event', () => fixture(async (root, file, children) => {
+  const owner = start(root, 'owner', children);
+  await waitFor(root, ['owner-rotate-ready']);
+  owner.kill('SIGKILL');
+  await owner.done;
+  const lockBytes = fs.readFileSync(`${file}.lock`, 'utf8');
+  const child = start(root, 'stale-collision', children);
+  await finished(child);
+  const quarantine = `${file}.lock.stale-${child.pid}-${'00'.repeat(8)}`;
+  assert.equal(fs.readFileSync(quarantine, 'utf8'), 'foreign-stale');
+  assert.equal(fs.readFileSync(`${file}.lock`, 'utf8'), lockBytes);
+  assert.equal(fs.existsSync(`${file}.1`), false);
+  assert.match(fs.readFileSync(file, 'utf8'), /echo stale-collision/);
 }));

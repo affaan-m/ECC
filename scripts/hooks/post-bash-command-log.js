@@ -213,6 +213,15 @@ function restoreLogLock(quarantine, lockPath) {
   fs.unlinkSync(quarantine);
 }
 
+function reserveLogQuarantine(lockPath, phase) {
+  const quarantine = `${lockPath}.${phase}-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
+  // Reserve exclusively before rename, which otherwise overwrites a colliding
+  // foreign file. A failed reservation must never enter path cleanup.
+  const descriptor = fs.openSync(quarantine, 'wx', LOG_FILE_MODE);
+  fs.closeSync(descriptor);
+  return quarantine;
+}
+
 function publishLogLock(lockPath) {
   const temporary = `${lockPath}.create-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
   let descriptor = fs.openSync(temporary, 'wx', LOG_FILE_MODE);
@@ -229,7 +238,7 @@ function publishLogLock(lockPath) {
     fs.rmSync(temporary, { force: true });
   }
   return () => {
-    const quarantine = `${lockPath}.release-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
+    const quarantine = reserveLogQuarantine(lockPath, 'release');
     fs.renameSync(lockPath, quarantine);
     if (!sameLogLock(fs.lstatSync(quarantine, { bigint: true }), identity)) {
       restoreLogLock(quarantine, lockPath);
@@ -266,7 +275,7 @@ function recoverLogLock(lockPath) {
   try {
     const identity = inspectLogLock(lockPath);
     if (!identity) return null; // Never take a live or unverifiable owner's lock.
-    const quarantine = `${lockPath}.stale-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
+    const quarantine = reserveLogQuarantine(lockPath, 'stale');
     fs.renameSync(lockPath, quarantine);
     if (!sameLogLock(fs.lstatSync(quarantine, { bigint: true }), identity)) {
       restoreLogLock(quarantine, lockPath);
