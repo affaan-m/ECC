@@ -67,7 +67,7 @@ test('Stop batches files from sibling packages under their shared formatter', ()
     const hook = loadHook('stop-format-typecheck.js', calls);
     const sessionId = `workspace-format-${process.pid}-${Date.now()}`;
     const accumulator = path.join(os.tmpdir(), `ecc-edited-${sessionId}.txt`);
-    fs.writeFileSync(accumulator, files.join('\n') + '\n');
+    fs.writeFileSync(accumulator, files.join('\n') + '\n', { flag: 'wx', mode: 0o600 });
     try {
       const input = JSON.stringify({ session_id: sessionId });
       assert.strictEqual(hook.run(input), input);

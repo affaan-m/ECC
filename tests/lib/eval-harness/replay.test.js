@@ -60,9 +60,10 @@ test('an interrupted recording preserves the prior replayable fixture', () => {
     const store = new replay.FixtureStore(dir);
     const existing = store.put('read_inventory', { sku: 'x' }, { count: 1 });
     const before = fs.readFileSync(store.pathFor(existing.key));
-    fs.writeFileSync = (destination, data, options) => {
-      // Simulate a write that reaches disk only partially before exhausting space.
-      write(destination, data.slice(0, 10), options);
+    fs.writeFileSync = (destination, data) => {
+      // Atomic publication writes through an already-owned descriptor.
+      assert.strictEqual(typeof destination, 'number');
+      fs.writeSync(destination, data.slice(0, 10), undefined, 'utf8');
       throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
     };
     try {

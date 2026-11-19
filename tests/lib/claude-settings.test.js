@@ -401,24 +401,18 @@ function runTests() {
   if (test('settings snapshots request BigInt stats and reject inodes that collide as Numbers', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-bigint-identity-'));
     const settingsPath = path.join(tempDir, 'settings.json');
-    const originalOpenSync = fs.openSync;
     const originalFstatSync = fs.fstatSync;
     const originalLstatSync = fs.lstatSync;
-    let settingsDescriptor;
     let sawBigIntFstat = false;
     let sawBigIntLstat = false;
     const descriptorIno = 9007199254740992n;
     const pathIno = 9007199254740993n;
     try {
       fs.writeFileSync(settingsPath, '{"theme":"initial"}\n');
-      fs.openSync = function(targetPath, ...args) {
-        const descriptor = originalOpenSync.call(fs, targetPath, ...args);
-        if (targetPath === settingsPath) settingsDescriptor = descriptor;
-        return descriptor;
-      };
+      const settingsIdentity = fs.statSync(settingsPath, { bigint: true });
       fs.fstatSync = function(descriptor, options) {
         const stats = originalFstatSync.call(fs, descriptor, options);
-        if (descriptor !== settingsDescriptor) return stats;
+        if (stats.dev !== settingsIdentity.dev || stats.ino !== settingsIdentity.ino) return stats;
         sawBigIntFstat = options && options.bigint === true;
         return deriveStats(stats, {
           ino: typeof stats.ino === 'bigint' ? descriptorIno : Number(descriptorIno),
@@ -446,7 +440,6 @@ function runTests() {
         theme: 'initial',
       });
     } finally {
-      fs.openSync = originalOpenSync;
       fs.fstatSync = originalFstatSync;
       fs.lstatSync = originalLstatSync;
       fs.rmSync(tempDir, { recursive: true, force: true });
