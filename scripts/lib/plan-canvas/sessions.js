@@ -124,14 +124,23 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     }
   }
 
-  function persist() {
+  function persist(candidate = state) {
     fs.mkdirSync(stateDir, { recursive: true });
     const tmpFile = `${stateFile}.tmp`;
-    fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2));
+    fs.writeFileSync(tmpFile, JSON.stringify(candidate, null, 2));
     fs.renameSync(tmpFile, stateFile);
   }
 
   load();
+
+  // Publish replacement state only after its complete snapshot is durable.
+  // Retained session references remain snapshots, including on failed writes.
+  function commitSession(key, session, feedbackCounter = state.feedbackCounter) {
+    const candidate = { ...state, sessions: { ...state.sessions, [key]: session }, feedbackCounter };
+    persist(candidate);
+    state = candidate;
+    return session;
+  }
 
   function get(key) {
     return state.sessions[key] || null;
@@ -194,48 +203,31 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     if (!session || session.status === 'ended') return null;
     const normalize = session.mode === 'ui' ? normalizeUiFeedbackItem : normalizeFeedbackItem;
     const describe = session.mode === 'ui' ? uiChatLineFor : chatLineFor;
-    const previous = { ...session };
-    const previousCounter = state.feedbackCounter;
-    let counter = previousCounter;
+    let counter = state.feedbackCounter;
     const accepted = [];
     for (const raw of Array.isArray(rawItems) ? rawItems : []) {
       counter += 1;
       const item = normalize(raw, counter);
       if (item) accepted.push(item);
     }
-    state.feedbackCounter = counter;
-    session.pendingFeedback = [...session.pendingFeedback, ...accepted];
-    if (session.mode === 'ui') {
-      session.uiBatches = [...(session.uiBatches || [])];
-      for (const item of accepted) {
-        if (item.kind === 'edits') session.uiBatches.push({ id: item.id, snapshotHash: item.snapshotHash, includedBatches: item.includedBatches || [], edits: item.edits.filter(edit => !edit.stale) });
-      }
-    }
-    session.chat = [...session.chat];
-    for (const item of accepted) {
-      session.chat.push({ role: 'user', kind: item.kind, text: describe(item), at: item.at });
-    }
-    if (endSession) {
-      session.status = 'ended';
-      session.endedBy = 'user';
-    } else if (accepted.length > 0) {
-      session.status = 'feedback';
-    }
-    if (deliveryId) {
-      const item = accepted[0];
-      session.uiDeliveries = { ...(session.uiDeliveries || {}), [deliveryId]: {
+    const item = accepted[0];
+    const next = {
+      ...session,
+      pendingFeedback: [...session.pendingFeedback, ...accepted],
+      ...(session.mode === 'ui' ? { uiBatches: [...(session.uiBatches || []), ...accepted.filter(entry => entry.kind === 'edits').map(entry => ({
+        id: entry.id, snapshotHash: entry.snapshotHash, includedBatches: entry.includedBatches || [], edits: entry.edits.filter(edit => !edit.stale)
+      }))] } : {}),
+      chat: [...session.chat, ...accepted.map(entry => ({ role: 'user', kind: entry.kind, text: describe(entry), at: entry.at }))],
+      status: endSession ? 'ended' : accepted.length ? 'feedback' : session.status,
+      ...(endSession ? { endedBy: 'user' } : {}),
+      ...(deliveryId ? { uiDeliveries: { ...(session.uiDeliveries || {}), [deliveryId]: {
         fingerprint, kind: item.kind, itemIds: accepted.map(entry => entry.id),
         editIds: item.edits.filter(edit => !edit.stale).map(edit => edit.id), text: item.text
-      } };
-    }
-    session.updatedAt = nowIso();
-    try { persist(); } catch (error) {
-      for (const name of Object.keys(session)) if (!Object.hasOwn(previous, name)) delete session[name];
-      Object.assign(session, previous);
-      state.feedbackCounter = previousCounter;
-      throw error;
-    }
-    return { accepted, pending: session.pendingFeedback.length, session };
+      } } } : {}),
+      updatedAt: nowIso()
+    };
+    commitSession(key, next, counter);
+    return { accepted, pending: next.pendingFeedback.length, session: next };
   }
 
   // Acknowledgment is distinct from delivery: taking feedback is not proof
@@ -246,13 +238,14 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     const known = [...(session.uiBatches || []), ...(session.uiAcknowledged || [])];
     if (ids.some(id => !known.some(batch => batch.id === id))) return null;
     const accepted = (session.uiBatches || []).filter(batch => ids.includes(batch.id));
-    const previous = { uiBatches: session.uiBatches, uiAcknowledged: session.uiAcknowledged, chat: session.chat, updatedAt: session.updatedAt };
     const entry = replyText ? { role: 'agent', kind: 'chat', text: sanitizeText(replyText), at: nowIso() } : null;
-    session.uiBatches = (session.uiBatches || []).filter(batch => !ids.includes(batch.id));
-    session.uiAcknowledged = [...(session.uiAcknowledged || []), ...accepted.map(batch => ({ id: batch.id, editIds: batch.edits.map(edit => edit.id) }))];
-    if (entry) session.chat = [...session.chat, entry];
-    session.updatedAt = nowIso();
-    try { persist(); } catch (error) { Object.assign(session, previous); throw error; }
+    commitSession(key, {
+      ...session,
+      uiBatches: (session.uiBatches || []).filter(batch => !ids.includes(batch.id)),
+      uiAcknowledged: [...(session.uiAcknowledged || []), ...accepted.map(batch => ({ id: batch.id, editIds: batch.edits.map(edit => edit.id) }))],
+      chat: entry ? [...session.chat, entry] : session.chat,
+      updatedAt: nowIso()
+    });
     return { batches: accepted.map(batch => ({ id: batch.id, editIds: batch.edits.map(edit => edit.id) })), entry };
   }
 
@@ -263,18 +256,13 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     const session = get(key);
     if (!session) return { status: 'missing' };
     if (session.pendingFeedback.length > 0) {
-      const previous = { pendingFeedback: session.pendingFeedback, status: session.status, updatedAt: session.updatedAt };
       const items = session.pendingFeedback;
-      session.pendingFeedback = [];
       const result = { status: 'feedback', items };
       if (session.status === 'ended') {
         result.sessionEnded = true;
         result.endedBy = session.endedBy;
-      } else {
-        session.status = 'open';
       }
-      session.updatedAt = nowIso();
-      try { persist(); } catch (error) { Object.assign(session, previous); throw error; }
+      commitSession(key, { ...session, pendingFeedback: [], status: session.status === 'ended' ? 'ended' : 'open', updatedAt: nowIso() });
       return result;
     }
     if (session.status === 'ended') {

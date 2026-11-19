@@ -400,7 +400,8 @@ function createPlanCanvasServer({
         if (filename && filename !== base) return;
         clearTimeout(debounce);
         debounce = setTimeout(() => {
-          try { acknowledgeUiSnapshot(session, fs.readFileSync(session.file)); } catch { /* missing or partial saves do not acknowledge */ }
+          const current = store.get(session.key);
+          try { if (current) acknowledgeUiSnapshot(current, fs.readFileSync(current.file)); } catch { /* missing or partial saves do not acknowledge */ }
           broadcast(session.key, 'reload', {});
         }, 150);
       });
@@ -569,6 +570,7 @@ function createPlanCanvasServer({
 
       if (action === 'feedback') {
         const body = await readJsonBody(req);
+        const session = store.get(key);
         let items = Array.isArray(body.items) ? body.items : [];
         const deliveryId = body.deliveryId;
         let fingerprint = null;
@@ -607,11 +609,12 @@ function createPlanCanvasServer({
           if (body.endSession) broadcast(key, 'ended', { endedBy: 'user', ...(deliveryId ? { deliveryId, finished: items[0].kind === 'finish' } : {}) });
           broadcastPresence(key);
         } catch { /* accepted feedback remains discoverable */ }
-        if (deliveryId) return sendJson(res, 200, deliveryResponse(session, session.uiDeliveries[deliveryId], session.pendingFeedback.length));
+        const current = store.get(key);
+        if (deliveryId) return sendJson(res, 200, deliveryResponse(current, current.uiDeliveries[deliveryId], current.pendingFeedback.length));
         return sendJson(res, 200, {
           status: 'queued',
           accepted: result.accepted.length,
-          pending: session.pendingFeedback.length,
+          pending: current.pendingFeedback.length,
           batches: result.accepted.filter(item => item.kind === 'edits').map(item => ({ id: item.id, snapshotHash: item.snapshotHash, includedBatches: item.includedBatches || [], edits: item.edits.filter(edit => !edit.stale) })),
           presence: presenceFor(key)
         });
@@ -624,6 +627,7 @@ function createPlanCanvasServer({
 
       if (action === 'reply') {
         const body = await readJsonBody(req);
+        const session = store.get(key);
         const ids = body.acknowledge;
         if (ids !== undefined && (session.mode !== 'ui' || !Array.isArray(ids) || !ids.length || ids.length > 50
             || ids.some(id => typeof id !== 'string' || !/^fb-[1-9][0-9]{0,15}$/.test(id)))) {
