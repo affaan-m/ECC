@@ -53,6 +53,28 @@ test('replay mode never calls the implementation and fails closed on a missing f
   }
 });
 
+test('Date arguments key distinct fixtures and replay the recorded JSON response', () => {
+  const dir = tempDir('replay-date');
+  try {
+    const store = new replay.FixtureStore(dir);
+    let liveCalls = 0;
+    const dated = { prices: { effect_class: 'SE0', determinism: 'deterministic', impl: (args) => {
+      liveCalls += 1;
+      return { since: args.since, close: args.since.getUTCFullYear() === 2024 ? 100 : 999 };
+    } } };
+    const live = replay.createReplayer(dated, { mode: 'record', store }).call('prices', { since: new Date('2024-01-01T00:00:00.000Z') });
+    const replayer = replay.createReplayer(dated, { mode: 'replay', store });
+    assert.throws(() => replayer.call('prices', { since: new Date('2025-06-01T00:00:00.000Z') }), (error) => error.code === 'tool.fixture_missing');
+    assert.throws(() => replayer.call('prices', { since: {} }), (error) => error.code === 'tool.fixture_missing');
+    const replayed = replayer.call('prices', { since: new Date('2024-01-01T00:00:00.000Z') });
+    assert.deepStrictEqual(replayed, JSON.parse(JSON.stringify(live)));
+    assert.strictEqual(replayed.since, '2024-01-01T00:00:00.000Z');
+    assert.strictEqual(liveCalls, 1);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('a hash-mismatched or corrupt fixture fails closed', () => {
   const dir = tempDir('mismatch');
   try {
