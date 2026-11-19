@@ -753,7 +753,9 @@ function validateDocumentation(options = {}) {
     ? Boolean(options.checkSourceDocs)
     : !options.docPath;
   const errors = [];
-  const source = fs.readFileSync(docPath, 'utf8');
+  // Callers may supply an already bounded snapshot, so validation and hashing
+  // inspect the same bytes without reopening a mutable artifact.
+  const source = options.source === undefined ? fs.readFileSync(docPath, 'utf8') : options.source;
   const actual = extractMatrixBlock(source);
   const expected = renderMarkdownTable(records);
 
