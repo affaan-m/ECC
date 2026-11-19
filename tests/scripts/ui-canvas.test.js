@@ -10,6 +10,7 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const crypto = require('crypto');
 const http = require('http');
 const os = require('os');
 const path = require('path');
@@ -122,7 +123,8 @@ async function main() {
     await test('GET /artifact/:key/ injects the editor instead of the annotation sdk and keeps the sandbox CSP', async () => {
       const res = await request(port, 'GET', `/artifact/${key}/`, null, { raw: true });
       assert.strictEqual(res.statusCode, 200);
-      assert.ok(res.body.includes('<script src="/ui-editor.js" data-ecc-ui-canvas="editor"></script>'));
+      const revision = crypto.createHash('sha256').update(fs.readFileSync(artifact)).digest('hex');
+      assert.ok(res.body.includes(`<script src="/ui-editor.js" data-ecc-ui-canvas="editor" data-source-sha256="${revision}"></script>`));
       assert.ok(!res.body.includes('/sdk.js'));
       assert.strictEqual(res.headers['content-security-policy'], 'sandbox allow-scripts allow-forms allow-popups');
     });

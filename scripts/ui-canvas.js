@@ -42,6 +42,7 @@ function usage() {
     '         --reopen        Reopen a session the user ended from the browser',
     '  await: --session-key <key>  Resume by an opaque session key instead of a file path',
     '         --reply <msg>  Show an agent reply in the canvas chat before waiting',
+    '         --ack <fb-id[,fb-id]>  Confirm specific Apply batches are incorporated into the file',
     '         --timeout-ms <n>  Return {status:"waiting"} after n ms (tests/debug only)',
     '  typing: --state <thinking|typing|idle>  Defaults to typing',
     '  server: --port <n> --host <h>',
@@ -76,12 +77,13 @@ const UI_PROFILE = {
     feedback(result) {
       const items = Array.isArray(result.items) ? result.items : [];
       const finish = items.find(item => item.kind === 'finish');
-      const applied = items.find(item => item.kind === 'edits');
+      const appliedItems = items.filter(item => item.kind === 'edits');
+      const applied = appliedItems[appliedItems.length - 1];
       if (finish) {
         return `The human clicked Save and Finish. Read the final markup at ${finish.exportPath} (edit log: ${finish.editsPath}), reproduce that exact look in the real component with full functionality, and report in chat. Do not reopen the canvas.`;
       }
       if (applied) {
-        return `The human applied ${applied.editCount} edit(s) to the preview. Rewrite the mockup file from ${applied.exportPath} (keep it self-contained), then run \`ecc-ui-canvas await <file> --reply "<what you changed>"\` to keep listening.`;
+        return `The human applied ${applied.editCount} edit(s) to the preview. Rewrite the mockup file from ${applied.exportPath} (keep it self-contained), then run \`ecc-ui-canvas await <file> --ack ${appliedItems.map(item => item.id).join(',')} --reply "<what you changed>"\` only after those batches are incorporated, to keep listening.`;
       }
       if (result.sessionEnded) {
         return 'The human sent this and ended the preview. Address it and report in chat; do not reopen the canvas uninvited.';

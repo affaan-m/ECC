@@ -109,6 +109,7 @@ function normalizeEdit(raw, position) {
     snippet: clampText(raw.snippet, MAX_SNIPPET),
     at: typeof raw.at === 'string' && raw.at ? clampText(raw.at, 40) : nowIso()
   };
+  if (typeof raw.sourceRevision === 'string' && /^[a-f0-9]{64}$/.test(raw.sourceRevision)) edit.sourceRevision = raw.sourceRevision;
   if (raw.stale === true) edit.stale = true;
 
   switch (raw.kind) {
@@ -239,6 +240,8 @@ function normalizeUiFeedbackItem(raw, counter) {
     }
     return item;
   }
+  if (typeof raw.snapshotHash === 'string' && /^[a-f0-9]{64}$/.test(raw.snapshotHash)) item.snapshotHash = raw.snapshotHash;
+  if (Array.isArray(raw.includedBatches)) item.includedBatches = raw.includedBatches.filter(id => typeof id === 'string' && /^fb-[1-9][0-9]{0,15}$/.test(id));
   item.edits = normalizeEdits(raw.edits);
   item.editCount = item.edits.length;
   const viewport = normalizeViewport(raw.viewport);

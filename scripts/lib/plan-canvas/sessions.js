@@ -201,6 +201,12 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
       if (item) accepted.push(item);
     }
     session.pendingFeedback.push(...accepted);
+    if (session.mode === 'ui') {
+      session.uiBatches = session.uiBatches || [];
+      for (const item of accepted) {
+        if (item.kind === 'edits') session.uiBatches.push({ id: item.id, snapshotHash: item.snapshotHash, includedBatches: item.includedBatches || [], edits: item.edits.filter(edit => !edit.stale) });
+      }
+    }
     for (const item of accepted) {
       session.chat.push({ role: 'user', kind: item.kind, text: describe(item), at: item.at });
     }
@@ -213,6 +219,24 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     session.updatedAt = nowIso();
     persist();
     return { accepted, pending: session.pendingFeedback.length, session };
+  }
+
+  // Acknowledgment is distinct from delivery: taking feedback is not proof
+  // that the agent has incorporated it into the artifact.
+  function acknowledgeUiBatches(key, ids, replyText) {
+    const session = get(key);
+    if (!session || session.mode !== 'ui') return null;
+    const known = [...(session.uiBatches || []), ...(session.uiAcknowledged || [])];
+    if (ids.some(id => !known.some(batch => batch.id === id))) return null;
+    const accepted = (session.uiBatches || []).filter(batch => ids.includes(batch.id));
+    const previous = { uiBatches: session.uiBatches, uiAcknowledged: session.uiAcknowledged, chat: session.chat, updatedAt: session.updatedAt };
+    const entry = replyText ? { role: 'agent', kind: 'chat', text: sanitizeText(replyText), at: nowIso() } : null;
+    session.uiBatches = (session.uiBatches || []).filter(batch => !ids.includes(batch.id));
+    session.uiAcknowledged = [...(session.uiAcknowledged || []), ...accepted.map(batch => ({ id: batch.id, editIds: batch.edits.map(edit => edit.id) }))];
+    if (entry) session.chat = [...session.chat, entry];
+    session.updatedAt = nowIso();
+    try { persist(); } catch (error) { Object.assign(session, previous); throw error; }
+    return { batches: accepted.map(batch => ({ id: batch.id, editIds: batch.edits.map(edit => edit.id) })), entry };
   }
 
   // Deliver-and-drain: feedback is handed to exactly one await call, after
@@ -286,6 +310,7 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     findByFile,
     queueFeedback,
     takeFeedback,
+    acknowledgeUiBatches,
     addAgentReply,
     setAgent,
     end,
