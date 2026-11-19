@@ -224,23 +224,31 @@ directory.
 
 ## Parallel Batches and Partial Application
 
-The first-touch gate evaluates each tool call independently. When several
-edits to a file that has not been touched yet are sent in one parallel
-batch, the first call is denied and the denial marks the file as checked,
-so the sibling edits in that batch are applied. Nothing is rolled back:
-the file can end up holding the sibling edits without the denied one.
+The first-touch gate evaluates each tool call independently. When the pending
+call's own `tool_use_id` appears in the transcript, the gate can correlate
+that call with its assistant message and record a same-file batch lock with
+the first-touch denial. Later Edit, Write, MultiEdit entries and NotebookEdit
+calls to that file are denied when their own pending `tool_use_id` identifies
+the same assistant batch. These sibling denials use the `batch-deny` metric
+and do not consume another first-touch denial from the denial budget.
 
-The denial message names the file and warns that batch siblings may
-already have been applied. Treat it literally:
+Present the requested facts, then resend every denied edit to that file in a
+new assistant message. A retry in another message keeps the usual checked-file
+behavior. The lock does not make edits to different files transactional, and
+nothing that already applied is rolled back.
 
-- Send dependent edits to a not-yet-touched file sequentially, not in a
-  parallel batch. A definition and its first use, or an import and its
-  call site, must not ride in the same batch.
-- After a first-touch denial, present the facts, retry the denied edit,
-  and re-read the file before building on anything else from the batch.
+The correlation requires evidence for the pending call. If its `tool_use_id`
+is absent, the transcript is unavailable, or the pending call cannot be found,
+the gate does not guess the newest assistant message or enforce a batch lock.
+It retains the warning that sibling edits may already have applied. A checked
+file can then pass through without a same-batch denial, so partial application
+remains possible. Treat that warning literally:
 
-A batch-wide lock is not possible: hooks see tool calls one at a time, so
-the gate cannot know which calls arrived together.
+- Send dependent edits to a not-yet-touched file sequentially when the harness
+  cannot provide pending-call correlation. A definition and its first use, or
+  an import and its call site, need reliable ordering.
+- After a first-touch denial, present the facts, retry the denied edits, and
+  re-read the file before building on anything else from the batch.
 
 ## What Counts as Already Done
 
@@ -265,7 +273,9 @@ decides in this order; the first rule that applies wins:
    [hard-linked](#hard-linked-targets) target: denied once per path
    unless the parent already gated it. A subagent's retry does not unlock
    the path for the parent.
-3. **Already checked** this session — allowed.
+3. **Already checked** this session: a same-file edit from the correlated
+   assistant batch denied at first touch is denied again. Other messages,
+   or calls without that correlation evidence, pass the checked-file rule.
 4. **Sensitive or hard-linked target?** — if so, skip straight to the
    denial (step 9).
 5. **Prior-search credit** — allowed with a note.
@@ -556,11 +566,12 @@ working.
   `GATEGUARD_FACT_FORCE_MAX_DENIALS` (unset means no cap) and
   `GATEGUARD_METRICS` (unset means no metrics). The existing controls are
   unchanged.
-- **Nothing previously allowed is now denied**, except a subagent's first
-  touch of a sensitive or hard-linked target, and the first NotebookEdit of
-  each notebook (NotebookEdit was not gated before). The other rules only
-  remove denials, and never return `permissionDecision: "allow"`, so other hooks
-  and permission rules still apply.
+- **Additional denials** apply to a subagent's first touch of a sensitive or
+  hard-linked target, the first NotebookEdit of each notebook, and a same-file
+  sibling in the correlated assistant batch of a first-touch denial. Resend
+  those sibling edits in another message after presenting the facts. The
+  remaining rules remove denials and never return
+  `permissionDecision: "allow"`, so other hooks and permission rules still apply.
 - **Trust limit:** prior-search credit reads the local transcript file,
   which the agent could in principle write to. The credit verifies observed
   behaviour (a search ran and returned), not intent or how carefully the
@@ -623,8 +634,8 @@ file it decided):
 | `session` | First 12 hex characters of the sha256 of the session key |
 | `tool` | `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash` or `PowerShell` |
 | `class` | Target class, or `null` for shell commands |
-| `decision` | `deny`, `credit`, `sibling`, `cap`, `trivial`, `pass-checked`, `pass-exempt`, `pass-subagent`, `routine-deny`, `routine-readonly`, `destructive-deny` or `pass` |
-| `reason` | Short code: `first-touch`, `sensitive`, `hard-linked`, `near-miss:<code>`, `subagent-sensitive`, `subagent-hard-linked`, `prior-search`, `comment-whitespace`, `same-turn-dir`, `max-denials`, `checked`, `exempt-glob`, `claude-settings`, `no-path`, `subagent`, `readonly-git`, `readonly`, `first-command`, `routine-checked`, `routine-disabled`, `destructive`, `destructive-retry`, `state-error` |
+| `decision` | `deny`, `batch-deny`, `credit`, `sibling`, `cap`, `trivial`, `pass-checked`, `pass-exempt`, `pass-subagent`, `routine-deny`, `routine-readonly`, `destructive-deny` or `pass` |
+| `reason` | Short code: `first-touch`, `sensitive`, `hard-linked`, `near-miss:<code>`, `subagent-sensitive`, `subagent-hard-linked`, `prior-search`, `comment-whitespace`, `same-turn-dir`, `max-denials`, `checked`, `exempt-glob`, `claude-settings`, `no-path`, `subagent`, `readonly-git`, `readonly`, `first-command`, `routine-checked`, `routine-disabled`, `destructive`, `destructive-retry`, `same-batch`, `state-error` |
 | `questions` | Question ids of a first-touch denial; `null` otherwise |
 | `sensitive` | Whether the target is a [sensitive target](#sensitive-targets) |
 | `profile` | Change-profile flags when the profile was computed; `null` otherwise |

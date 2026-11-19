@@ -52,8 +52,16 @@ class GateError extends Error {
   }
 }
 
+// UTF-16 code-unit order (plain `<`). localeCompare follows the host locale
+// (sv_SE sorts `ä` after `z`), which would give the same tree a different
+// digest on another machine.
+function compareNames(a, b) {
+  if (a.name === b.name) return 0;
+  return a.name < b.name ? -1 : 1;
+}
+
 function listFiles(dir, base = dir, acc = []) {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort(compareNames)) {
     if (entry.name === 'node_modules' || entry.name === '.git') {
       continue;
     }
@@ -94,14 +102,21 @@ function readRegularFile(filePath, encoding) {
   }
 }
 
-/** Content digest of a directory tree: sorted relative paths and bytes. */
+/**
+ * Content digest of a directory tree: sorted relative paths and bytes.
+ * Each file is framed as `path \0 byteLength \0 bytes`. Paths cannot contain
+ * NUL, and the length bounds the bytes, so contents holding NUL cannot shift
+ * a file boundary and two different trees cannot share a byte stream.
+ */
 function digestDir(dir) {
   const hash = crypto.createHash('sha256');
   for (const relative of listFiles(dir)) {
+    const bytes = readRegularFile(path.join(dir, relative));
     hash.update(relative);
     hash.update('\0');
-    hash.update(readRegularFile(path.join(dir, relative)));
+    hash.update(String(bytes.length));
     hash.update('\0');
+    hash.update(bytes);
   }
   return hash.digest('hex');
 }

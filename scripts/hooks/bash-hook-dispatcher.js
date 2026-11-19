@@ -106,6 +106,27 @@ function normalizeHookResult(previousRaw, output) {
   };
 }
 
+/**
+ * True when hook stdout is a PreToolUse `deny` decision. GateGuard and other
+ * hooks deny by writing that JSON to stdout at exit code 0, so the dispatcher
+ * must recognise it as a decision rather than as pass-through output.
+ */
+function isPermissionDeny(raw) {
+  if (typeof raw !== 'string' || !raw.includes('permissionDecision')) {
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return Boolean(
+      parsed
+      && parsed.hookSpecificOutput
+      && parsed.hookSpecificOutput.permissionDecision === 'deny'
+    );
+  } catch {
+    return false;
+  }
+}
+
 function runHooks(rawInput, hooks) {
   let currentRaw = rawInput;
   // Track whether a sub-hook deliberately produced stdout (a string or
@@ -133,6 +154,16 @@ function runHooks(rawInput, hooks) {
       }
       if (result.additionalContext) {
         additionalContext = combineAdditionalContext(additionalContext, result.additionalContext);
+      }
+      // A deny is a decision, not a note: stop here so neither a later hook
+      // nor an earlier hook's advisory additionalContext can replace it.
+      if (result.exitCode === 0 && rawModified && isPermissionDeny(currentRaw)) {
+        return {
+          output: currentRaw,
+          stderr,
+          additionalContext,
+          exitCode: 0,
+        };
       }
       if (result.exitCode !== 0) {
         return {

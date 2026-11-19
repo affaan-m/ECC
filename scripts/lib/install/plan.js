@@ -7,7 +7,7 @@ const { execFileSync } = require('child_process');
 const { resolveInstallPlan } = require('../install-manifests');
 const { getInstallTargetAdapter } = require('../install-targets/registry');
 const { resolveInvocationEnvironment } = require('../invocation-environment');
-const { disableUnselectedOpenCodeHooks } = require('./hook-consent');
+const { disableUnselectedOpenCodeHooks, parseJsoncConfig } = require('./hook-consent');
 const { readHooksConfig } = require('../hooks-config');
 const { isPackageSourcePath, resolvePackageSourcePath } = require('./package-source');
 const {
@@ -263,6 +263,24 @@ function dedupeCopyFileOperations(operations) {
   });
 }
 
+function projectOpenCodeHomeInstructions(operations) {
+  const installedFiles = new Set(operations.filter(operation => operation.kind === 'copy-file')
+    .map(operation => operation.destinationPath));
+  return operations.map(operation => {
+    if (operation.contentTransform !== 'opencode-home-skills-path') return operation;
+    const { instructions } = parseJsoncConfig(
+      fs.readFileSync(operation.sourcePath, 'utf8'),
+      operation.sourceRelativePath
+    );
+    const configRoot = path.dirname(operation.destinationPath);
+    const opencodeHomeInstructions = (Array.isArray(instructions) ? instructions : [])
+      .map(instruction => path.resolve(configRoot, instruction))
+      .filter(instruction => installedFiles.has(instruction));
+    // Record the projection so repair uses the same profile-specific paths.
+    return { ...operation, opencodeHomeInstructions };
+  });
+}
+
 function createManifestInstallPlan(options = {}) {
   const requestedSourceRoot = options.sourceRoot || getSourceRoot();
   const projectRoot = options.projectRoot || process.cwd();
@@ -320,13 +338,16 @@ function createManifestInstallPlan(options = {}) {
     return operation;
   });
   const ruleLanguages = Array.isArray(options.ruleLanguages) ? [...options.ruleLanguages] : [];
-  const operations = dedupeCopyFileOperations(
+  const dedupedOperations = dedupeCopyFileOperations(
     options.legacyMode && target === 'antigravity'
       ? materializedOperations.filter(operation => (
         isSelectedAntigravityLegacyRule(operation, ruleLanguages)
       ))
       : materializedOperations
   );
+  const operations = target === 'opencode'
+    ? projectOpenCodeHomeInstructions(dedupedOperations)
+    : dedupedOperations;
   const source = {
     repoVersion: preparedSource.sourceVersion || getPackageVersion(sourceRoot),
     repoUrl: preparedSource.sourceUrl || null,
