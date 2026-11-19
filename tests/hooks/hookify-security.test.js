@@ -161,6 +161,46 @@ if (test('fails closed when Git tracking status cannot be established', () => {
   }
 })) passed++; else failed++;
 
+if (test('skips the Git trust check when the project has no rule files', () => {
+  const root = createProject();
+  try {
+    assert.strictEqual(spawnSync('git', ['init', '-q'], { cwd: root }).status, 0);
+    fs.writeFileSync(path.join(root, '.claude', 'hookify.notes.txt'), 'not a rule\n');
+    // PATH is empty, so any attempt to spawn git would surface the verification diagnostic.
+    const result = runHook(root, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'pwd' } }, { PATH: '' });
+    assert.strictEqual(result.stdout, result.raw);
+    assert.strictEqual(result.stderr, '');
+  } finally {
+    removeProject(root);
+  }
+})) passed++; else failed++;
+
+if (test('skips the Git trust check when .claude is missing', () => {
+  const root = createProject();
+  try {
+    assert.strictEqual(spawnSync('git', ['init', '-q'], { cwd: root }).status, 0);
+    fs.rmSync(path.join(root, '.claude'), { recursive: true, force: true });
+    const result = runHook(root, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'pwd' } }, { PATH: '' });
+    assert.strictEqual(result.stdout, result.raw);
+    assert.strictEqual(result.stderr, '');
+  } finally {
+    removeProject(root);
+  }
+})) passed++; else failed++;
+
+if (test('still fails closed on unverifiable Git tracking when a rule file exists', () => {
+  const root = createProject();
+  try {
+    assert.strictEqual(spawnSync('git', ['init', '-q'], { cwd: root }).status, 0);
+    writeRule(root, 'present', 'name: present\nevent: bash\naction: block\npattern: .*');
+    const result = runHook(root, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'pwd' } }, { PATH: '' });
+    assert.strictEqual(result.stdout, result.raw);
+    assert.match(result.stderr, /could not verify whether local rules are tracked/);
+  } finally {
+    removeProject(root);
+  }
+})) passed++; else failed++;
+
 if (test('trusted CLAUDE_PROJECT_DIR takes precedence over payload cwd', () => {
   const trusted = createProject();
   const untrusted = createProject();
