@@ -194,6 +194,22 @@ describe('validate-openspec-syntax (v1 schema)', () => {
   });
 
   describe('structural validation', () => {
+    for (const [name, eol] of [['LF', '\n'], ['CRLF', '\r\n']]) {
+      it(`reports both missing baseline elements with ${name} line endings`, () => {
+        const content = ['### Requirement: Checkout', '### Invariant: Total', ''].join(eol);
+        const root = makeTempProject({ 'spec.md': content });
+        try {
+          const result = runValidator(root);
+          assert.strictEqual(result.exitCode, 1, result.stdout);
+          const { errors } = JSON.parse(result.stdout);
+          assert.ok(errors.some(error => error.includes('Requirement "Checkout" has no Scenario')));
+          assert.ok(errors.some(error => error.includes('Invariant "Total" missing <!-- enforced: --> anchor')));
+        } finally {
+          fs.rmSync(root, { recursive: true, force: true });
+        }
+      });
+    }
+
     it('flags a Requirement with no Scenario', () => {
       const root = makeTempProject({
         'noscen/spec.md':

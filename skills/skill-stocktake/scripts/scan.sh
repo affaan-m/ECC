@@ -74,25 +74,28 @@ date_ago() {
   date -u -d "${n} days ago" +%Y-%m-%dT%H:%M:%SZ
 }
 
-# Count observations matching a file path since a cutoff timestamp
-count_obs() {
-  local file="$1" cutoff="$2"
+# Keep paths as JSON keys so characters in filenames never split records.
+aggregate_observations() {
   if [[ ! -f "$OBSERVATIONS" ]]; then
     echo null
     return
   fi
-  jq -r --arg p "$file" --arg c "$cutoff" \
-    'select(.tool=="Read" and .path==$p and .timestamp>=$c) | 1' \
-    "$OBSERVATIONS" 2>/dev/null | wc -l | tr -d ' '
+
+  local c7 c30
+  c7=$(date_ago 7)
+  c30=$(date_ago 30)
+  jq -n --arg c7 "$c7" --arg c30 "$c30" '
+    reduce inputs as $event ({};
+      if $event.tool == "Read" and ($event.path | type) == "string" and $event.timestamp >= $c30 then
+        .[$event.path].use_30d += 1
+        | if $event.timestamp >= $c7 then .[$event.path].use_7d += 1 else . end
+      else . end)
+  ' "$OBSERVATIONS"
 }
 
 # Scan a directory and produce a JSON array of skill objects
 scan_dir_to_json() {
   local dir="$1"
-  local c7 c30
-  c7=$(date_ago 7)
-  c30=$(date_ago 30)
-
   local tmpdir
   tmpdir=$(mktemp -d)
   # Use a function to avoid embedding $tmpdir in a quoted string (prevents injection
@@ -100,23 +103,6 @@ scan_dir_to_json() {
   local _scan_tmpdir="$tmpdir"
   _scan_cleanup() { rm -rf "$_scan_tmpdir"; }
   trap _scan_cleanup RETURN
-
-  # Pre-aggregate observation counts in two passes (one per window) instead of
-  # calling jq per-file — reduces from O(n*m) to O(n+m) jq invocations.
-  local obs_7d_counts obs_30d_counts
-  # Zero is meaningful only when an observations file is available.
-  local usage_default=null
-  obs_7d_counts=""
-  obs_30d_counts=""
-  if [[ -f "$OBSERVATIONS" ]]; then
-    usage_default=0
-    obs_7d_counts=$(jq -r --arg c "$c7" \
-      'select(.tool=="Read" and .timestamp>=$c) | .path' \
-      "$OBSERVATIONS" 2>/dev/null | sort | uniq -c)
-    obs_30d_counts=$(jq -r --arg c "$c30" \
-      'select(.tool=="Read" and .timestamp>=$c) | .path' \
-      "$OBSERVATIONS" 2>/dev/null | sort | uniq -c)
-  fi
 
   local i=0
   local find_out="$tmpdir/.find-stdout"
@@ -135,23 +121,10 @@ scan_dir_to_json() {
   sort_nul_file "$find_out"
 
   while IFS= read -r -d '' file; do
-    local name desc mtime u7 u30 dp record_file
+    local name desc mtime dp record_file
     name=$(extract_field "$file" "name")
     desc=$(extract_field "$file" "description")
     mtime=$(date -u -r "$file" +%Y-%m-%dT%H:%M:%SZ)
-    if [[ "$file" == *[[:space:]]* ]]; then
-      # The aggregated fast path is line-delimited. Preserve unusual paths by
-      # falling back to the structured JSON matcher for this record.
-      u7=$(count_obs "$file" "$c7")
-      u30=$(count_obs "$file" "$c30")
-    else
-      # Use awk exact field match to avoid substring false-positives from grep -F.
-      # uniq -c output format: "   N /path/to/file" — path is always field 2.
-      u7=$(echo "$obs_7d_counts" | awk -v f="$file" '$2 == f {print $1}' | head -1)
-      u7="${u7:-$usage_default}"
-      u30=$(echo "$obs_30d_counts" | awk -v f="$file" '$2 == f {print $1}' | head -1)
-      u30="${u30:-$usage_default}"
-    fi
     dp="${file/#$HOME/~}"
 
     # Zero-pad record names so the "$tmpdir"/*.json glob below keeps the sorted
@@ -162,9 +135,8 @@ scan_dir_to_json() {
       --arg name "$name" \
       --arg description "$desc" \
       --arg mtime "$mtime" \
-      --argjson use_7d "$u7" \
-      --argjson use_30d "$u30" \
-      '{path:$path,name:$name,description:$description,use_7d:$use_7d,use_30d:$use_30d,mtime:$mtime}' \
+      --arg observation_path "$file" \
+      '{path:$path,name:$name,description:$description,mtime:$mtime,observation_path:$observation_path}' \
       > "$record_file"
     i=$((i+1))
   done < "$find_out"
@@ -172,7 +144,18 @@ scan_dir_to_json() {
   if [[ $i -eq 0 ]]; then
     echo "[]"
   else
-    jq -s '.' "$tmpdir"/*.json
+    local usage_file="$tmpdir/.usage"
+    if ! aggregate_observations >"$usage_file"; then
+      echo "Error: observation aggregation failed; refusing incomplete usage counts" >&2
+      return 1
+    fi
+    jq -s --slurpfile usage "$usage_file" '
+      $usage[0] as $counts |
+      map($counts[.observation_path] as $skill |
+        .use_7d = (if $counts == null then null else ($skill.use_7d // 0) end) |
+        .use_30d = (if $counts == null then null else ($skill.use_30d // 0) end) |
+        del(.observation_path))
+    ' "$tmpdir"/*.json
   fi
 }
 

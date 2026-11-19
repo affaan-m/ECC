@@ -466,6 +466,62 @@ function run() {
     });
   })) passed++; else failed++;
 
+  if (test('rejects installed payload filenames in a pnpm node_modules layout', () => {
+    // pnpm keeps real package directories in node_modules/.pnpm/<id>/node_modules/<name>
+    // and links the top-level node_modules/<name> entries to them.
+    const storeDir = 'node_modules/.pnpm/@tanstack+react-router@1.169.5/node_modules/@tanstack/react-router';
+    withFixture({
+      [`${storeDir}/package.json`]: JSON.stringify({ name: '@tanstack/react-router', version: '1.169.5' }),
+      [`${storeDir}/router_init.js`]: '/* payload */',
+    }, rootDir => {
+      fs.mkdirSync(path.join(rootDir, 'node_modules', '@tanstack'), { recursive: true });
+      try {
+        fs.symlinkSync(
+          path.join(rootDir, storeDir),
+          path.join(rootDir, 'node_modules', '@tanstack', 'react-router'),
+          'junction',
+        );
+      } catch {
+        // The virtual store alone must still be scanned where links are unavailable.
+      }
+      const result = scanSupplyChainIocs({ rootDir });
+      assert.ok(
+        result.findings.some(finding => finding.indicator === 'router_init.js'),
+        `Expected router_init.js finding, got ${JSON.stringify(result.findings)}`,
+      );
+    });
+  })) passed++; else failed++;
+
+  if (test('rejects installed payload filenames in nested node_modules', () => {
+    withFixture({
+      'node_modules/some-app/package.json': JSON.stringify({ name: 'some-app', version: '1.0.0' }),
+      'node_modules/some-app/node_modules/@tanstack/react-router/router_init.js': '/* payload */',
+    }, rootDir => {
+      const result = scanSupplyChainIocs({ rootDir });
+      assert.ok(
+        result.findings.some(finding => finding.indicator === 'router_init.js'),
+        `Expected router_init.js finding, got ${JSON.stringify(result.findings)}`,
+      );
+    });
+  })) passed++; else failed++;
+
+  if (test('pnpm virtual-store node_modules links stay outside the scan boundary', () => {
+    withFixture({ 'package.json': '{}' }, rootDir => {
+      const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ioc-outside-'));
+      try {
+        const payload = path.join(outside, 'evil', 'router_init.js');
+        fs.mkdirSync(path.dirname(payload), { recursive: true });
+        fs.writeFileSync(payload, '/* outside payload */');
+        const entry = path.join(rootDir, 'node_modules', '.pnpm', 'entry');
+        fs.mkdirSync(entry, { recursive: true });
+        try { fs.symlinkSync(outside, path.join(entry, 'node_modules'), 'junction'); }
+        catch (error) { if (['EPERM', 'EACCES'].includes(error.code)) return; throw error; }
+        const result = scanSupplyChainIocs({ rootDir });
+        assert.deepStrictEqual(result.findings, []);
+      } finally { fs.rmSync(outside, { recursive: true, force: true }); }
+    });
+  })) passed++; else failed++;
+
   if (test('supports CLI JSON output and non-zero exit on findings', () => {
     withFixture({
       'package.json': JSON.stringify({ dependencies: { '@opensearch-project/opensearch': '3.8.0' } }, null, 2),

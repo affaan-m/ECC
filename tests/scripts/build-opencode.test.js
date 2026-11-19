@@ -370,8 +370,8 @@ function main() {
         }), "enabled")
         applyInstallPlan(plan)
         const config = JSON.parse(fs.readFileSync(path.join(plan.targetRoot, "opencode.json"), "utf8"))
-        assert.deepStrictEqual(config.skills.paths, ["./skills"])
-        assert.ok(fs.existsSync(path.join(plan.targetRoot, config.skills.paths[0], "tdd-workflow", "SKILL.md")))
+        assert.deepStrictEqual(config.skills.paths, [path.join(plan.targetRoot, "skills")])
+        assert.ok(fs.existsSync(path.join(config.skills.paths[0], "tdd-workflow", "SKILL.md")))
         assert.ok(!fs.existsSync(path.join(plan.targetRoot, "tools", "run-tests.js")))
         checkRuntime(
           plan.targetRoot,

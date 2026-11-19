@@ -532,6 +532,7 @@
     "carrier-closure:check": "node scripts/ci/validate-carrier-closure.js",
     "routing:check": "node scripts/ci/evaluate-context-routing.js",
     "catalog:sync": "node scripts/ci/catalog.js --write --text",
+    "skills:references": "node scripts/ci/skill-references.js",
     "command-registry:generate": "node scripts/ci/generate-command-registry.js",
     "command-registry:write": "node scripts/ci/generate-command-registry.js --write",
     "command-registry:check": "node scripts/ci/generate-command-registry.js --check",

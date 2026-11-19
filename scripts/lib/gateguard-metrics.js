@@ -25,6 +25,7 @@ const DECISIONS = Object.freeze([
   'routine-deny',
   'routine-readonly',
   'destructive-deny',
+  'batch-deny',
   'pass'
 ]);
 const DECISION_SET = new Set(DECISIONS);

@@ -1,6 +1,7 @@
 'use strict';
 
 const { assertValidEntity } = require('./schema');
+const { prepareVerifiedUpdate, verifyWorkItem } = require('../work-item-verification');
 
 const ACTIVE_SESSION_STATES = ['active', 'running', 'idle'];
 const SUCCESS_OUTCOMES = new Set(['success', 'succeeded', 'passed']);
@@ -732,6 +733,28 @@ function createQueryApi(db, { prepareRead = sql => db.prepare(sql) } = {}) {
       updated_at = excluded.updated_at
   `);
 
+  function persistWorkItem(workItem) {
+    const normalized = normalizeWorkItemInput(workItem);
+    assertValidEntity('workItem', normalized);
+    upsertWorkItemStatement.run({
+      id: normalized.id,
+      source: normalized.source,
+      source_id: normalized.sourceId,
+      title: normalized.title,
+      status: normalized.status,
+      priority: normalized.priority,
+      url: normalized.url,
+      owner: normalized.owner,
+      repo_root: normalized.repoRoot,
+      session_id: normalized.sessionId,
+      metadata: stringifyJson(normalized.metadata, 'workItem.metadata'),
+      created_at: normalized.createdAt,
+      updated_at: normalized.updatedAt,
+    });
+    const row = getWorkItemStatement.get(normalized.id);
+    return row ? mapWorkItemRow(row) : null;
+  }
+
   function getSessionById(id) {
     const row = getSessionStatement.get(id);
     return row ? mapSessionRow(row) : null;
@@ -909,23 +932,11 @@ function createQueryApi(db, { prepareRead = sql => db.prepare(sql) } = {}) {
     upsertWorkItem(workItem) {
       const normalized = normalizeWorkItemInput(workItem);
       assertValidEntity('workItem', normalized);
-      upsertWorkItemStatement.run({
-        id: normalized.id,
-        source: normalized.source,
-        source_id: normalized.sourceId,
-        title: normalized.title,
-        status: normalized.status,
-        priority: normalized.priority,
-        url: normalized.url,
-        owner: normalized.owner,
-        repo_root: normalized.repoRoot,
-        session_id: normalized.sessionId,
-        metadata: stringifyJson(normalized.metadata, 'workItem.metadata'),
-        created_at: normalized.createdAt,
-        updated_at: normalized.updatedAt,
-      });
-      const row = getWorkItemStatement.get(normalized.id);
-      return row ? mapWorkItemRow(row) : null;
+      return persistWorkItem(prepareVerifiedUpdate(getWorkItemById(normalized.id), normalized));
+    },
+    verifyWorkItem(id) {
+      const result = verifyWorkItem(getWorkItemById(id));
+      return { ...result, item: persistWorkItem(result.item) };
     },
     upsertSession(session) {
       const normalized = normalizeSessionInput(session);
