@@ -91,6 +91,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/ito.js",
     "scripts/list-installed.js",
     "scripts/loop-status.js",
+    "scripts/copilot-learning.py",
     "scripts/memory.js",
     "scripts/memory-mcp.mjs",
     "scripts/nasiko.js",
