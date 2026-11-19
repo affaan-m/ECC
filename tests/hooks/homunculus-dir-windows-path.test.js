@@ -49,8 +49,8 @@ const realOstype = probe.stdout.trim();
 const realWindowsShell = /^(msys|cygwin|win32)/.test(realOstype);
 
 // Source the resolver in bash with an optional OSTYPE override and env.
-function resolve({ ostype, env = {} }) {
-  const script = `${ostype ? `OSTYPE=${ostype}\n` : ''}source "$LIB"\n_clv2_resolve_homunculus_dir`;
+function resolve({ ostype, env = {}, strict = false }) {
+  const script = `${strict ? 'set -eu\n' : ''}${ostype ? `OSTYPE=${ostype}\n` : ''}source "$LIB"\n_clv2_resolve_homunculus_dir`;
   const childEnv = { ...process.env, HOME: '/home/tester', LIB: libPath.replace(/\\/g, '/') };
   delete childEnv.CLV2_HOMUNCULUS_DIR;
   delete childEnv.XDG_DATA_HOME;
@@ -115,6 +115,54 @@ test('msys: drive-relative "C:foo" is still rejected', () => {
   const r = resolve({ ostype: 'msys', env: { CLV2_HOMUNCULUS_DIR: 'C:foo' } });
   assert.strictEqual(r.stdout, '/home/tester/.local/share/ecc-homunculus');
   assert.ok(r.stderr.includes('is not absolute; ignoring'));
+});
+
+test('msys: bare drive "C:" is rejected with the existing message', () => {
+  const r = resolve({ ostype: 'msys', env: { CLV2_HOMUNCULUS_DIR: 'C:' } });
+  assert.strictEqual(r.stdout, '/home/tester/.local/share/ecc-homunculus');
+  assert.ok(r.stderr.includes('[ecc] CLV2_HOMUNCULUS_DIR=C: is not absolute; ignoring'));
+});
+
+test('msys: drive root "C:/" is accepted', () => {
+  const r = resolve({ ostype: 'msys', env: { CLV2_HOMUNCULUS_DIR: 'C:/' } });
+  assert.strictEqual(r.stdout, '/C/');
+  assert.strictEqual(r.stderr, '');
+});
+
+test('msys: a path with a space is accepted and preserved', () => {
+  const r = resolve({ ostype: 'msys', env: { CLV2_HOMUNCULUS_DIR: 'C:/a b/c' } });
+  assert.strictEqual(r.stdout, '/C/a b/c');
+  assert.strictEqual(r.stderr, '');
+});
+
+test('msys: a trailing slash is preserved', () => {
+  const r = resolve({ ostype: 'msys', env: { CLV2_HOMUNCULUS_DIR: 'C:/a/' } });
+  assert.strictEqual(r.stdout, '/C/a/');
+  assert.strictEqual(r.stderr, '');
+});
+
+test('msys: UNC value \\\\srv\\share is still rejected (pins current behavior)', () => {
+  const r = resolve({ ostype: 'msys', env: { CLV2_HOMUNCULUS_DIR: '\\\\srv\\share' } });
+  assert.strictEqual(r.stdout, '/home/tester/.local/share/ecc-homunculus');
+  assert.ok(r.stderr.includes('[ecc] CLV2_HOMUNCULUS_DIR=\\\\srv\\share is not absolute; ignoring'));
+});
+
+test('msys: sourcing and resolving under set -eu does not abort', () => {
+  const converted = resolve({ ostype: 'msys', strict: true, env: { CLV2_HOMUNCULUS_DIR: 'C:/Users/x/dir' } });
+  assert.strictEqual(converted.status, 0, converted.stderr);
+  assert.strictEqual(converted.stdout, '/C/Users/x/dir');
+  const xdg = resolve({ ostype: 'msys', strict: true, env: { XDG_DATA_HOME: 'C:\\Users\\x\\share' } });
+  assert.strictEqual(xdg.status, 0, xdg.stderr);
+  assert.strictEqual(xdg.stdout, '/C/Users/x/share/ecc-homunculus');
+  const fallback = resolve({ ostype: 'msys', strict: true, env: { CLV2_HOMUNCULUS_DIR: 'relative/dir' } });
+  assert.strictEqual(fallback.status, 0, fallback.stderr);
+  assert.strictEqual(fallback.stdout, '/home/tester/.local/share/ecc-homunculus');
+});
+
+test('linux: sourcing and resolving under set -eu does not abort', () => {
+  const r = resolve({ ostype: 'linux-gnu', strict: true, env: { CLV2_HOMUNCULUS_DIR: '/abs/dir' } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(r.stdout, '/abs/dir');
 });
 
 test('msys: POSIX absolute path is unchanged', () => {
