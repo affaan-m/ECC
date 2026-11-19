@@ -458,6 +458,8 @@ is the batch.
   `batch-deny`. It does not add to `fact_force_denials`, so the denial cap and
   the condensed ordinals are unchanged.
 - A call from any other message passes, including the retry in the next turn.
+- Earlier permitted siblings, such as comment-only edits, are never rolled back.
+  Every batch denial keeps a re-read warning; a lock cannot prove the file is unchanged.
 - There is no fallback to the newest assistant message: a guessed batch could
   match the retry and deny it forever. With no `tool_use_id`, no transcript, or
   the pending call missing from the transcript, nothing is locked. The denial

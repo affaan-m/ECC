@@ -2105,7 +2105,8 @@ const READ_ONLY_GIT_SUBCOMMANDS = new Map([
  * Batch-consistency note (#3136, #3936). A first-touch denial marks the
  * file checked so the retry passes. When the pending call's batch is found
  * in the transcript, the denial also locks the file for that batch, so the
- * siblings are denied too and the file stays whole (`locked`). Otherwise
+ * later siblings are denied too (`locked`), but earlier allowed edits are
+ * never rolled back. Otherwise
  * the hook cannot tell siblings from the retry, so the denial says out
  * loud that siblings may already have been applied.
  * see docs/gateguard/design-notes.md#same-batch-siblings
@@ -2113,8 +2114,8 @@ const READ_ONLY_GIT_SUBCOMMANDS = new Map([
 function batchSiblingWarning(safePath, locked = false) {
   if (locked) {
     return (
-      `Other edits to ${safePath} from this batch are denied too, so the file is unchanged. ` +
-      'Resend all of them with the retry.'
+      `Other edits to ${safePath} from this batch are denied too. Earlier edits may already have been applied. ` +
+      'Re-read the file and resend every denied edit with the retry.'
     );
   }
   return (
@@ -2127,8 +2128,8 @@ function sameBatchGateMsg(filePath) {
   const safe = sanitizePath(filePath);
   return (
     `[Fact-Forcing Gate] An earlier edit to ${safe} in this same batch was denied at first touch, ` +
-    `so this one is denied too and ${safe} is unchanged. ` +
-    'Present the facts that denial asked for, then resend every edit to this file from this batch.'
+    `so this one is denied too. Earlier edits may already have been applied. ` +
+    'Re-read the file, present the facts that denial asked for, then resend every denied edit to this file from this batch.'
   );
 }
 
