@@ -446,6 +446,32 @@ if (
 else failed++;
 
 if (
+  test('a legacy group/world-readable log at the cap rotates to a private .1 (#3846)', () => {
+    if (!checkModes) return;
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-bash-log-'));
+    const logFile = path.join(homeDir, '.claude', 'bash-commands.log');
+
+    try {
+      fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      fs.writeFileSync(logFile, '[legacy] history\n');
+      fs.truncateSync(logFile, LOG_MAX_BYTES);
+      fs.chmodSync(logFile, 0o664);
+
+      const result = runHook('audit', { tool_input: { command: 'echo next' } }, homeDir);
+      assert.strictEqual(result.status, 0, result.stdout + result.stderr);
+
+      assert.ok(fs.readFileSync(`${logFile}.1`, 'utf8').startsWith('[legacy] history\n'));
+      assert.strictEqual(fs.statSync(`${logFile}.1`).mode & 0o777, 0o600);
+      assert.strictEqual(fs.statSync(logFile).mode & 0o777, 0o600);
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
   test('a failed rotation still records the command (#3846)', () => {
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-bash-log-'));
     const logFile = path.join(homeDir, '.claude', 'bash-commands.log');
