@@ -89,6 +89,21 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
     ];
   }
 
+  if (['skills/plankton-code-quality', 'skills/plankton-code-quality/SKILL.md'].includes(normalizedSourcePath)) {
+    return [
+      createManagedOperation({
+        moduleId: module.id,
+        sourceRelativePath: 'manifests/install-assets/copilot-plankton-quality-skill.md',
+        destinationPath: path.join(targetRoot, 'skills', 'plankton-code-quality', 'SKILL.md'),
+      }),
+      createManagedOperation({
+        moduleId: module.id,
+        sourceRelativePath: 'scripts/copilot-quality.cjs',
+        destinationPath: path.join(targetRoot, 'ecc', 'scripts', 'quality', 'copilot-quality.cjs'),
+      }),
+    ];
+  }
+
   if (hasPrefix(normalizedSourcePath, 'skills')) {
     return [
       createManagedOperation({
