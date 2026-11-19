@@ -95,6 +95,7 @@ test('keeps near-miss reason codes', () => {
 
 test('lists every decision the hook records', () => {
   assert.deepStrictEqual([...DECISIONS].sort(), [
+    'batch-deny',
     'cap',
     'credit',
     'deny',

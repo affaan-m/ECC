@@ -74,7 +74,13 @@ class FixtureStore {
     } catch (_error) {
       throw new ReplayError('tool.fixture_corrupt', `fixture ${key.slice(0, 16)} is not valid JSON`, { tool, key });
     }
-    if (record.tool !== tool || record.args_hash !== hashValue(args)) {
+    if (!record || typeof record !== 'object' || Array.isArray(record)
+        || typeof record.tool !== 'string' || !Object.hasOwn(record, 'response')
+        || ['key', 'args_hash', 'response_hash'].some(field =>
+          typeof record[field] !== 'string' || !envelope.HASH_PATTERN.test(record[field]))) {
+      throw new ReplayError('tool.fixture_corrupt', `fixture ${key.slice(0, 16)} has invalid record fields`, { tool, key });
+    }
+    if (record.key !== key || record.tool !== tool || record.args_hash !== hashValue(args)) {
       throw new ReplayError('tool.fixture_mismatch', `fixture ${key.slice(0, 16)} was recorded for different arguments`, { tool, key });
     }
     if (record.response_hash !== hashValue(record.response)) {

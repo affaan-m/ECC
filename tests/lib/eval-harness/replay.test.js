@@ -78,6 +78,28 @@ test('an interrupted recording preserves the prior replayable fixture', () => {
   }
 });
 
+test('Date arguments key distinct fixtures and replay the recorded JSON response', () => {
+  const dir = tempDir('replay-date');
+  try {
+    const store = new replay.FixtureStore(dir);
+    let liveCalls = 0;
+    const dated = { prices: { effect_class: 'SE0', determinism: 'deterministic', impl: (args) => {
+      liveCalls += 1;
+      return { since: args.since, close: args.since.getUTCFullYear() === 2024 ? 100 : 999 };
+    } } };
+    const live = replay.createReplayer(dated, { mode: 'record', store }).call('prices', { since: new Date('2024-01-01T00:00:00.000Z') });
+    const replayer = replay.createReplayer(dated, { mode: 'replay', store });
+    assert.throws(() => replayer.call('prices', { since: new Date('2025-06-01T00:00:00.000Z') }), (error) => error.code === 'tool.fixture_missing');
+    assert.throws(() => replayer.call('prices', { since: {} }), (error) => error.code === 'tool.fixture_missing');
+    const replayed = replayer.call('prices', { since: new Date('2024-01-01T00:00:00.000Z') });
+    assert.deepStrictEqual(replayed, JSON.parse(JSON.stringify(live)));
+    assert.strictEqual(replayed.since, '2024-01-01T00:00:00.000Z');
+    assert.strictEqual(liveCalls, 1);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('a hash-mismatched or corrupt fixture fails closed', () => {
   const dir = tempDir('mismatch');
   try {
@@ -184,6 +206,53 @@ test('ordinary fixture bytes and key remain identical to the pinned base', () =>
     const record = store.put('read_inventory', { sku: 'x' }, { count: 7 });
     assert.strictEqual(record.key, "38531922cfce2687a257eebffffa3fa9ef03b132f862fff9e371cab0bf2391ef");
     assert.strictEqual(fs.readFileSync(store.pathFor(record.key), 'utf8'), "{\"args_hash\":\"90765859d73de6e117260f0b4cefcb88f09d8e79e71ca576868a28d662f98851\",\"key\":\"38531922cfce2687a257eebffffa3fa9ef03b132f862fff9e371cab0bf2391ef\",\"response\":{\"count\":7},\"response_hash\":\"b0beaf5a3dbe82ae841ac88bdc3b1174d7e4dec57454b6539e556e58eaadc600\",\"tool\":\"read_inventory\"}\n");
+  } finally { cleanup(dir); }
+});
+
+for (const [label, change, code] of [
+  ['changed key', record => ({ ...record, key: '0'.repeat(64) }), 'tool.fixture_mismatch'],
+  ['missing key', ({ key: _key, ...record }) => record, 'tool.fixture_corrupt'],
+  ['null record', () => null, 'tool.fixture_corrupt'],
+  ['array record', () => [], 'tool.fixture_corrupt'],
+  ['missing response', ({ response: _response, ...record }) => record, 'tool.fixture_corrupt'],
+  ['invalid response hash', record => ({ ...record, response_hash: 123 }), 'tool.fixture_corrupt'],
+]) {
+  test(`replay rejects ${label} before returning a response or emitting success`, () => {
+    const dir = tempDir('fixture-validation');
+    try {
+      const store = new replay.FixtureStore(dir);
+      const args = { sku: 'x' };
+      const record = store.put('read_inventory', args, { count: 7 });
+      const file = store.pathFor(record.key);
+      fs.writeFileSync(file, JSON.stringify(change(record)));
+      const before = fs.readFileSync(file);
+      let liveCalls = 0;
+      const trace = [];
+      const replayer = replay.createReplayer({ read_inventory: {
+        ...tools.read_inventory,
+        impl() { liveCalls += 1; throw new Error('must not call'); },
+      } }, { store, onCall: entry => trace.push(entry) });
+
+      assert.throws(() => replayer.call('read_inventory', args), error =>
+        error instanceof replay.ReplayError && error.code === code);
+      assert.strictEqual(liveCalls, 0);
+      assert.deepStrictEqual(replayer.calls, []);
+      assert.deepStrictEqual(trace, []);
+      assert.deepStrictEqual(fs.readFileSync(file), before);
+    } finally { cleanup(dir); }
+  });
+}
+
+test('valid JSON scalar and array responses still replay with the verified fixture key', () => {
+  const dir = tempDir('fixture-responses');
+  try {
+    const store = new replay.FixtureStore(dir);
+    const replayer = replay.createReplayer(tools, { store });
+    for (const response of [null, false, 0, '', [1, { count: 7 }]]) {
+      const record = store.put('read_inventory', {}, response);
+      assert.deepStrictEqual(replayer.call('read_inventory'), response);
+      assert.strictEqual(replayer.calls.at(-1).fixture_key, record.key);
+    }
   } finally { cleanup(dir); }
 });
 

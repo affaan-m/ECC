@@ -190,9 +190,46 @@ function sanitizeCommand(command) {
     .replace(/\bgithub_pat_[A-Za-z0-9_]+\b/g, '<REDACTED>');
 }
 
+// The logs hold every Bash command, so they are owner-only and size-capped:
+// past LOG_MAX_BYTES the log moves to `<log>.1` (replacing the previous one)
+// and a fresh log starts. Same scheme as scripts/lib/gateguard-metrics.js,
+// inlined because hooks cannot require scripts/lib/ (see #3259).
+const LOG_MAX_BYTES = 10 * 1024 * 1024;
+const LOG_FILE_MODE = 0o600;
+
 function appendLine(filePath, line) {
+  const data = `${line}\n`;
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.appendFileSync(filePath, `${line}\n`, 'utf8');
+
+  let stat = null;
+  try {
+    stat = fs.statSync(filePath);
+  } catch {
+    // No log yet.
+  }
+  // Logs written by earlier versions were group/world readable. Tighten an
+  // existing log before it can be rotated, so the `.1` copy is private too.
+  // Windows has no POSIX permission bits to tighten.
+  if (stat && stat.isFile() && process.platform !== 'win32' && (stat.mode & 0o077) !== 0) {
+    fs.chmodSync(filePath, LOG_FILE_MODE);
+  }
+  if (stat && stat.isFile() && stat.size > 0 && stat.size + Buffer.byteLength(data) > LOG_MAX_BYTES) {
+    try {
+      fs.renameSync(filePath, `${filePath}.1`);
+    } catch {
+      // Rotation is best effort (another process may have rotated first, or
+      // Windows may refuse the rename); still record this command.
+    }
+  }
+
+  // The mode only applies when this call creates the file; an existing log
+  // was tightened above.
+  const fd = fs.openSync(filePath, 'a', LOG_FILE_MODE);
+  try {
+    fs.writeSync(fd, data);
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 // Resolve the Claude profile directory the same way everywhere.
@@ -250,6 +287,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  LOG_MAX_BYTES,
   run,
   sanitizeCommand,
 };
