@@ -224,41 +224,19 @@ async function run() {
     assert.strictEqual(store.verifyWorkItem('docs-task').verified, true);
   });
 
-  await test('FIFO artifacts and regular files replaced by FIFOs never block verification', ({ root, store, register, claim, artifact }) => {
+  await test('FIFO artifacts and regular files replaced by FIFOs never block verification', ({ root }) => {
     if (process.platform === 'win32') return;
-    register(); claim();
-    const makeFifo = () => {
-      const result = spawnSync('mkfifo', [artifact], { encoding: 'utf8' });
+    const worker = path.join(__dirname, 'helpers', 'work-item-fifo-worker.js');
+    for (const scenario of ['fifo', 'replace']) {
+      const result = spawnSync(process.execPath, [worker, path.join(root, scenario), scenario], {
+        encoding: 'utf8', timeout: 5000,
+      });
+      assert.ifError(result.error);
       assert.strictEqual(result.status, 0, result.stderr);
-    };
-    makeFifo();
-    assert.strictEqual(store.verifyWorkItem('docs-task').attempt.outcome, 'unknown');
-    fs.unlinkSync(artifact); fs.writeFileSync(artifact, validDoc());
-    const canonicalArtifact = path.join(fs.realpathSync(root), 'matrix.md');
-    const open = fs.openSync;
-    const readFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0);
-    let observedArtifactFlags;
-    fs.openSync = function (filename, flags, mode) {
-      if (filename === canonicalArtifact) {
-        observedArtifactFlags = flags;
-        fs.unlinkSync(artifact); makeFifo();
-        return open(filename, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0));
-      }
-      // State persistence creates only private, exclusive staging files.
-      if (flags === 'wx') return open(filename, 'wx', mode);
-      if (flags === (fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0))) {
-        return open(filename, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0), mode);
-      }
-      if (flags === (fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0))) {
-        return open(filename, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
-      }
-      assert.strictEqual(flags, 'r', 'unexpected file-open mode during verification');
-      return open(filename, 'r');
-    };
-    try {
-      assert.strictEqual(store.verifyWorkItem('docs-task').attempt.outcome, 'unknown');
-      assert.strictEqual(observedArtifactFlags, readFlags, 'artifact reads must retain nonblocking/no-follow flags');
-    } finally { fs.openSync = open; }
+      assert.deepStrictEqual(JSON.parse(result.stdout), {
+        outcome: 'unknown', replaced: scenario === 'replace',
+      });
+    }
   });
 
   await test('the validator comes from ECC, never a module supplied by the artifact repository', ({ root, store, register, claim, artifact }) => {
