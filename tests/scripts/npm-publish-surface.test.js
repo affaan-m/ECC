@@ -79,6 +79,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/dsh/generate-hooks-config.js",
     "scripts/profile.js",
     "scripts/control-pane.js",
+    "scripts/copilot-cost-report.cjs",
     "scripts/dashboard-web.js",
     "scripts/discussion-audit.js",
     "scripts/doctor.js",
