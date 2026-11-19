@@ -277,6 +277,43 @@ async function main() {
         fs.rmSync(installRoot, { recursive: true, force: true });
       }
     }],
+    ['identifies a missing qualified manifest without trying a tag or leaving an installed file', async () => {
+      const { EventEmitter } = require('events');
+      const https = require('https');
+      const { getQualifiedRelease, installNasiko } = require('../../scripts/lib/nasiko-release');
+      const release = getQualifiedRelease('v0.1.0', 'darwin', 'arm64');
+      const installRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-nasiko-missing-pin-'));
+      const requests = [];
+      const get = https.get;
+      https.get = (url, _options, callback) => {
+        requests.push(url.href);
+        const request = new EventEmitter();
+        request.setTimeout = () => {};
+        process.nextTick(() => callback({ statusCode: 404, resume: () => {} }));
+        return request;
+      };
+      try {
+        await assert.rejects(
+          installNasiko({ version: 'v0.1.0', yes: true, installDir: installRoot }, {
+            platform: 'darwin', arch: 'arm64',
+          }),
+          error => {
+            assert.match(error.message, /qualified Nasiko v0\.1\.0 manifest for darwin\/arm64/i);
+            assert.match(error.message, /404/);
+            assert.match(error.message, /updated ECC qualification/i);
+            assert.ok(error.message.includes(release.manifestDigest));
+            return true;
+          },
+        );
+        assert.deepStrictEqual(requests, [
+          `https://registry.nasiko.dev/v2/nasiko/nasiko/manifests/${release.manifestDigest}`,
+        ]);
+        assert.deepStrictEqual(fs.readdirSync(installRoot), []);
+      } finally {
+        https.get = get;
+        fs.rmSync(installRoot, { recursive: true, force: true });
+      }
+    }],
     ['rejects digest mismatch and unsafe archive entries without installing', async () => {
       const { extractQualifiedTarGzip, installNasiko } = require('../../scripts/lib/nasiko-release');
       const installRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-nasiko-reject-'));

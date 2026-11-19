@@ -163,7 +163,13 @@ function fetchBytes(url, options = {}) {
   return new Promise((resolve, reject) => {
     const request = https.get(parsed, { headers: options.accept ? { Accept: options.accept } : {} }, response => {
       if (response.statusCode >= 300 && response.statusCode < 400) { response.resume(); reject(new Error('Nasiko registry redirects are not allowed.')); return; }
-      if (response.statusCode !== 200) { response.resume(); reject(new Error(`Nasiko registry returned HTTP ${response.statusCode}.`)); return; }
+      if (response.statusCode !== 200) {
+        response.resume();
+        reject(Object.assign(new Error(`Nasiko registry returned HTTP ${response.statusCode}.`), {
+          statusCode: response.statusCode,
+        }));
+        return;
+      }
       const chunks = [];
       let total = 0;
       response.on('data', chunk => {
@@ -408,7 +414,22 @@ function installPathsFor(options, dependencies, release) {
 
 async function fetchVerifiedBinary(release, dependencies) {
   const retrieve = dependencies.fetchBytes || fetchBytes;
-  const manifestBytes = await retrieve(`${REGISTRY_ORIGIN}/v2/${REPOSITORY}/manifests/${release.manifestDigest}`, { accept: 'application/vnd.oci.image.manifest.v1+json', maxBytes: MAX_MANIFEST_BYTES });
+  const manifestUrl = `${REGISTRY_ORIGIN}/v2/${REPOSITORY}/manifests/${release.manifestDigest}`;
+  let manifestBytes;
+  try {
+    manifestBytes = await retrieve(manifestUrl, {
+      accept: 'application/vnd.oci.image.manifest.v1+json',
+      maxBytes: MAX_MANIFEST_BYTES,
+    });
+  } catch (error) {
+    if (error?.statusCode !== 404) throw error;
+    throw new Error(
+      `The qualified Nasiko ${release.version} manifest for ${release.os}/${release.arch} ` +
+      `(${release.manifestDigest}) is unavailable from the registry (HTTP 404). ` +
+      'Installation requires the original manifest or an updated ECC qualification.',
+      { cause: error },
+    );
+  }
   assertDigest(manifestBytes, release.manifestDigest, 'Nasiko manifest');
   const layer = validateManifest(manifestBytes);
   const archiveBytes = await retrieve(`${REGISTRY_ORIGIN}/v2/${REPOSITORY}/blobs/${layer.digest}`, { maxBytes: MAX_ARCHIVE_BYTES });
