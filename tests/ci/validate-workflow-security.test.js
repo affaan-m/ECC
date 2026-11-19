@@ -280,6 +280,51 @@ function run() {
     assert.strictEqual(result.status, 0, result.stderr || result.stdout);
   })) passed++; else failed++;
 
+  if (test('rejects npm install and shorthand aliases without ignore-scripts', () => {
+    const result = runValidator({
+      'unsafe-install-aliases.yml': `name: Unsafe\non:\n  pull_request:\njobs:\n  audit:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm install\n      - run: npm i\n      - run: pnpm i\n      - run: bun i\n`,
+    });
+    assert.notStrictEqual(result.status, 0, 'Expected validator to fail on install aliases without ignore-scripts');
+    assert.match(result.stderr, /npm install must include --ignore-scripts/);
+    assert.match(result.stderr, /pnpm install must include --ignore-scripts/);
+    assert.match(result.stderr, /bun install must include --ignore-scripts/);
+  })) passed++; else failed++;
+
+  if (test('rejects unguarded install before chained command with ignore-scripts', () => {
+    const result = runValidator({
+      'unsafe-chained-install.yml': `name: Unsafe\non:\n  pull_request:\njobs:\n  audit:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm ci && npm ci --ignore-scripts\n`,
+    });
+    assert.notStrictEqual(result.status, 0, 'Expected validator to flag first command in chain');
+    assert.match(result.stderr, /npm ci must include --ignore-scripts/);
+  })) passed++; else failed++;
+
+  if (test('rejects commented-out security mitigations', () => {
+    const result = runValidator({
+      'commented-mitigations.yml': `name: Unsafe\non:\n  workflow_dispatch:\npermissions:\n  contents: write\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          # persist-credentials: false\n      - run: npm ci # --ignore-scripts\n      # npm audit signatures\n      - run: npm audit --audit-level=high\n`,
+    });
+    assert.notStrictEqual(result.status, 0, 'Expected validator to fail on commented mitigations');
+    assert.match(result.stderr, /workflows with write permissions must disable checkout credential persistence/);
+    assert.match(result.stderr, /npm ci must include --ignore-scripts/);
+    assert.match(result.stderr, /npm audit must also verify registry signatures/);
+  })) passed++; else failed++;
+
+  if (test('detects untrusted ref even when checkout step contains bullet inside block scalar', () => {
+    const result = runValidator({
+      'scalar-bullet-checkout.yml': `name: Unsafe\non:\n  pull_request_target:\n    branches: [main]\njobs:\n  inspect:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        env:\n          NOTES: |\n            - bullet one\n            - bullet two\n        with:\n          ref: \${{ github.event.pull_request.head.sha }}\n`,
+    });
+    assert.notStrictEqual(result.status, 0, 'Expected checkout step to not split early on bullet');
+    assert.match(result.stderr, /pull_request_target must not checkout an untrusted pull_request head ref\/repository/);
+    assert.match(result.stderr, /pull_request\.head\.sha/);
+  })) passed++; else failed++;
+
+  if (test('dedented job boundary does not leak credentials into preceding checkout step', () => {
+    const result = runValidator({
+      'dedented-job.yml': `name: Unsafe\non:\n  workflow_dispatch:\npermissions:\n  contents: write\njobs:\n  first:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n  second:\n    runs-on: ubuntu-latest\n    steps:\n      - run: persist-credentials: false\n`,
+    });
+    assert.notStrictEqual(result.status, 0, 'Expected checkout in first job to fail without persist-credentials: false');
+    assert.match(result.stderr, /workflows with write permissions must disable checkout credential persistence/);
+  })) passed++; else failed++;
+
   console.log(`\nPassed: ${passed}`);
   console.log(`Failed: ${failed}`);
 

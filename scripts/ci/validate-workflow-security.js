@@ -48,22 +48,71 @@ const ID_TOKEN_WRITE_PATTERN = /^\s*id-token:\s*write\b/m;
 const TOP_LEVEL_JOBS_PATTERN = /^jobs:\s*$/m;
 const UNSAFE_INSTALL_PATTERNS = [
   {
-    pattern: /\bnpm\s+ci\b(?![^\n]*--ignore-scripts)/g,
+    pattern: /\bnpm\s+ci\b(?![^;\n&|]*--ignore-scripts)/g,
     description: 'npm ci must include --ignore-scripts',
   },
   {
-    pattern: /\bpnpm\s+install\b(?![^\n]*--ignore-scripts)/g,
+    pattern: /\bnpm\s+(?:install|i)\b(?![^;\n&|]*--ignore-scripts)/g,
+    description: 'npm install must include --ignore-scripts',
+  },
+  {
+    pattern: /\bpnpm\s+(?:install|i)\b(?![^;\n&|]*--ignore-scripts)/g,
     description: 'pnpm install must include --ignore-scripts',
   },
   {
-    pattern: /\byarn\s+install\b(?![^\n]*--mode=skip-build)/g,
+    pattern: /\byarn\s+install\b(?![^;\n&|]*--mode=skip-build)/g,
     description: 'yarn install must use --mode=skip-build',
   },
   {
-    pattern: /\bbun\s+install\b(?![^\n]*--ignore-scripts)/g,
+    pattern: /\bbun\s+(?:install|i)\b(?![^;\n&|]*--ignore-scripts)/g,
     description: 'bun install must include --ignore-scripts',
   },
 ];
+
+function stripComments(source) {
+  const lines = source.split(/\r?\n/);
+  const strippedLines = lines.map(line => {
+    let inSingleQuote = false;
+    let inDoubleQuote = false;
+    let commentStart = -1;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+
+      if (char === "'" && !inDoubleQuote) {
+        let backslashes = 0;
+        let k = i - 1;
+        while (k >= 0 && line[k] === '\\') {
+          backslashes++;
+          k--;
+        }
+        if (backslashes % 2 === 0) {
+          inSingleQuote = !inSingleQuote;
+        }
+      } else if (char === '"' && !inSingleQuote) {
+        let backslashes = 0;
+        let k = i - 1;
+        while (k >= 0 && line[k] === '\\') {
+          backslashes++;
+          k--;
+        }
+        if (backslashes % 2 === 0) {
+          inDoubleQuote = !inDoubleQuote;
+        }
+      } else if (char === '#' && !inSingleQuote && !inDoubleQuote) {
+        commentStart = i;
+        break;
+      }
+    }
+
+    if (commentStart >= 0) {
+      return line.slice(0, commentStart).padEnd(line.length, ' ');
+    }
+    return line;
+  });
+
+  return strippedLines.join('\n');
+}
 
 function getWorkflowFiles(workflowsDir) {
   if (!fs.existsSync(workflowsDir)) {
@@ -87,23 +136,37 @@ function extractCheckoutSteps(source) {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const stepStart = line.match(/^(\s*)-\s+/);
 
-    if (stepStart) {
+    if (!line.trim()) {
       if (current) {
-        blocks.push(current);
+        current.lines.push(line);
       }
+      continue;
+    }
 
+    const stepStart = line.match(/^(\s*)-\s+/);
+    const lineIndent = line.match(/^(\s*)/)[1].length;
+
+    if (current) {
+      if (lineIndent === current.indent && stepStart) {
+        blocks.push(current);
+        current = {
+          indent: lineIndent,
+          startLine: i + 1,
+          lines: [line],
+        };
+      } else if (lineIndent <= current.indent && !stepStart) {
+        blocks.push(current);
+        current = null;
+      } else {
+        current.lines.push(line);
+      }
+    } else if (stepStart) {
       current = {
         indent: stepStart[1].length,
         startLine: i + 1,
         lines: [line],
       };
-      continue;
-    }
-
-    if (current) {
-      current.lines.push(line);
     }
   }
 
@@ -120,13 +183,14 @@ function extractCheckoutSteps(source) {
 }
 
 function findViolations(filePath, source) {
+  const cleanSource = stripComments(source);
   const violations = [];
-  const checkoutSteps = extractCheckoutSteps(source);
-  const jobsIndex = source.search(TOP_LEVEL_JOBS_PATTERN);
-  const workflowHeader = jobsIndex >= 0 ? source.slice(0, jobsIndex) : source;
+  const checkoutSteps = extractCheckoutSteps(cleanSource);
+  const jobsIndex = cleanSource.search(TOP_LEVEL_JOBS_PATTERN);
+  const workflowHeader = jobsIndex >= 0 ? cleanSource.slice(0, jobsIndex) : cleanSource;
 
   for (const rule of RULES) {
-    if (!rule.eventPattern.test(source)) {
+    if (!rule.eventPattern.test(cleanSource)) {
       continue;
     }
 
@@ -163,9 +227,9 @@ function findViolations(filePath, source) {
     }
   }
 
-  if (WRITE_PERMISSION_PATTERN.test(source) || WRITE_ALL_PATTERN.test(source)) {
+  if (WRITE_PERMISSION_PATTERN.test(cleanSource) || WRITE_ALL_PATTERN.test(cleanSource)) {
     for (const step of checkoutSteps) {
-      if (!/persist-credentials:\s*['"]?false['"]?\b/m.test(step.text)) {
+      if (!/^\s*persist-credentials:\s*['"]?false['"]?\s*$/m.test(step.text)) {
         violations.push({
           filePath,
           event: 'write-permission checkout',
@@ -184,12 +248,12 @@ function findViolations(filePath, source) {
       event: 'workflow-scoped id-token',
       description: 'id-token: write must be scoped to a publish-only job, not the entire workflow',
       expression: 'top-level id-token: write',
-      line: getLineNumber(source, source.search(ID_TOKEN_WRITE_PATTERN)),
+      line: getLineNumber(source, cleanSource.search(ID_TOKEN_WRITE_PATTERN)),
     });
   }
 
   for (const installRule of UNSAFE_INSTALL_PATTERNS) {
-    for (const match of source.matchAll(installRule.pattern)) {
+    for (const match of cleanSource.matchAll(installRule.pattern)) {
       violations.push({
         filePath,
         event: 'dependency install scripts',
@@ -200,43 +264,43 @@ function findViolations(filePath, source) {
     }
   }
 
-  if (ID_TOKEN_WRITE_PATTERN.test(source) && ACTIONS_CACHE_PATTERN.test(source)) {
+  if (ID_TOKEN_WRITE_PATTERN.test(cleanSource) && ACTIONS_CACHE_PATTERN.test(cleanSource)) {
     violations.push({
       filePath,
       event: 'id-token cache',
       description: 'workflows with id-token: write must not restore or save shared dependency caches',
       expression: 'id-token: write + actions/cache',
-      line: getLineNumber(source, source.search(ID_TOKEN_WRITE_PATTERN)),
+      line: getLineNumber(source, cleanSource.search(ID_TOKEN_WRITE_PATTERN)),
     });
   }
 
-  if (ACTIONS_CACHE_PATTERN.test(source)) {
+  if (ACTIONS_CACHE_PATTERN.test(cleanSource)) {
     violations.push({
       filePath,
       event: 'dependency cache',
       description: 'GitHub Actions dependency caches are disabled during active supply-chain hardening',
       expression: 'actions/cache',
-      line: getLineNumber(source, source.search(ACTIONS_CACHE_PATTERN)),
+      line: getLineNumber(source, cleanSource.search(ACTIONS_CACHE_PATTERN)),
     });
   }
 
-  if (/\bpull_request_target\s*:/m.test(source) && ACTIONS_CACHE_PATTERN.test(source)) {
+  if (/\bpull_request_target\s*:/m.test(cleanSource) && ACTIONS_CACHE_PATTERN.test(cleanSource)) {
     violations.push({
       filePath,
       event: 'pull_request_target cache',
       description: 'pull_request_target workflows must not restore or save shared dependency caches',
       expression: 'pull_request_target + actions/cache',
-      line: getLineNumber(source, source.search(/\bpull_request_target\s*:/m)),
+      line: getLineNumber(source, cleanSource.search(/\bpull_request_target\s*:/m)),
     });
   }
 
-  if (NPM_AUDIT_PATTERN.test(source) && !NPM_AUDIT_SIGNATURES_PATTERN.test(source)) {
+  if (NPM_AUDIT_PATTERN.test(cleanSource) && !NPM_AUDIT_SIGNATURES_PATTERN.test(cleanSource)) {
     violations.push({
       filePath,
       event: 'npm audit signatures',
       description: 'workflows that run npm audit must also verify registry signatures',
       expression: 'npm audit without npm audit signatures',
-      line: getLineNumber(source, source.search(NPM_AUDIT_PATTERN)),
+      line: getLineNumber(source, cleanSource.search(NPM_AUDIT_PATTERN)),
     });
   }
 
@@ -274,5 +338,6 @@ module.exports = {
   DEFAULT_WORKFLOWS_DIR,
   extractCheckoutSteps,
   findViolations,
+  stripComments,
   validateWorkflowSecurity,
 };
