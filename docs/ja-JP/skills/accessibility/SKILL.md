@@ -73,7 +73,7 @@ flowchart TD
 | **プライマリラベル**  | `aria-label` / `<label>` | `.accessibilityLabel()`              | `contentDescription`                                        |
 | **セカンダリヒント** | `aria-describedby`       | `.accessibilityHint()`               | `Modifier.semantics { stateDescription = ... }`             |
 | **アクションロール**    | `role="button"`          | `.accessibilityAddTraits(.isButton)` | `Modifier.semantics { role = Role.Button }`                 |
-| **ライブ更新**   | `aria-live="polite"`     | `.accessibilityLiveRegion(.polite)`  | `Modifier.semantics { liveRegion = LiveRegionMode.Polite }` |
+| **ライブ更新**   | `aria-live="polite"`     | `AccessibilityNotification.Announcement(...).post()` (iOS 17 以降)  | `Modifier.semantics { liveRegion = LiveRegionMode.Polite }` |
 
 ## 例
 
@@ -98,6 +98,19 @@ Button(action: deleteItem) {
 .accessibilityLabel("Delete item")
 .accessibilityHint("Permanently removes this item from your list")
 .accessibilityAddTraits(.isButton)
+```
+
+### iOS 17 以降: ステータス更新の読み上げ
+
+ステータスは画面にも表示します。保存が成功したら、完了ハンドラから通知を一度だけ送信すると、VoiceOver はフォーカスを移動せずに新しいステータスを読み上げられます。
+
+```swift
+import Accessibility
+
+@available(iOS 17.0, *)
+func announceSaveCompleted() {
+    AccessibilityNotification.Announcement("Changes saved.").post()
+}
 ```
 
 ### Android: アクセシブルなトグル
