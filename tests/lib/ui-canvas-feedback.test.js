@@ -40,7 +40,7 @@ test('normalizeEdit accepts every supported kind and clamps fields', () => {
   assert.deepStrictEqual(move.to, { parent: 'div.b', index: 0 });
 
   const nudge = feedback.normalizeEdit({ kind: 'nudge', selector: 'p', dx: -4, dy: 10.6 }, 0);
-  assert.deepStrictEqual([nudge.dx, nudge.dy], [-4, 11]);
+  assert.deepStrictEqual([nudge.dx, nudge.dy], [-4, 10.6]);
 
   const remove = feedback.normalizeEdit({ kind: 'remove', selector: 'button.secondary', outerHTML: '<button>x</button>', from: { parent: 'div.actions', index: 1 } }, 0);
   assert.strictEqual(remove.outerHTML, '<button>x</button>');

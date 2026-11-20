@@ -4512,7 +4512,8 @@ function runTests() {
       const first = batchRun('Edit', batch[0][2], t, 'toolu_tbl_a');
       assert.strictEqual(first.decision, 'deny', 'first touch is denied');
       assert.ok(first.reason.includes(`Other edits to ${target} from this batch are denied too`), `locked note expected, got: ${first.reason}`);
-      assert.ok(!first.reason.includes('may already have been applied'), 'no partial-application warning when locked');
+      assert.ok(first.reason.includes('may already have been applied'), 'locked denial still requires re-reading earlier edits');
+      assert.ok(!first.reason.includes('file is unchanged'), 'a lock cannot prove no earlier sibling applied');
 
       const sibling = batchRun('Edit', batch[1][2], t, 'toolu_tbl_b');
       assert.strictEqual(sibling.decision, 'deny', 'same-batch sibling is denied');

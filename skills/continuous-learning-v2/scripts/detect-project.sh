@@ -355,6 +355,7 @@ atomic_write_json(registry_path, registry)
 #     decides the root or the id, such as core.worktree, was changed)
 #   - git no longer reports the origin the entry was derived from (remote
 #     added, changed or removed, which changes the project id)
+#   - a nearer .git marker changes discovery from the explicit project or cwd
 #   - the project storage directory or the project root no longer exists
 #   - the stored id is not a shape detection can produce
 #
@@ -410,6 +411,25 @@ _clv2_project_cache_prepare() {
   return 0
 }
 
+# Confirm that discovery still selects the cached root without another Git
+# launch. A newly initialized repo, worktree marker, or even broken .git link
+# between the selected starting directory and that root requires fresh Git.
+_clv2_project_cache_same_root() {
+  local expected="$1"
+  local start="${CLAUDE_PROJECT_DIR:-}"
+  [ -n "$start" ] && [ -d "$start" ] || start="."
+  local probe="$start" depth=0
+  while [ "$depth" -lt 512 ]; do
+    [ "$probe" -ef "$expected" ] && return 0
+    if [ -e "$probe/.git" ] || [ -L "$probe/.git" ]; then return 1; fi
+    [ "$probe" -ef "$probe/.." ] && return 1
+    # Let the filesystem resolve aliases and .. without a cd/pwd subprocess.
+    probe="$probe/.."
+    depth=$((depth + 1))
+  done
+  return 1
+}
+
 _clv2_project_cache_load() {
   local file="$_CLV2_PROJECT_CACHE_FILE"
   [ -n "$file" ] && [ -f "$file" ] || return 1
@@ -448,6 +468,7 @@ _clv2_project_cache_load() {
     # and still a repository with its own .git/config file (see the store side).
     [ -n "$root" ] && [ -d "$root" ] || return 1
     [ -f "${root}/.git/config" ] || return 1
+    _clv2_project_cache_same_root "$root" || return 1
     # Settings in the repository's own config (core.worktree moves the root,
     # a remote changes the id) are trusted only while the entry is strictly
     # newer than that file. Equal timestamps count as stale so a change in the
