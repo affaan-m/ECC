@@ -270,26 +270,41 @@ function gitEnvironmentMatchesConfig(environment, budget, matches) {
 }
 
 /** Return the subcommand index and literal config keys from Git global options. */
+function hasDynamicConfigKey(word) {
+  if (!word || !word.dynamic) return false;
+  const eq = word.value.indexOf('=');
+  // If key=value has a literal key before '=', the key name itself is known.
+  return eq === -1 || word.value.slice(0, eq).includes('\u0000') || word.value.slice(0, eq) === '';
+}
+
 function scanGitGlobalOptions(words, budget, start) {
   const keys = [];
+  let dynamicConfigKey = false;
   let index = start + 1;
   for (; index < words.length; index++) {
-    const value = words[index].value;
+    const word = words[index];
+    const value = word.value;
     budget.spend(value.length + 1);
     if (!value.startsWith('-')) break;
     if (value === '--') { index++; break; }
     if (value === '-c' || value === '--config-env') {
-      const setting = words[index + 1]?.value || '';
+      const settingWord = words[index + 1];
+      const setting = settingWord?.value || '';
       budget.spend(setting.length + 1);
+      if (hasDynamicConfigKey(settingWord)) dynamicConfigKey = true;
       keys.push(configKey(setting));
     } else if (value.startsWith('-c')) {
+      if (word.dynamic && (!value.includes('=') || value.slice(2, value.indexOf('=')).includes('\u0000'))) {
+        dynamicConfigKey = true;
+      }
       keys.push(configKey(value.slice(2)));
     } else if (value.startsWith('--config-env=')) {
+      if (word.dynamic) dynamicConfigKey = true;
       keys.push(configKey(value.slice('--config-env='.length)));
     }
     if (GIT_GLOBAL_VALUES.has(value)) index++;
   }
-  return { index, keys };
+  return { index, keys, dynamicConfigKey };
 }
 
 // Scan a protected subcommand's own arguments for a hook-bypass flag.
@@ -312,10 +327,27 @@ function findGitBypassFlag(words, budget, start, command) {
 
 /** Check a Git invocation for hook-bypass options or a command-supplied alias. */
 function checkGitWords(words, budget, start, environment) {
-  const { index, keys } = scanGitGlobalOptions(words, budget, start);
-  const command = words[index]?.value;
+  const { index, keys, dynamicConfigKey } = scanGitGlobalOptions(words, budget, start);
+  const commandWord = words[index];
+  const command = commandWord?.value;
   budget.spend((command?.length || 0) + 1);
+  if (!commandWord) return null;
+  if (commandWord.dynamic) {
+    if (
+      dynamicConfigKey ||
+      keys.some(isHookRedirectConfigKey) ||
+      gitEnvironmentMatchesConfig(environment, budget, isHookRedirectConfigKey) ||
+      findGitBypassFlag(words, budget, index + 1, 'commit') ||
+      findGitBypassFlag(words, budget, index + 1, 'push')
+    ) {
+      return 'BLOCKED: Variable-expanded git subcommand cannot be verified against hook-bypass flags. Run the literal git subcommand instead.';
+    }
+    return null;
+  }
   if (!command) return null;
+  if (dynamicConfigKey && PROTECTED_GIT_COMMANDS.has(command)) {
+    return `BLOCKED: Variable-expanded git -c configuration key is not allowed with git ${command}.`;
+  }
   if (!PROTECTED_GIT_COMMANDS.has(command)) {
     if (GIT_BUILTINS_THAT_IGNORE_ALIASES.has(command)) return null;
     // Alias bodies can chain to other aliases or execute shell commands.
@@ -606,7 +638,7 @@ function shellRole(words, budget, shell) {
     stdin ||= cluster.stdin;
     i = cluster.next;
   }
-  if (code) return { kind: 'shell', code: words[i]?.value, stdin: false };
+  if (code) return { kind: 'shell', code: words[i]?.value, dynamicCode: Boolean(words[i]?.dynamic), stdin: false };
   // A script filename and its positional arguments are not shell source text.
   return { kind: 'shell', stdin: stdin || i === words.length };
 }
@@ -867,7 +899,8 @@ function commandRole(words, budget) {
   if (SHELLS.has(name)) return shellRole(words, budget, name);
   if (name === 'eval') {
     for (const word of words) budget.spend(word.value.length + 3);
-    return { kind: 'shell', code: words.slice(words[1]?.value === '--' ? 2 : 1).map(word => word.value).join(' '), stdin: false };
+    const codeWords = words.slice(words[1]?.value === '--' ? 2 : 1);
+    return { kind: 'shell', code: codeWords.map(word => word.value).join(' '), dynamicCode: codeWords.some(word => word.dynamic), stdin: false };
   }
   if (name === 'sed') {
     const scripts = sedScriptParts(words, budget);
@@ -1322,6 +1355,9 @@ function checkCommand(input) {
       ? inspectOpaque(command.words, task.text, environment)
       : role.kind === 'git' ? checkGitWords(words, budget, 0, environment) : null;
     if (reason) return reason;
+    if (role.dynamicCode && /\bgit\b[\s\S]*\b(?:commit|push|merge|cherry-pick|rebase|am|--no-verify|hooksPath|alias\.)/i.test(task.text || '')) {
+      return 'BLOCKED: Dynamic shell/eval execution with git commit/push context cannot be verified against hook-bypass flags.';
+    }
     if (role.code) {
       if (normalized.local && words[0]?.value === 'eval') frame.sameShellCode = role.code;
       else frame.childEnvironments.push({ code: role.code, opaque: false, environment });

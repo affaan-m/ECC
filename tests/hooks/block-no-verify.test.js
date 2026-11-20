@@ -2406,6 +2406,20 @@ if (test('printf format reuse is charged to the work budget before it expands', 
   assert.ok(Date.now() - started < 2000, 'expected the budget to stop the expansion early');
 })) passed++; else failed++;
 
+for (const [name, command, expected] of [
+  ['blocks variable-expanded git subcommand with --no-verify (#3957)', 'git $SUB --no-verify -m x', 2],
+  ['blocks variable-expanded git subcommand with -n (#3957)', 'git ${SUB} -n -m x', 2],
+  ['blocks variable-expanded -c key on git commit (#3957)', 'git -c "$CFG" commit -m x', 2],
+  ['blocks variable-fed bash -c with git commit bypass context (#3957)', "X='git commit --no-verify -m x'; bash -c \"$X\"", 2],
+  ['blocks variable-fed eval with git push bypass context (#3957)', "X='git push --no-verify'; eval \"$X\"", 2],
+  ['allows harmless variable echo and commit message (#3957)', 'echo "$X" && git commit -m "$MSG"', 0],
+]) {
+  if (test(name, () => {
+    const result = runHook({ tool_input: { command } });
+    assert.strictEqual(result.code, expected, `expected exit ${expected}, got ${result.code}: ${result.stderr}`);
+  })) passed++; else failed++;
+}
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 
