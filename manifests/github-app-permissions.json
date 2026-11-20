@@ -1,0 +1,11 @@
+{
+  "name": "ECC Tools",
+  "permissions": {
+    "checks": "write",
+    "contents": "write",
+    "issues": "write",
+    "metadata": "read",
+    "pull_requests": "write"
+  },
+  "note": "Includes checks:write so PR check-runs render natively in GitHub Checks tab (#3766)."
+}
