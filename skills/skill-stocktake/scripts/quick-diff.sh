@@ -83,9 +83,23 @@ process_dir() {
   fi
   sort_nul_file "$find_out"
 
+_latest_skill_mtime() {
+  local skill_md="$1"
+  local skill_dir
+  skill_dir="$(dirname "$skill_md")"
+  local newest="$skill_md"
+  local candidate
+  while IFS= read -r -d '' candidate; do
+    if [[ "$candidate" -nt "$newest" ]]; then
+      newest="$candidate"
+    fi
+  done < <(find -L "$skill_dir" -maxdepth 3 -type f \( -name '*.aisp' -o -name '*.aisop' -o -path '*/scripts/*' \) -print0 2>/dev/null || true)
+  date -u -r "$newest" +%Y-%m-%dT%H:%M:%SZ
+}
+
   while IFS= read -r -d '' file; do
     local mtime dp is_new record_file
-    mtime=$(date -u -r "$file" +%Y-%m-%dT%H:%M:%SZ)
+    mtime=$(_latest_skill_mtime "$file")
     dp="${file/#$HOME/~}"
 
     # Compare against the version actually evaluated for this skill. The global

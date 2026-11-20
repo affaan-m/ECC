@@ -244,3 +244,7 @@ Obtain via Bash: `date -u +%Y-%m-%dT%H:%M:%SZ`. Never use a date-only approximat
 - Evaluation is blind: the same checklist applies to all skills regardless of origin (ECC, self-authored, auto-extracted)
 - Archive / delete operations always require explicit user confirmation
 - No verdict branching by skill origin
+
+## AISP / AISOP Package Tracking (#3208)
+
+`quick-diff.sh` compares the latest modification timestamp across `SKILL.md`, companion `*.aisp` / `*.aisop` specifications, and `scripts/*` inside each skill directory so behavioral updates invalidate cached evaluations even when `SKILL.md` itself is unchanged.
