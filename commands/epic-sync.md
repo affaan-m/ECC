@@ -1,5 +1,5 @@
 ---
-description: Sync epic issue bodies, labels, and local coordination snapshots from GitHub.
+description: Sync epic issue bodies, labels, and local coordination snapshots from GitHub. Use when syncing GitHub epic state, labels, and local coordination snapshots.
 ---
 
 # /epic-sync

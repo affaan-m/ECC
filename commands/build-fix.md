@@ -1,5 +1,5 @@
 ---
-description: Detect the project build system and incrementally fix build/type errors with minimal safe changes.
+description: Detect the project build system and incrementally fix build/type errors with minimal safe changes. Use when compilation, type-checking, or build steps fail and need surgical fixes.
 ---
 
 # Build and Fix

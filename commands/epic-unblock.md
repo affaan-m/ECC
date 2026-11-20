@@ -1,5 +1,5 @@
 ---
-description: Sweep blocked epic issues and reopen anything whose dependencies are closed.
+description: Sweep blocked epic issues and reopen anything whose dependencies are closed. Use when sweeping blocked epic issues after dependencies close.
 ---
 
 # /epic-unblock
