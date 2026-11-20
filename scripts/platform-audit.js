@@ -29,6 +29,7 @@ function usage() {
     'Operator readiness audit for ECC queue, discussion, roadmap, release, and security evidence.',
     '',
     'Options:',
+    '  --matrix                   Print cross-harness capability matrix and exit',
     '  --format <text|json|markdown>',
     '                             Output format (default: text)',
     '  --json                     Alias for --format json',
@@ -67,6 +68,7 @@ function parseArgs(argv) {
   const args = argv.slice(2);
   const parsed = {
     allowUntracked: [],
+    matrix: false,
     exitCode: false,
     format: 'text',
     help: false,
@@ -83,6 +85,11 @@ function parseArgs(argv) {
 
     if (arg === '--help' || arg === '-h') {
       parsed.help = true;
+      continue;
+    }
+
+    if (arg === '--matrix') {
+      parsed.matrix = true;
       continue;
     }
 
@@ -710,11 +717,27 @@ function writeOutput(writePath, output) {
   fs.writeFileSync(writePath, output, 'utf8');
 }
 
+function getHarnessCompatibilityMatrix() {
+  return {
+    claude: { skills: true, agents: true, hooks: true, mcp: true, delegation: true },
+    codex: { skills: true, agents: true, hooks: 'partial', mcp: true, delegation: true },
+    opencode: { skills: true, agents: true, hooks: true, mcp: true, delegation: true },
+    cursor: { skills: true, agents: true, hooks: 'partial', mcp: true, delegation: 'partial' },
+    antigravity: { skills: true, agents: true, hooks: 'partial', mcp: true, delegation: 'partial' },
+    gemini: { skills: true, agents: true, hooks: 'partial', mcp: true, delegation: 'partial' },
+    qwen: { skills: true, agents: true, hooks: false, mcp: true, delegation: 'partial' },
+  };
+}
+
 function main() {
   try {
     const options = parseArgs(process.argv);
     if (options.help) {
       usage();
+      return;
+    }
+    if (options.matrix) {
+      console.log(JSON.stringify(getHarnessCompatibilityMatrix(), null, 2));
       return;
     }
 
