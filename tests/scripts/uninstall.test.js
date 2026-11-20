@@ -46,13 +46,23 @@ function writeState(filePath, options) {
   return state;
 }
 
+function fixtureHomeEnv(homeDir) {
+  const configHome = path.join(homeDir, '.config');
+  return {
+    HOME: homeDir,
+    USERPROFILE: homeDir,
+    CLAUDE_CONFIG_DIR: path.join(homeDir, '.claude'),
+    CODEX_HOME: path.join(homeDir, '.codex'),
+    XDG_CONFIG_HOME: configHome,
+    OPENCODE_CONFIG_DIR: path.join(configHome, 'opencode'),
+  };
+}
+
 function run(args = [], options = {}) {
   const inheritedEnv = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => key !== 'ECC_DRY_RUN' && key !== 'CODEX_HOME')
   );
-  const homeEnv = options.homeDir
-    ? { HOME: options.homeDir, USERPROFILE: options.homeDir, CODEX_HOME: path.join(options.homeDir, '.codex') }
-    : {};
+  const homeEnv = options.homeDir ? fixtureHomeEnv(options.homeDir) : {};
   const env = { ...inheritedEnv, ...(options.env || {}), ...homeEnv };
 
   try {
@@ -99,10 +109,7 @@ function runTests() {
     try {
       const installStdout = execFileSync('node', [INSTALL_SCRIPT, '--target', 'cursor', 'typescript', '--enable-hooks'], {
         cwd: projectRoot,
-        env: {
-          ...process.env,
-          HOME: homeDir,
-        },
+        env: { ...process.env, ...fixtureHomeEnv(homeDir) },
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: CLI_TIMEOUT_MS,
@@ -145,7 +152,7 @@ function runTests() {
         [INSTALL_SCRIPT, '--target', 'claude', '--modules', 'hooks-runtime,config-health', '--enable-hooks'],
         {
           cwd: projectRoot,
-          env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+          env: { ...process.env, ...fixtureHomeEnv(homeDir) },
           encoding: 'utf8',
           stdio: ['pipe', 'pipe', 'pipe'],
           timeout: CLI_TIMEOUT_MS,
@@ -215,11 +222,7 @@ function runTests() {
         [INSTALL_SCRIPT, '--target', 'claude-project', '--modules', 'hooks-runtime', '--enable-hooks'],
         {
           cwd: projectRoot,
-          env: {
-            ...process.env,
-            HOME: homeDir,
-            USERPROFILE: homeDir,
-          },
+          env: { ...process.env, ...fixtureHomeEnv(homeDir) },
           encoding: 'utf8',
           stdio: ['pipe', 'pipe', 'pipe'],
           timeout: CLI_TIMEOUT_MS,
@@ -608,6 +611,66 @@ function runTests() {
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('keeps OpenCode installations outside the temporary home untouched', () => {
+    const homeDir = createTempDir('uninstall-home-');
+    const projectRoot = createTempDir('uninstall-project-');
+    const externalRoot = createTempDir('uninstall-external-config-');
+
+    try {
+      const targetRoot = path.join(fs.realpathSync(externalRoot), 'opencode');
+      const statePath = path.join(targetRoot, 'ecc-install-state.json');
+      const managedPath = path.join(targetRoot, 'managed.md');
+      const content = 'external managed file\n';
+      fs.mkdirSync(targetRoot);
+      fs.writeFileSync(managedPath, content);
+      writeState(statePath, {
+        adapter: { id: 'opencode-home', target: 'opencode', kind: 'home' },
+        targetRoot,
+        installStatePath: statePath,
+        request: {
+          profile: null,
+          modules: ['commands-core'],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: { selectedModules: ['commands-core'], skippedModules: [] },
+        operations: [{
+          kind: 'copy-file',
+          moduleId: 'commands-core',
+          sourceRelativePath: 'commands/plan.md',
+          destinationPath: managedPath,
+          strategy: 'preserve-relative-path',
+          ownership: 'managed',
+          scaffoldOnly: false,
+          contentSha256: crypto.createHash('sha256').update(content).digest('hex'),
+        }],
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: 'abc123',
+          manifestVersion: CURRENT_MANIFEST_VERSION,
+        },
+      });
+      const originalState = fs.readFileSync(statePath, 'utf8');
+
+      for (const env of [
+        { OPENCODE_CONFIG_DIR: targetRoot, XDG_CONFIG_HOME: externalRoot },
+        { OPENCODE_CONFIG_DIR: '', XDG_CONFIG_HOME: externalRoot },
+      ]) {
+        const result = run([], { cwd: projectRoot, homeDir, env });
+        assert.strictEqual(result.code, 0, result.stderr);
+        assert.ok(result.stdout.includes('No ECC install-state files found'), result.stdout);
+        assert.strictEqual(fs.readFileSync(managedPath, 'utf8'), content);
+        assert.strictEqual(fs.readFileSync(statePath, 'utf8'), originalState);
+      }
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+      cleanup(externalRoot);
     }
   })) passed++; else failed++;
 
