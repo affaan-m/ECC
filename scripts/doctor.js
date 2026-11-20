@@ -1,7 +1,18 @@
 #!/usr/bin/env node
 
 const os = require('os');
-const { buildDoctorReport } = require('./lib/install-lifecycle');
+const { describeMissingDependencyError } = require('./lib/missing-dependency');
+let buildDoctorReport;
+try {
+  ({ buildDoctorReport } = require('./lib/install-lifecycle'));
+} catch (error) {
+  const guidance = describeMissingDependencyError(error);
+  if (guidance) {
+    console.error(guidance);
+    process.exit(1);
+  }
+  throw error;
+}
 const { SUPPORTED_INSTALL_TARGETS } = require('./lib/install-manifests');
 const { problemReportLines } = require('./lib/feedback-links');
 

@@ -9,7 +9,7 @@ const path = require('path');
 // straight from package.json's "dependencies" field instead of a second
 // hardcoded copy, so this can't silently drift out of sync with what's
 // actually declared there.
-const TRACKED_DEPENDENCIES = ['ajv', 'sql.js', 'js-yaml', '@iarna/toml'];
+const TRACKED_DEPENDENCIES = ['ajv', 'sql.js', 'js-yaml', '@iarna/toml', 'zod', '@opencode-ai/plugin'];
 
 function loadRuntimeDependencyVersions() {
   try {
