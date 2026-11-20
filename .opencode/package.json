@@ -57,13 +57,13 @@
     "access": "public"
   },
   "dependencies": {
+    "@opencode-ai/plugin": "^1.4.3",
     "zod": "4.6.7"
   },
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.0.0"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "^1.4.3",
     "@types/node": "^20.0.0",
     "typescript": "^5.7.0"
   },
