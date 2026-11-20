@@ -330,5 +330,33 @@ test('real git: createGitRunner drives an actual repo (covers default spawn path
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('primary worktree on non-base branch is main and merge-tree strips prose (#4064)', () => {
+  const git = fakeGit('/repo/sub', {
+    'worktree list --porcelain -z': {
+      stdout: [
+        'worktree /repo', 'HEAD a', 'branch refs/heads/topic-on-root', '',
+        'worktree /repo/.wt/conflict', 'HEAD b', 'branch refs/heads/feat-conflict', ''
+      ].join('\0')
+    },
+    'log -1 --format=%ct topic-on-root': { stdout: '1700000000\n' },
+    'rev-list --left-right --count main...feat-conflict': { stdout: '1\t1\n' },
+    'log -1 --format=%ct feat-conflict': { stdout: '1700000000\n' },
+    'merge-tree --write-tree --name-only main feat-conflict': {
+      status: 1,
+      stdout: [
+        '0123456789012345678901234567890123456789',
+        'app.js',
+        '',
+        'Auto-merging app.js',
+        'CONFLICT (content): Merge conflict in app.js',
+      ].join('\n'),
+    },
+  });
+  const report = buildLifecycleReport('/repo/sub', { baseBranch: 'main', nowMs: NOW }, { git });
+  assert.strictEqual(report.worktrees[0].state, STATES.MAIN);
+  assert.strictEqual(planCleanup(report).remove.length, 0);
+  assert.deepStrictEqual(report.conflictQueue[0].conflictFiles, ['app.js']);
+});
+
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
 if (failed > 0) process.exit(1);
