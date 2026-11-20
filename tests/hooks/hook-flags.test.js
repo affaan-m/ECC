@@ -603,6 +603,25 @@ function runTests() {
     });
   })) passed++; else failed++;
 
+  if (test('honors pluginConfigs.ecc@ecc.options.hooks_enabled=false in settings.json (#3756)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-plugin-flags-'));
+    try {
+      fs.writeFileSync(path.join(tmp, 'settings.json'), JSON.stringify({
+        pluginConfigs: { 'ecc@ecc': { options: { hooks_enabled: false, hook_profile: 'minimal' } } },
+      }));
+      withEnv({
+        CLAUDE_CONFIG_DIR: tmp,
+        ECC_HOOKS_ENABLED: undefined,
+        CLAUDE_PLUGIN_OPTION_HOOKS_ENABLED: undefined,
+        ECC_HOOK_CONFIG: path.join(tmp, 'missing-setup.json'),
+      }, () => {
+        assert.strictEqual(areHooksEnabled(), false);
+      });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }
