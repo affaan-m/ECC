@@ -144,6 +144,47 @@ test('saving a session summary containing colons produces valid quoted YAML fron
   assert.ok(parsedName.includes('Fix: reconnect #42'));
 });
 
+test('ck migrate keeps numbered next steps, parses CRLF CONTEXT.md, and protects unreadable context.json (#3983)', home => {
+  const project = path.join(home, 'app');
+  fs.mkdirSync(project);
+  const contextDir = path.join(home, '.claude', 'ck', 'contexts', 'app');
+  fs.mkdirSync(contextDir, { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude', 'ck', 'projects.json'), JSON.stringify({
+    [project]: { name: 'app', contextDir: 'app', lastUpdated: '2026-01-10' },
+  }));
+  const crlfMd = [
+    '# Project: app',
+    '',
+    '## What This Is',
+    'Notes CLI',
+    '',
+    '## Next Steps',
+    '1. Add parser',
+    '10. Add tests',
+    '',
+  ].join('\r\n');
+  fs.writeFileSync(path.join(contextDir, 'CONTEXT.md'), crlfMd);
+
+  const okRes = run(home, project, 'migrate.mjs');
+  assert.strictEqual(okRes.status, 0, okRes.stdout + okRes.stderr);
+  const migrated = JSON.parse(fs.readFileSync(path.join(contextDir, 'context.json'), 'utf8'));
+  assert.strictEqual(migrated.description, 'Notes CLI');
+  assert.deepStrictEqual(migrated.sessions[0].nextSteps, ['Add parser', 'Add tests']);
+
+  const brokenDir = path.join(home, '.claude', 'ck', 'contexts', 'broken');
+  const brokenProj = path.join(home, 'broken');
+  fs.mkdirSync(brokenDir, { recursive: true });
+  fs.mkdirSync(brokenProj);
+  fs.writeFileSync(path.join(home, '.claude', 'ck', 'projects.json'), JSON.stringify({
+    [brokenProj]: { name: 'broken', contextDir: 'broken', lastUpdated: '2026-01-10' },
+  }));
+  fs.writeFileSync(path.join(brokenDir, 'context.json'), '{broken json');
+  fs.writeFileSync(path.join(brokenDir, 'CONTEXT.md'), '# Project: broken\n');
+  const errRes = run(home, brokenProj, 'migrate.mjs');
+  assert.strictEqual(errRes.status, 1);
+  assert.strictEqual(fs.readFileSync(path.join(brokenDir, 'context.json'), 'utf8'), '{broken json');
+});
+
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);
 process.exit(failed > 0 ? 1 : 0);
