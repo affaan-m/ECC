@@ -13,8 +13,15 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+const { normalizeUiFeedbackItem, uiChatLineFor } = require('../ui-canvas/feedback');
+const { sanitizeAgentDescriptor } = require('./agent-identity');
+
 const FEEDBACK_KINDS = new Set(['chat', 'annotation', 'verdict']);
 const VERDICTS = new Set(['approve', 'request-changes']);
+// A session renders either as a Plan Canvas review (markdown or HTML with the
+// annotation layer) or as a UI Canvas editing surface (HTML mockup with the
+// in-page editor). Both share one server, one state file, and one queue.
+const SESSION_MODES = new Set(['plan', 'ui']);
 
 // The producer and the SessionStart/Stop hooks must land on one directory. The
 // hooks resolve CLAUDE_CONFIG_DIR (they cannot require this file: managed
@@ -138,7 +145,7 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
   // Open (or resume) a session. A session the *user* ended from the browser
   // is sticky: it refuses a plain reopen so agents do not pop the browser
   // back up uninvited. Pass reopen:true only when the human asked.
-  function open(filePath, { reopen = false } = {}) {
+  function open(filePath, { reopen = false, mode = 'plan', ui = null } = {}) {
     const canonical = canonicalizeArtifactPath(filePath);
     const key = sessionKeyFor(canonical);
     const existing = state.sessions[key];
@@ -152,6 +159,12 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
       pendingFeedback: [],
       createdAt: nowIso()
     };
+    session.mode = SESSION_MODES.has(mode) ? mode : 'plan';
+    if (session.mode === 'ui') {
+      session.ui = sanitizeUiOptions(ui, existing && existing.ui);
+    } else {
+      delete session.ui;
+    }
     session.status = 'open';
     delete session.endedBy;
     session.updatedAt = nowIso();
@@ -160,21 +173,36 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     return { session, refused: false };
   }
 
+  // Record which agent process is (or was last) listening on a session so the
+  // browser can name it. Kept in state so a reconnecting browser sees it too.
+  function setAgent(key, descriptor) {
+    const session = get(key);
+    if (!session) return null;
+    const agent = sanitizeAgentDescriptor(descriptor);
+    if (!agent) return session.agent || null;
+    agent.seenAt = nowIso();
+    session.agent = agent;
+    persist();
+    return agent;
+  }
+
   // Queue feedback from the browser. Chat-shaped items are mirrored into the
   // session transcript immediately so the conversation panel stays coherent
   // across reloads.
   function queueFeedback(key, rawItems, { endSession = false } = {}) {
     const session = get(key);
     if (!session || session.status === 'ended') return null;
+    const normalize = session.mode === 'ui' ? normalizeUiFeedbackItem : normalizeFeedbackItem;
+    const describe = session.mode === 'ui' ? uiChatLineFor : chatLineFor;
     const accepted = [];
     for (const raw of Array.isArray(rawItems) ? rawItems : []) {
       state.feedbackCounter += 1;
-      const item = normalizeFeedbackItem(raw, state.feedbackCounter);
+      const item = normalize(raw, state.feedbackCounter);
       if (item) accepted.push(item);
     }
     session.pendingFeedback.push(...accepted);
     for (const item of accepted) {
-      session.chat.push({ role: 'user', kind: item.kind, text: chatLineFor(item), at: item.at });
+      session.chat.push({ role: 'user', kind: item.kind, text: describe(item), at: item.at });
     }
     if (endSession) {
       session.status = 'ended';
@@ -237,9 +265,11 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     return Object.values(state.sessions).map(session => ({
       key: session.key,
       file: session.file,
+      mode: session.mode || 'plan',
       status: session.status,
       endedBy: session.endedBy,
       pending: session.pendingFeedback.length,
+      agent: session.agent || null,
       updatedAt: session.updatedAt
     }));
   }
@@ -257,10 +287,24 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     queueFeedback,
     takeFeedback,
     addAgentReply,
+    setAgent,
     end,
     list,
     hasOpenSessions
   };
+}
+
+// UI Canvas options travel with the session so a reconnecting browser opens
+// on the viewport the agent asked for. Unknown presets fall back to desktop.
+function sanitizeUiOptions(raw, previous) {
+  const base = previous && typeof previous === 'object' ? { ...previous } : {};
+  const input = raw && typeof raw === 'object' ? raw : {};
+  const out = { viewport: base.viewport || 'desktop', title: base.title || '' };
+  if (typeof input.viewport === 'string' && /^(mobile|desktop|custom|\d{2,5}x\d{2,5})$/.test(input.viewport.trim())) {
+    out.viewport = input.viewport.trim();
+  }
+  if (typeof input.title === 'string' && input.title.trim()) out.title = sanitizeText(input.title.trim(), 120);
+  return out;
 }
 
 // One-line rendering of a feedback item for the conversation transcript.
@@ -277,9 +321,11 @@ function chatLineFor(item) {
 }
 
 module.exports = {
+  SESSION_MODES,
   canonicalizeArtifactPath,
   createSessionStore,
   normalizeFeedbackItem,
   resolveStateDir,
+  sanitizeUiOptions,
   sessionKeyFor
 };

@@ -10,11 +10,12 @@
  * same runtime without that check, so observe.sh runs those when they exist.
  *
  * Stand-in aliases and launchers are shell scripts that log which one ran and
- * the CLV2_PYTHON_CMD observe.sh exported for detect-project.sh. A `disabled`
- * file in the homunculus dir makes observe.sh exit right after its first
- * Python call, so nothing else in the hook runs. One test leaves the hook
- * enabled so it reaches detect-project.sh, whose project-id hash call the
- * stand-ins mark as `detect-project`.
+ * the CLV2_PYTHON_CMD observe.sh exported for detect-project.sh. observe.sh
+ * reads cwd and agent_id from the payload in its first Python call and exits
+ * right after it for a subagent, so the stand-ins answer that call with an
+ * agent id and nothing else in the hook runs. One test answers without an
+ * agent id so the hook reaches detect-project.sh, whose project-id hash call
+ * the stand-ins mark as `detect-project`.
  *
  * Run with: node tests/hooks/clv2-pymanager-launcher.test.js
  */
@@ -91,7 +92,7 @@ function makeTree({ enabled = false } = {}) {
   for (const dir of [dirs.alias, dirs.launcher, dirs.regular, dirs.project, dirs.tools, dirs.home]) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  if (!enabled) fs.writeFileSync(path.join(dirs.home, 'disabled'), '');
+  dirs.agentId = enabled ? '' : 'stand-in-subagent';
   return dirs;
 }
 
@@ -100,7 +101,7 @@ function makeTree({ enabled = false } = {}) {
 function writePython(dir, name, label) {
   fs.writeFileSync(
     path.join(dir, name),
-    `#!/bin/sh\necho "${label}|$CLV2_PYTHON_CMD\${_CLV2_HASH_INPUT:+|detect-project}" >> "$T_LOG"\ncase "$2" in *cwd*) [ -n "$T_PROJECT" ] && printf '%s\\n' "$T_PROJECT" ;; esac\n[ -n "\${_CLV2_HASH_INPUT:-}" ] && printf '0123456789ab\\n'\n`,
+    `#!/bin/sh\necho "${label}|$CLV2_PYTHON_CMD\${_CLV2_HASH_INPUT:+|detect-project}" >> "$T_LOG"\ncase "$2" in *agent_id*) printf '%s\\nfalse\\n%s.' "$T_AGENT_ID" "$T_PROJECT" ;; esac\n[ -n "\${_CLV2_HASH_INPUT:-}" ] && printf '0123456789ab\\n'\n`,
     { mode: 0o755 }
   );
 }
@@ -113,6 +114,7 @@ function run(dirs, pathDirs, env = {}, { checkStatus = true } = {}) {
   baseEnv.CLAUDE_CODE_ENTRYPOINT = 'cli';
   baseEnv.LOCALAPPDATA = dirs.local;
   baseEnv.T_INPUT = JSON.stringify({ cwd: '' });
+  baseEnv.T_AGENT_ID = dirs.agentId;
   const merged = { ...baseEnv, ...env };
   for (const [key, value] of Object.entries(merged)) {
     if (value === undefined) delete merged[key];

@@ -11,22 +11,27 @@
 
 const crypto = require('crypto');
 
-function canonicalize(value) {
+function canonicalize(value, holderKey = '') {
+  // Follow JSON.stringify: a Date (or any toJSON value) is hashed as the JSON
+  // it serializes to, not as its own enumerable keys, which are none.
+  if (value !== null && typeof value === 'object' && typeof value.toJSON === 'function') {
+    value = value.toJSON(holderKey);
+  }
   if (value === null || typeof value !== 'object') {
     return value;
   }
   if (Array.isArray(value)) {
-    return value.map(canonicalize);
+    return value.map((item, index) => canonicalize(item, String(index)));
   }
   const out = {};
   for (const key of Object.keys(value).sort()) {
-    const item = value[key];
+    const item = canonicalize(value[key], key);
     if (item === undefined) {
       continue;
     }
     // Generic JSON keys are data, including __proto__; never invoke a setter.
     Object.defineProperty(out, key, {
-      value: canonicalize(item), enumerable: true, writable: true, configurable: true,
+      value: item, enumerable: true, writable: true, configurable: true,
     });
   }
   return out;

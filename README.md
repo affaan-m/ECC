@@ -142,13 +142,13 @@ Instead of rebuilding that process in every prompt, you install it once and make
 
 ECC is MIT-licensed open source. It works best with Claude Code today, has native Codex and Qoder plugin paths, and provides capability-limited adapters for Cursor, OpenCode, Gemini, Zed, GitHub Copilot, Antigravity, Qwen, and other harnesses. See the [support status matrix](#platform-support) before assuming feature parity.
 
-Access to 72 agents, 328 skills, and 99 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
+Access to 72 agents, 329 skills, and 100 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
 
 | Included         |       Count | What it gives you                                                                    |
 | ---------------- | ----------: | ------------------------------------------------------------------------------------ |
 | Agents           |   72 agents | Planning, review, build repair, security, architecture, and domain work              |
-| Skills           |  328 skills | TDD, research, security, docs, frontend, data, ML, operations, and more              |
-| Commands         | 99 commands | Convenient entry points while ECC moves to a skills-first surface                    |
+| Skills           |  329 skills | TDD, research, security, docs, frontend, data, ML, operations, and more              |
+| Commands         | 100 commands | Convenient entry points while ECC moves to a skills-first surface                    |
 | Hooks and memory |     Runtime | Enforcement, session summaries, continuous learning, instincts, and context controls |
 | Rules            |   Selective | Always-loaded standards you choose by language or project                            |
 | AgentShield      |    Included | Scanning for prompts, hooks, MCP config, permissions, secrets, and agent files       |
@@ -864,8 +864,8 @@ Stable graduation of the 2.0 line: control-pane substrate, worktree lifecycle se
 ```text
 ECC/
 |-- agents/           # 72 specialized subagents for delegation
-|-- skills/           # 328 reusable workflows loaded on demand
-|-- commands/         # 99 maintained slash-command shims
+|-- skills/           # 329 reusable workflows loaded on demand
+|-- commands/         # 100 maintained slash-command shims
 |-- rules/            # opt-in common and language standards
 |-- hooks/            # runtime automation and enforcement
 |-- scripts/          # install, repair, sync, orchestration, and checks
@@ -1340,6 +1340,15 @@ Treat `stable`, `beta`, `experimental`, and `instruction-only` below as capabili
 | GitHub Copilot Chat | Instruction-only | Checked-in instructions and prompt files | ECC hooks are not adapted. |
 | GitHub Copilot CLI | Beta project adapter | `--target copilot` places skills, adapted agents, and converted rules in `.github/` | ECC hooks and command shims are not installed by this target. |
 | Gemini, Zed, Qwen, Hermes, OpenClaw, Kimi, Mistral Vibe, CodeBuddy, JoyCode | Experimental/minimal adapters | Harness-specific selective target | File placement and instruction portability are tested; full Claude feature parity is not claimed. |
+
+The additional Antigravity CLI bridge and plugin metadata are experimental. Its manifest-command and
+agent-transform fixtures pass locally; native loader and lifecycle acceptance remain pending. Enabled
+bridge calls require complete JSON and an explicit `workspacePaths` context containing the hook working
+directory; unbound, incomplete, or invalid safety calls deny instead of guessing. The bootstrap reads at
+most 1 MiB and accepts up to 32 absolute workspace roots. Existing project/global installers retain their
+owned hook and MCP configuration. CLI-specific agent tool names
+require explicit `ANTIGRAVITY_RUNTIME=cli`; the default project tool mapping remains unchanged. Unsupported
+editor search, fetch, and subagent capabilities are omitted instead of mapped to broader tools.
 
 <details>
 <summary><strong>Package manager detection</strong></summary>

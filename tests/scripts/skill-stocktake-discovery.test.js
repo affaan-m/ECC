@@ -258,6 +258,64 @@ if (process.platform !== 'win32') {
       }
     });
 
+    test('scan rejects truncated observations instead of reporting unavailable usage', () => {
+      const brokenObservations = path.join(tempRoot, 'truncated-observations.jsonl');
+      fs.writeFileSync(brokenObservations, `${JSON.stringify({
+        tool: 'Read', path: path.join(globalSkills, 'active', 'SKILL.md'),
+        timestamp: new Date().toISOString(),
+      })}\n{"tool":`);
+      const result = runBash(scanScript, [], { ...env, SKILL_STOCKTAKE_OBSERVATIONS: brokenObservations });
+      assert.notStrictEqual(result.status, 0, 'A partial observation log must fail visibly');
+      assert.strictEqual(result.stdout, '', 'A failed scan must not publish incomplete inventory');
+      assert.match(result.stderr, /observation|parse error/i);
+    });
+
+    test('scan counts literal backslashes in skill paths without interpreting escape sequences', () => {
+      const skillsDir = path.join(tempRoot, 'backslash-skills');
+      const skillDir = path.join(skillsDir, String.raw`literal\tname\nending`);
+      writeSkill(skillDir, 'backslash-skill');
+      const skillPath = path.join(skillDir, 'SKILL.md');
+      const observationsPath = path.join(tempRoot, 'backslash-observations.jsonl');
+      const observations = [0, 1, 10, 40].map(days => ({
+        tool: 'Read',
+        path: skillPath,
+        timestamp: new Date(Date.now() - days * 86400000).toISOString(),
+      }));
+      fs.writeFileSync(observationsPath, `${observations.map(record => JSON.stringify(record)).join('\n')}\n`);
+      const result = runBash(scanScript, [], {
+        SKILL_STOCKTAKE_GLOBAL_DIR: path.join(tempRoot, 'missing-global'),
+        SKILL_STOCKTAKE_PROJECT_DIR: skillsDir,
+        SKILL_STOCKTAKE_OBSERVATIONS: observationsPath,
+      });
+      assert.strictEqual(result.status, 0, result.stderr);
+      const skills = JSON.parse(result.stdout).skills;
+      assert.strictEqual(skills.length, 1);
+      assert.strictEqual(skills[0].path, skillPath);
+      assert.strictEqual(skills[0].use_7d, 2);
+      assert.strictEqual(skills[0].use_30d, 3);
+    });
+
+    test('scan does not count a newline-delimited path fragment as an observed skill', () => {
+      const skillPath = path.join(globalSkills, 'active', 'SKILL.md');
+      // This is one real file outside the inventory. Its newline is immediately
+      // followed by the complete path of a different, unobserved tracked skill.
+      const unrelatedPath = `${tempRoot}/unrelated\n${skillPath}`;
+      fs.mkdirSync(path.dirname(unrelatedPath), { recursive: true });
+      fs.writeFileSync(unrelatedPath, '# unrelated file\n');
+      const observationsPath = path.join(tempRoot, 'newline-fragment-observations.jsonl');
+      fs.writeFileSync(observationsPath, `${JSON.stringify({
+        tool: 'Read', path: unrelatedPath, timestamp: new Date().toISOString(),
+      })}\n`);
+      assert.notStrictEqual(unrelatedPath, skillPath);
+      assert.ok(fs.statSync(unrelatedPath).isFile());
+      const result = runBash(scanScript, [], { ...env, SKILL_STOCKTAKE_OBSERVATIONS: observationsPath });
+      assert.strictEqual(result.status, 0, result.stderr);
+      const skill = JSON.parse(result.stdout).skills.find(entry => entry.path === skillPath);
+      assert.ok(skill, 'the unobserved skill must remain in the inventory');
+      assert.strictEqual(skill.use_7d, 0);
+      assert.strictEqual(skill.use_30d, 0);
+    });
+
     test('scan preserves exact usage counts and date windows for normal and whitespace paths', () => {
       const observationsPath = path.join(tempRoot, 'matching-observations.jsonl');
       const observedPaths = [path.join(linkedSkill, 'SKILL.md'),

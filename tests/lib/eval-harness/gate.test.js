@@ -2,6 +2,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const gate = require('../../../scripts/lib/eval-harness/gate');
 const { test, tempDir, cleanup, finish } = require('./helpers');
 const example = path.resolve(__dirname,'../../../examples/eval-harness');
@@ -13,6 +14,35 @@ test('directory digests are stable and distinguish baseline from candidate',()=>
   assert.equal(gate.digestDir(candidate),gate.digestDir(candidate));
   assert.notEqual(gate.digestDir(candidate),gate.digestDir(baseline));
   assert.match(gate.digestDir(candidate),/^[0-9a-f]{64}$/);
+});
+test('directory digests frame file contents, so NUL bytes cannot merge or split files',()=>{
+  const root=tempDir('gate-digest-framing');
+  try {
+    const merged=path.join(root,'merged');const split=path.join(root,'split');
+    fs.mkdirSync(merged);fs.mkdirSync(split);
+    fs.writeFileSync(path.join(merged,'a'),'x\0b\0y');
+    fs.writeFileSync(path.join(split,'a'),'x');fs.writeFileSync(path.join(split,'b'),'y');
+    assert.notEqual(gate.digestDir(merged),gate.digestDir(split));
+    const empty=path.join(root,'empty');const nul=path.join(root,'nul');
+    fs.mkdirSync(empty);fs.mkdirSync(nul);
+    fs.writeFileSync(path.join(empty,'a'),'');fs.writeFileSync(path.join(nul,'a'),'\0');
+    assert.notEqual(gate.digestDir(empty),gate.digestDir(nul));
+  } finally {cleanup(root);}
+});
+test('directory digests order entries by UTF-16 code unit, independent of the host locale',()=>{
+  const root=tempDir('gate-digest-locale');
+  try {
+    for (const name of ['a.js','B.js','z.js','ä.js','_x.js','-x.js']) fs.writeFileSync(path.join(root,name),name);
+    fs.mkdirSync(path.join(root,'a'));fs.writeFileSync(path.join(root,'a','b.js'),'nested');
+    const digestUnder=locale=>{
+      const child=spawnSync(process.execPath,['-e',`process.stdout.write(require(${JSON.stringify(require.resolve('../../../scripts/lib/eval-harness/gate'))}).digestDir(${JSON.stringify(root)}))`],
+        {encoding:'utf8',env:{...process.env,LC_ALL:locale,LANG:locale}});
+      assert.equal(child.status,0,child.stderr);
+      return child.stdout;
+    };
+    const reference=gate.digestDir(root);
+    for (const locale of ['en_US.UTF-8','sv_SE.UTF-8','tr_TR.UTF-8','C']) assert.equal(digestUnder(locale),reference,locale);
+  } finally {cleanup(root);}
 });
 test('variant and taskset inspection remains available without execution',()=>{
   const v=gate.loadVariant(candidate);const t=gate.loadTaskset(taskset);

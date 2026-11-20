@@ -22,7 +22,12 @@ function readFileTail(filePath, tailBytes, options = {}) {
     }
 
     const buffer = Buffer.alloc(length);
-    const bytesRead = fs.readSync(fd, buffer, 0, length, start);
+    let bytesRead = 0;
+    while (bytesRead < length) {
+      const count = fs.readSync(fd, buffer, bytesRead, length - bytesRead, start + bytesRead);
+      if (count === 0) break;
+      bytesRead += count;
+    }
     return {
       text: buffer.toString('utf8', 0, bytesRead),
       truncated: start > 0,

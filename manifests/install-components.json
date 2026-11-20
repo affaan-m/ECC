@@ -781,6 +781,14 @@
       "modules": [
         "documentation-test-regression"
       ]
+    },
+    {
+      "id": "skill:ui-canvas",
+      "family": "skill",
+      "description": "Browser preview canvas for UI component mockups: the human moves, resizes, edits, restyles, tests across viewports, and hands the edited design back.",
+      "modules": [
+        "workflow-quality"
+      ]
     }
   ]
 }

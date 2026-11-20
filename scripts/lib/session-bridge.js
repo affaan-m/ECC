@@ -12,6 +12,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { writeFileAtomic } = require('./atomic-write');
 
 const MAX_SESSION_ID_LENGTH = 64;
 
@@ -46,6 +47,31 @@ function readBridge(sessionId) {
   try {
     const raw = fs.readFileSync(getBridgePath(sessionId), 'utf8');
     return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function contextObservationPath(sessionId) {
+  return path.join(os.tmpdir(), `ecc-metrics-${sessionId}.context.json`);
+}
+
+function isContextPercentage(remaining) {
+  return Number.isFinite(remaining) && remaining >= 0 && remaining <= 100;
+}
+
+// The statusline owns context observations. Publishing them independently
+// prevents stale statusline snapshots from replacing newer tool metrics.
+function writeContextObservation(sessionId, remaining) {
+  if (!isContextPercentage(remaining)) return;
+  writeFileAtomic(contextObservationPath(sessionId), JSON.stringify({ remaining, observedAt: Date.now() }));
+}
+
+function readContextObservation(sessionId) {
+  try {
+    const observation = JSON.parse(fs.readFileSync(contextObservationPath(sessionId), 'utf8'));
+    if (!isContextPercentage(observation?.remaining) || !Number.isFinite(observation?.observedAt)) return null;
+    return observation;
   } catch {
     return null;
   }
@@ -142,6 +168,8 @@ module.exports = {
   getBridgePath,
   readBridge,
   writeBridgeAtomic,
+  writeContextObservation,
+  readContextObservation,
   renameWithRetry,
   resolveSessionId,
   MAX_SESSION_ID_LENGTH
