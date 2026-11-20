@@ -345,11 +345,6 @@ function findDynamicGitBypassFlag(words, budget, start) {
     if (commitOptionContainsInlineValue(value)) continue;
     if (optionConsumesNextValue(value, PUSH_OPTIONS_WITH_VALUE)) { skipNext = true; continue; }
     if (isNoVerifyLongFlag(value)) return true;
-    if (/^-n\d+$/.test(value)) continue;
-    if (value === '-n' && words[index + 1] && /^\d+$/.test(words[index + 1].value)) {
-      skipNext = true;
-      continue;
-    }
     if (isCommitNoVerifyShortFlag(value)) return true;
   }
   return false;
@@ -439,6 +434,7 @@ const SUDO_VALUE_OPTIONS = new Set(['-u', '--user', '-g', '--group', '-h', '--ho
 const SUDO_FLAG_OPTIONS = new Set(['-n', '-E', '-H', '-S', '-k', '-K', '-b']);
 const SHELL_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*\+?=/;
 const GIT_ENV_NAME = /^GIT_CONFIG_(?:COUNT|PARAMETERS|(?:KEY|VALUE)_[0-9]+)$/;
+const SHELL_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 function isEnvSplitFlag(flag) {
   return flag === '-S' || flag === '--split-string'
@@ -483,24 +479,26 @@ function executableWords(words, budget, inherited = new Map(), callerValues = in
     const equals = value.indexOf('=');
     const append = !environmentAssignments && value[equals - 1] === '+';
     const key = value.slice(0, append ? equals - 1 : equals);
-    if (GIT_ENV_NAME.test(key)) {
+    if (SHELL_IDENTIFIER.test(key)) {
       const operand = value.slice(equals + 1);
       const count = environments.length;
       budget.spend(count + 1);
-      for (let n = 0; n < count; n++) {
-        const environment = environments[n];
-        // Shell prefix appends can see local values, even when not exported.
-        // Repeated operands use the prior outcome in this same prefix.
-        const prior = prefixAssignments.has(key) && environment.has(key)
-          ? environment.get(key) : callerValues.get(key);
-        const values = assignmentValues(prior, operand, append, dynamic, budget);
-        for (const alternative of values.slice(1)) {
-          budget.spend(environment.size + 1);
-          const variant = new Map(environment);
-          variant.set(key, alternative);
-          environments.push(variant);
+      if (GIT_ENV_NAME.test(key)) {
+        for (let n = 0; n < count; n++) {
+          const environment = environments[n];
+          // Shell prefix appends can see local values, even when not exported.
+          // Repeated operands use the prior outcome in this same prefix.
+          const prior = prefixAssignments.has(key) && environment.has(key)
+            ? environment.get(key) : callerValues.get(key);
+          const values = assignmentValues(prior, operand, append, dynamic, budget);
+          for (const alternative of values.slice(1)) {
+            budget.spend(environment.size + 1);
+            const variant = new Map(environment);
+            variant.set(key, alternative);
+            environments.push(variant);
+          }
+          environment.set(key, values[0]);
         }
-        environment.set(key, values[0]);
       }
       // Retain ordered operations so same-shell states apply each append once.
       if (!prefixAssignments.has(key)) prefixAssignments.set(key, []);
@@ -1250,7 +1248,7 @@ function updateShellState(state, normalized, budget) {
     const equals = value.indexOf('=');
     const append = equals > 0 && value[equals - 1] === '+';
     const key = equals < 0 ? value : value.slice(0, append ? equals - 1 : equals);
-    if (!GIT_ENV_NAME.test(key)) continue;
+    if (!SHELL_IDENTIFIER.test(key)) continue;
     changed = true;
     if (name !== 'unset' && equals >= 0) assign(key, value.slice(equals + 1), words[i].dynamic, append);
     budget.spend(states.length + 1);
@@ -1315,23 +1313,22 @@ function applyDeclaration(current, key, equals, declaration) {
   if (readonly || uncertain) current.readonly.add(key);
 }
 
-// Variable-fed execution: when a shell or eval executes non-literal expansion text,
-// inspect the surrounding command context for git commit or git push bypasses.
-function checkSurroundingContextForBypass(text, budget) {
-  if (!text) return null;
-  budget.spend(text.length + 1);
-  const hasCommit = /\bgit(?:\.exe)?\b[\s\S]*?\bcommit\b/i.test(text);
-  const hasPush = /\bgit(?:\.exe)?\b[\s\S]*?\bpush\b/i.test(text);
-  if (!hasCommit && !hasPush) return null;
+const PARAMETER_EXPANSION = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g;
 
-  const command = hasCommit ? 'commit' : 'push';
-  if (/core\.hookspath/i.test(text) || /include(?:if)?\..*?path/i.test(text)) {
-    return `BLOCKED: Overriding core.hooksPath is not allowed with git ${command}. Git hooks must not be bypassed.`;
-  }
-  if (/--no-v(?:erify)?\b/i.test(text) || /(?:^|[\s"'])-[a-zA-Z]*n[a-zA-Z]*(?:$|[\s"'])/i.test(text)) {
-    return `BLOCKED: --no-verify flag is not allowed with git ${command}. Git hooks must not be bypassed.`;
-  }
-  return null;
+function resolveShellSource(code, state, normalized, budget) {
+  if (!code || typeof code !== 'string') return code;
+  return code.replace(PARAMETER_EXPANSION, (match, braced, bare) => {
+    const name = braced || bare;
+    budget.spend(name.length + 1);
+    if (normalized?.prefixAssignments?.has(name)) {
+      const ops = normalized.prefixAssignments.get(name);
+      return ops[ops.length - 1]?.value ?? match;
+    }
+    if (state?.variables?.has(name)) {
+      return state.variables.get(name);
+    }
+    return match;
+  });
 }
 
 function checkCommand(input) {
@@ -1403,7 +1400,7 @@ function checkCommand(input) {
   }
   // Inspect one command under one literal environment. Returns a block reason
   // or null, and records any child source text the command would execute.
-  function inspectEnvironment(frame, role, normalized, environment) {
+  function inspectEnvironment(frame, role, normalized, environment, state) {
     const { task, command } = frame;
     const { words } = normalized;
     const reason = task.opaque || role.kind === 'opaque'
@@ -1411,12 +1408,11 @@ function checkCommand(input) {
       : role.kind === 'git' ? checkGitWords(words, budget, 0, environment) : null;
     if (reason) return reason;
     if (role.code) {
-      if (role.dynamic) {
-        const surroundingReason = checkSurroundingContextForBypass(task.text, budget);
-        if (surroundingReason) return surroundingReason;
-      }
-      if (normalized.local && words[0]?.value === 'eval') frame.sameShellCode = role.code;
-      else frame.childEnvironments.push({ code: role.code, opaque: false, environment });
+      const code = role.dynamic
+        ? resolveShellSource(role.code, state, normalized, budget)
+        : role.code;
+      if (normalized.local && words[0]?.value === 'eval') frame.sameShellCode = code;
+      else frame.childEnvironments.push({ code, opaque: false, environment });
     }
     if (role.kind === 'sedExec') {
       // Fragments sed will hand to the shell are scanned as real shell
@@ -1452,7 +1448,7 @@ function checkCommand(input) {
     const role = commandRole(words, budget);
     budget.spend(environments.length + 1);
     for (const environment of environments) {
-      const reason = inspectEnvironment(frame, role, normalized, environment);
+      const reason = inspectEnvironment(frame, role, normalized, environment, state);
       if (reason) return reason;
     }
     return null;

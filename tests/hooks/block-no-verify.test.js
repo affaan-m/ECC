@@ -2426,14 +2426,22 @@ if (test('blocks clustered -an on dynamic Git subcommand (git $SUB -an)', () => 
   assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git \$SUB/);
 })) passed++; else failed++;
 
-if (test('allows numeric -n limit on dynamic Git subcommand (git $SUB -n5)', () => {
+if (test('blocks numeric -n limit on dynamic Git subcommand (git $SUB -n5)', () => {
   const r = runHook({ tool_input: { command: 'git $SUB -n5' } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git \$SUB/);
 })) passed++; else failed++;
 
-if (test('allows numeric separate -n limit on dynamic Git subcommand (git $SUB -n 5)', () => {
+if (test('blocks numeric separate -n limit on dynamic Git subcommand (git $SUB -n 5)', () => {
   const r = runHook({ tool_input: { command: 'git $SUB -n 5' } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git \$SUB/);
+})) passed++; else failed++;
+
+if (test('blocks dynamic Git subcommand with -n and numeric file argument (SUBCMD=commit; git "$SUBCMD" -n 5 -m bypass-proof)', () => {
+  const r = runHook({ tool_input: { command: 'SUBCMD=commit; git "$SUBCMD" -n 5 -m bypass-proof' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git \$SUBCMD/);
 })) passed++; else failed++;
 
 if (test('allows benign dynamic Git subcommand without bypass flag (git $SUB status)', () => {
@@ -2483,7 +2491,7 @@ if (test('blocks --no-verify smuggled via variable on git push through sh -c "$V
 })) passed++; else failed++;
 
 if (test('blocks core.hooksPath override smuggled via variable through bash -c "$VAR"', () => {
-  const r = runHook({ tool_input: { command: 'X=\'git commit -c core.hooksPath=/dev/null -m x\'; bash -c "$X"' } });
+  const r = runHook({ tool_input: { command: 'X=\'git -c core.hooksPath=/dev/null commit -m x\'; bash -c "$X"' } });
   assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
   assert.match(r.stderr, /BLOCKED: Overriding core.hooksPath is not allowed with git commit/);
 })) passed++; else failed++;
@@ -2495,6 +2503,16 @@ if (test('allows variable assignment not executed by shell (MSG=\'discuss --no-v
 
 if (test('allows bash -c with literal safe code even when variable defined (X=\'git commit --no-verify -m x\'; bash -c \'printf safe\')', () => {
   const r = runHook({ tool_input: { command: "X='git commit --no-verify -m x'; bash -c 'printf safe'" } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('allows bash -c with safe dynamic variable even when unrelated git commit text printed', () => {
+  const r = runHook({ tool_input: { command: "SAFE='printf safe'; printf '%s' 'git commit --no-verify'; bash -c \"$SAFE\"" } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('allows bash -c when variable is overwritten with safe value', () => {
+  const r = runHook({ tool_input: { command: "X='git commit --no-verify'; X='echo safe'; bash -c \"$X\"" } });
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
