@@ -607,6 +607,15 @@ else
     "$SANITY_CHECKER"
 fi
 
+cleanup_stale_codex_staging() {
+  local staging_dir="$CODEX_HOME/.tmp/marketplaces/.staging"
+  if [[ "$MODE" == "apply" && -d "$staging_dir" ]]; then
+    find "$staging_dir" -maxdepth 1 -mindepth 1 -type d -name 'marketplace-upgrade-*' -mtime +0 -exec rm -rf {} + 2>/dev/null || true
+  fi
+}
+
+cleanup_stale_codex_staging
+
 log "Sync complete"
 log "Backup saved at: $BACKUP_DIR"
 log "Prompts generated: $((prompt_count + extension_count)) (commands: $prompt_count, extensions: $extension_count)"
