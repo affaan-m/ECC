@@ -24,3 +24,5 @@ or an external link waits for Affaan's explicit yes, recorded before merge.
 The living desk plan is `docs/PLAN.md` in `Ito-Markets/ito-desk`; task
 schemas and the spec book live under `docs/spec/` in the same repo. This
 file only describes the relationship; the plan repo is the source of truth.
+
+See `scripts/lib/ito-rental-preview.js` for read-only, no-quote parameter normalization before canonical `ecc ito find`.
