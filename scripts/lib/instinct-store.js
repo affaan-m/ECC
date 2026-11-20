@@ -27,8 +27,9 @@ const NEVER_TOKEN_RE = /\b(?:never|do not|don't|dont)\s+([A-Za-z0-9_-]+(?:\s+(?!
 const NEVER_TOKEN_STOPWORDS = new Set([
   ...MATCH_STOPWORDS,
   'a', 'an', 'any', 'be', 'call', 'do', 'ever', 'get', 'have', 'include',
-  'let', 'make', 'put', 'set', 'use', 'write',
+  'let', 'make', 'nor', 'or', 'put', 'set', 'use', 'write',
 ]);
+const QUOTE_JOIN_CONJUNCTIONS = new Set(['and', 'or', 'nor']);
 // Words that open an introductory context before a prohibition: in "When
 // editing `helpers.js` never use `fooWidget`" only `fooWidget` is forbidden.
 const CONTEXT_OPENER_RE = /^\s*(?:when|whenever|if|while|before|after|during|unless|once)\b/i;
@@ -340,12 +341,27 @@ function extractNeverTokens(text) {
   NEVER_TOKEN_RE.lastIndex = 0;
   let match;
   while ((match = NEVER_TOKEN_RE.exec(source)) !== null) {
-    // Words right before a quoted span only introduce it ("NEVER run
-    // `git reset --hard`"); the quoted span is what is forbidden, and it is
-    // matched as a quoted identifier.
-    if (/^\s*["'`]/.test(source.slice(match.index + match[0].length))) continue;
-    const token = match[1].split(/\s+/)
-      .find((word) => !NEVER_TOKEN_STOPWORDS.has(word.toLowerCase()));
+    const words = match[1].split(/\s+/);
+    // Words right before a quoted span usually introduce it ("NEVER run
+    // `git reset --hard`"); keep a word only when a conjunction separates a
+    // distinct unquoted ban item from the quote ("NEVER foo or `barWidget`").
+    if (/^\s*["'`]/.test(source.slice(match.index + match[0].length))) {
+      let conjIndex = -1;
+      for (let i = words.length - 1; i >= 0; i--) {
+        if (QUOTE_JOIN_CONJUNCTIONS.has(words[i].toLowerCase())) {
+          conjIndex = i;
+          break;
+        }
+      }
+      const separatedFromQuote = conjIndex > 0
+        && words.slice(conjIndex + 1).every(word => NEVER_TOKEN_STOPWORDS.has(word.toLowerCase()));
+      if (!separatedFromQuote) continue;
+      const token = words.slice(0, conjIndex)
+        .find(word => !NEVER_TOKEN_STOPWORDS.has(word.toLowerCase()));
+      if (token) tokens.push(token);
+      continue;
+    }
+    const token = words.find((word) => !NEVER_TOKEN_STOPWORDS.has(word.toLowerCase()));
     if (token) tokens.push(token);
   }
   return tokens;

@@ -472,6 +472,29 @@ async function runTests() {
     }
   })) passed++; else failed++;
 
+  if (await test('--check fails invalid JSON without echoing parse input', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-instinct-check-'));
+    const payloadPath = path.join(tempDir, 'payload.json');
+    const marker = 'PRIVATE_MARKER_NOT_JSON';
+    try {
+      fs.writeFileSync(payloadPath, marker);
+      const result = spawnSync(process.execPath, [hookScript, '--check', payloadPath], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          CLV2_HOMUNCULUS_DIR: tempDir,
+        },
+      });
+      assert.strictEqual(result.status, 1);
+      assert.strictEqual(result.stdout, '');
+      assert.ok(result.stderr.includes('[instinct-enforce] --check invalid JSON:'));
+      assert.ok(!result.stdout.includes(marker) && !result.stderr.includes(marker));
+      assert.ok(!result.stdout.includes(marker.slice(0, 10)) && !result.stderr.includes(marker.slice(0, 10)));
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   const canDenyRead = process.platform !== 'win32'
     && !(typeof process.getuid === 'function' && process.getuid() === 0);
   if (canDenyRead) {

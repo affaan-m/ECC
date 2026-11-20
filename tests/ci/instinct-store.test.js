@@ -391,6 +391,63 @@ function runTests() {
     assert.strictEqual(instinctMatchKind(instinct, { command: 'git reset --hard' }), 'prohibition');
   })) passed++; else failed++;
 
+  if (test('instinctMatchKind keeps unquoted names in mixed bans without matching intro verbs', () => {
+    const { instinctMatchKind } = loadStore();
+    const mixedOr = {
+      id: 'no-foo-or-barwidget',
+      confidence: 0.91,
+      trigger: 'when naming widgets',
+      content: 'NEVER foo or `barWidget` prefixes',
+    };
+    assert.strictEqual(instinctMatchKind(mixedOr, { command: 'fooWidget()' }), 'prohibition');
+    assert.strictEqual(instinctMatchKind(mixedOr, { command: 'barWidget()' }), 'prohibition');
+    assert.strictEqual(instinctMatchKind(mixedOr, { command: 'echo or' }), null);
+
+    const mixedAnd = {
+      id: 'no-foo-and-barwidget',
+      confidence: 0.91,
+      trigger: 'when naming widgets',
+      content: 'NEVER use foo and `barWidget` prefixes',
+    };
+    assert.strictEqual(instinctMatchKind(mixedAnd, { command: 'fooWidget()' }), 'prohibition');
+    assert.strictEqual(instinctMatchKind(mixedAnd, { command: 'barWidget()' }), 'prohibition');
+    assert.strictEqual(instinctMatchKind(mixedAnd, { command: 'echo and' }), null);
+
+    const mixedNor = {
+      id: 'no-foo-nor-barwidget',
+      confidence: 0.91,
+      trigger: 'when naming widgets',
+      content: 'NEVER foo nor `barWidget` prefixes',
+    };
+    assert.strictEqual(instinctMatchKind(mixedNor, { command: 'fooWidget()' }), 'prohibition');
+    assert.strictEqual(instinctMatchKind(mixedNor, { command: 'echo nor' }), null);
+
+    const mixedComma = {
+      id: 'no-foo-comma-barwidget',
+      confidence: 0.91,
+      trigger: 'when naming widgets',
+      content: 'NEVER foo, `barWidget` prefixes',
+    };
+    assert.strictEqual(instinctMatchKind(mixedComma, { command: 'fooWidget()' }), 'prohibition');
+    assert.strictEqual(instinctMatchKind(mixedComma, { command: 'barWidget()' }), 'prohibition');
+
+    const runVerb = {
+      id: 'no-git-reset-hard',
+      confidence: 0.91,
+      trigger: 'when running git commands',
+      content: 'NEVER run `git reset --hard`',
+    };
+    assert.strictEqual(instinctMatchKind(runVerb, { command: 'npm run build' }), null);
+
+    const useVerb = {
+      id: 'no-foowidget',
+      confidence: 0.91,
+      trigger: 'when writing helpers',
+      content: 'NEVER use `fooWidget`',
+    };
+    assert.strictEqual(instinctMatchKind(useVerb, { command: 'echo user' }), null);
+  })) passed++; else failed++;
+
   if (test('instinctMatchKind does not forbid the name an instinct recommends', () => {
     const { instinctMatchKind } = loadStore();
     const instinct = {

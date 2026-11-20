@@ -245,8 +245,8 @@ async function runCheck(filePath) {
   let data;
   try {
     data = JSON.parse(raw);
-  } catch (error) {
-    process.stderr.write(`[instinct-enforce] --check invalid JSON: ${error.message}\n`);
+  } catch {
+    process.stderr.write('[instinct-enforce] --check invalid JSON: file is not valid JSON\n');
     process.exitCode = 1;
     return;
   }
