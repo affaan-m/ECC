@@ -55,11 +55,13 @@ function extractConversationText(transcriptPath) {
   }
 
   const lines = content.split('\n').filter(Boolean);
-  const turns = [];
+  let turns = [];
 
-  for (const line of lines) {
+  // Older records cannot change a summary once its most recent turns are full.
+  for (let index = lines.length - 1; index >= 0 && turns.length < MAX_TURNS; index--) {
+    let entryTurns = [];
     try {
-      const entry = JSON.parse(line);
+      const entry = JSON.parse(lines[index]);
       const isUser = entry.type === 'user' || entry.message?.role === 'user';
       const isAssistant = entry.type === 'assistant';
 
@@ -76,7 +78,7 @@ function extractConversationText(transcriptPath) {
               : '';
         const cleaned = text.replace(/\n+/g, ' ').trim();
         if (cleaned && !isClassifierNotice(cleaned)) {
-          turns.push({ role: 'User', text: cleaned.slice(0, 400) });
+          entryTurns = [...entryTurns, { role: 'User', text: cleaned.slice(0, 400) }];
         }
       }
 
@@ -88,12 +90,13 @@ function extractConversationText(transcriptPath) {
           .replace(/\n+/g, ' ')
           .trim();
         if (textParts) {
-          turns.push({ role: 'Claude', text: textParts.slice(0, 600) });
+          entryTurns = [...entryTurns, { role: 'Claude', text: textParts.slice(0, 600) }];
         }
       }
     } catch {
       // Skip unparseable lines
     }
+    turns = [...entryTurns, ...turns];
   }
 
   if (turns.length === 0) return null;

@@ -69,12 +69,31 @@ test('a tampered index or exhausted budget fails open to no suggestion', () => f
   assert.match(result.stderr, /integrity|index/);
 }));
 
-test('the hook runs through run-with-flags and returns its text on stdout', () => fixture(({ env }) => {
+function controlledWrapper(env) {
   const wrapper = path.join(__dirname, '../../scripts/hooks/run-with-flags.js');
-  const result = spawnSync(process.execPath, [wrapper, 'user-prompt:context-suggestions', 'scripts/hooks/context-prompt-suggestions.js'],
-    { input: PROMPT, encoding: 'utf8', env: { PATH: process.env.PATH, ...env }, timeout: 30000 });
-  assert.equal(result.status, 0);
-  assert.match(result.stdout, /skill:feature/);
+  const clock = path.join(__dirname, '../lib/helpers/context-suggestion-clock.js');
+  const result = spawnSync(process.execPath, ['--require', clock, wrapper,
+    'user-prompt:context-suggestions', 'scripts/hooks/context-prompt-suggestions.js'],
+  { input: PROMPT, encoding: 'utf8', env: { PATH: process.env.PATH,
+    HOME: path.dirname(env.ECC_CONTEXT_STATE_ROOT), USERPROFILE: path.dirname(env.ECC_CONTEXT_STATE_ROOT),
+    ECC_HOOK_PROFILE: 'standard', ECC_HOOKS_ENABLED: 'true', ECC_DISABLED_HOOKS: '', ...env }, timeout: 30000 });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /routing load consumed 200ms/);
+  return result;
+}
+
+test('the wrapper returns suggestions within an explicitly configured budget', () => fixture(({ env }) => {
+  // Account for a deterministic 200ms cold routing load without relying on
+  // host scheduling. This positive case explicitly opts into the supported max.
+  const result = controlledWrapper({ ...env, ECC_CONTEXT_SUGGEST_BUDGET_MS: '1000' });
+  assert.match(result.stdout, /skill:feature/, result.stderr);
+}));
+
+test('the wrapper stays silent when cold loading exhausts its budget', () => fixture(({ env }) => {
+  // The same work exceeds the unchanged 150ms default. Zero remains fail-open.
+  assert.equal(controlledWrapper(env).stdout, '');
+  assert.equal(controlledWrapper({ ...env, ECC_CONTEXT_SUGGEST_BUDGET_MS: '0' }).stdout, '');
 }));
 
 test('the session-start builder indexes the current generation once and stays silent when disabled', () => {

@@ -1,0 +1,7 @@
+interface:
+  display_name: "UI Canvas"
+  short_description: "Hand-edit a UI mockup in the browser, then build it"
+  brand_color: "#E26A9E"
+  default_prompt: "Use $ui-canvas to preview a UI component mockup in the browser so the human can resize, move, restyle, and approve it before you build it."
+policy:
+  allow_implicit_invocation: true

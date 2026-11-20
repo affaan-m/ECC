@@ -66,7 +66,7 @@ export async function createUser(input: unknown) {
     return await db.users.create(validated)
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return { success: false, errors: error.errors }
+      return { success: false, errors: error.issues }
     }
     throw error
   }
@@ -123,12 +123,19 @@ const { data } = await supabase
   .select('*')
   .eq('email', userEmail)
 
-// Or with raw SQL
+// Or with raw SQL -- the value goes in the params array, never in the
+// string. Use your driver's placeholder syntax (Postgres numbers its
+// placeholders, MySQL uses "?").
 await db.query(
-  'SELECT * FROM users WHERE email = $1',
+  'SELECT * FROM users WHERE email = ?',
   [userEmail]
 )
 ```
+
+<!-- Do not write a literal dollar-sign-N placeholder anywhere in this file.
+     Invoking this skill with arguments substitutes it away, and the example
+     above then renders as concatenated SQL -- the exact anti-pattern this
+     section warns against. Use "?" and name the Postgres form in prose. -->
 
 #### Verification Steps
 - [ ] All database queries use parameterized queries
@@ -208,6 +215,11 @@ function renderUserContent(html: string) {
 ```
 
 #### Content Security Policy
+
+Start strict and loosen only with a documented removal plan. Do not default to
+`'unsafe-inline'` or `'unsafe-eval'`; they neutralize much of CSP's protection
+and should be treated as temporary compatibility debt.
+
 ```typescript
 // next.config.js
 const securityHeaders = [
@@ -215,8 +227,11 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: `
       default-src 'self';
-      script-src 'self' 'unsafe-eval' 'unsafe-inline';
-      style-src 'self' 'unsafe-inline';
+      base-uri 'self';
+      object-src 'none';
+      frame-ancestors 'none';
+      script-src 'self';
+      style-src 'self';
       img-src 'self' data: https:;
       font-src 'self';
       connect-src 'self' https://api.example.com;
