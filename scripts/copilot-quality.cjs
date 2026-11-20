@@ -13,7 +13,7 @@ const MAX_FORMATTER_OUTPUT = 2 * 1024 * 1024;
 const FORMATS = new Set(['.js', '.jsx', '.ts', '.tsx', '.json', '.md']);
 const PACKAGE_NAMES = { prettier: 'prettier', biome: '@biomejs/biome' };
 const PRETTIER_CONFIGS = [
-  '.editorconfig', '.prettierignore', '.prettierrc', 'package.yaml',
+  '.editorconfig', '.prettierignore', '.prettierrc',
   ...['json', 'json5', 'yaml', 'yml', 'toml', 'js', 'mjs', 'cjs', 'ts', 'mts', 'cts'].flatMap(extension => [
     '.prettierrc.' + extension, 'prettier.config.' + extension,
   ]),
@@ -137,9 +137,11 @@ function projectConfig(root, file) {
   let directory = path.dirname(file);
   let biome = false;
   let prettier = false;
+  let packageYaml = false;
   while (true) {
     biome ||= ['biome.json', 'biome.jsonc'].some(name => exists(path.join(directory, name)));
     prettier ||= PRETTIER_CONFIGS.some(name => exists(path.join(directory, name)));
+    packageYaml ||= exists(path.join(directory, 'package.yaml'));
     const manifest = path.join(directory, 'package.json');
     if (!prettier && exists(manifest)) {
       try {
@@ -148,7 +150,7 @@ function projectConfig(root, file) {
         prettier = true;
       }
     }
-    if (directory === root) return { biome, prettier };
+    if (directory === root) return { biome, prettier: prettier || packageYaml, allowBiomeFallback: !prettier };
     directory = path.dirname(directory);
   }
 }
@@ -313,7 +315,7 @@ function main(args) {
     const settings = projectConfig(root, file);
     formatter = extension !== '.md' && settings.biome ? 'biome' : 'prettier';
     let bin = formatterBin(root, formatter);
-    if (!bin && formatter === 'prettier' && extension !== '.md' && !settings.prettier) {
+    if (!bin && formatter === 'prettier' && extension !== '.md' && settings.allowBiomeFallback) {
       bin = formatterBin(root, 'biome');
       if (bin) formatter = 'biome';
     }

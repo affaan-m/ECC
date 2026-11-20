@@ -240,8 +240,22 @@ function verifyInstalledQuality(root, packageRoot, env) {
   }
 
   fs.writeFileSync(path.join(biomeProject, file), 'const x=1;\n');
-  fs.writeFileSync(path.join(biomeProject, 'biome.json'), '{"formatter":{"indentWidth":4}}\n');
   formatterFixture(biomeProject, 'biome', path.join(biomeProject, file), { pnpm: true });
+  const biomeYaml = path.join(biomeProject, 'package.yaml');
+  fs.writeFileSync(biomeYaml, 'name: example\n');
+  const fallback = invoke(['--file', file], 1, biomeProject);
+  assert.equal(fallback.formatter, 'biome');
+  assert.equal(fallback.reason, 'formatting-difference');
+  assert.equal(fallback.projectConfig, 'none-detected');
+  fs.writeFileSync(biomeYaml, 'prettier:\n  semi: false\n');
+  assert.equal(invoke(['--file', file], 1, biomeProject).formatter, 'biome');
+  const prettierConfig = path.join(biomeProject, '.prettierrc.json');
+  fs.writeFileSync(prettierConfig, '{"semi":false}\n');
+  assert.equal(invoke(['--file', file], 2, biomeProject).reason, 'formatter-not-installed');
+  fs.unlinkSync(prettierConfig);
+  fs.unlinkSync(biomeYaml);
+
+  fs.writeFileSync(path.join(biomeProject, 'biome.json'), '{"formatter":{"indentWidth":4}}\n');
   assert.equal(invoke(['--file', file], 2, biomeProject).reason, 'project-config-present');
   const biomeFixed = invoke(['--file', file, '--defaults', '--fix'], 0, biomeProject);
   assert.equal(biomeFixed.formatter, 'biome');

@@ -17,7 +17,7 @@ Check JavaScript, JSX, TypeScript, TSX, JSON, or Markdown one file at a time. Ma
 
 The JSON result identifies the formatter and reports coverage as formatter defaults. If the launcher detects configuration for that formatter, including ordinary config files in the project or an applicable Prettier setting in package.json, it stops with project-config-present. Run the repository's own formatter to apply those settings. Add --defaults to explicitly bypass the detected settings when a built-in defaults check is useful.
 
-The launcher treats any applicable `package.yaml` as potential Prettier configuration, including when the manifest has no `prettier` key. It requires `--defaults` to run Prettier without consulting that manifest.
+The launcher treats any applicable `package.yaml` as potential configuration when Prettier is selected and requires `--defaults` to run it. The manifest alone still allows the Biome fallback for supported formats when Prettier is absent. The fallback uses Biome's defaults and does not apply Prettier settings from `package.yaml`.
 
 A check leaves the file alone. Add --fix only when you want to replace it with successful formatter output. The result reports fixed: true only after it writes different bytes. Exit 0 means the file matched or was fixed, exit 1 indicates a formatting difference or formatter failure, and exit 2 means that the launcher could not perform the check. Read the JSON reason for a nonzero exit.
 
