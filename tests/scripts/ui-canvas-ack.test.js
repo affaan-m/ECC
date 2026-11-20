@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
+const { EventEmitter } = require('node:events');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { createSessionStore } = require('../../scripts/lib/plan-canvas/sessions');
@@ -18,23 +19,34 @@ async function test(name, run) {
   catch (error) { failed++; console.log(`FAIL ${name}: ${error.stack}`); }
 }
 const edit = id => ({ id, kind: 'nudge', selector: `#${id}`, dx: 1, dy: 0 });
-async function fixture(run) {
+async function fixture(run, serverOptions = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ui-ack-'));
   const file = path.join(directory, 'card.html');
   fs.writeFileSync(file, '<html><body>original</body></html>');
   const store = createSessionStore({ stateDir: path.join(directory, 'state') });
   const { session } = store.open(file, { mode: 'ui' });
-  let server = createPlanCanvasServer({ store });
+  let server = createPlanCanvasServer({ ...serverOptions, store });
   let { port } = await server.listen(0);
-  function request(method, suffix, body) {
+  function request(method, suffix, body, onResponse) {
     return new Promise((resolve, reject) => {
       const payload = body ? JSON.stringify(body) : null;
       const req = http.request({ host: '127.0.0.1', port, method, path: suffix.startsWith('/') ? suffix : `/api/session/${session.key}/${suffix}`, headers: payload ? { 'content-type': 'application/json' } : {} }, response => {
+        if (onResponse) onResponse(response.statusCode);
         let text = ''; response.on('data', chunk => { text += chunk; });
         response.on('end', () => { let body; try { body = JSON.parse(text); } catch { body = text; } resolve({ status: response.statusCode, body }); });
       });
       req.on('error', reject); if (payload) req.end(payload); else req.end();
     });
+  }
+  function parkAwait() {
+    let resolveReady;
+    let rejectReady;
+    const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+    // The server flushes headers/whitespace and registers its wake listeners
+    // in the same synchronous turn, before the client can receive a response.
+    const result = request('GET', `/api/await?key=${session.key}&timeoutMs=1000`, undefined, resolveReady);
+    result.catch(rejectReady);
+    return { ready, result };
   }
   async function apply(edits, html, bakedEditIds = []) {
     const response = await request('POST', 'feedback', { items: [{ kind: 'edits', edits, html, bakedEditIds }] });
@@ -51,10 +63,10 @@ async function fixture(run) {
   async function restart() {
     await server.close();
     const reopened = createSessionStore({ stateDir: path.join(directory, 'state') });
-    server = createPlanCanvasServer({ store: reopened }); ({ port } = await server.listen(0));
+    server = createPlanCanvasServer({ ...serverOptions, store: reopened }); ({ port } = await server.listen(0));
     return reopened.get(session.key);
   }
-  try { await run({ store, getSession: () => store.get(session.key), file, directory, port, request, apply, loseResponse, restart }); }
+  try { await run({ store, getSession: () => store.get(session.key), file, directory, port, request, parkAwait, apply, loseResponse, restart }); }
   finally { await server.close(); fs.rmSync(directory, { recursive: true, force: true }); }
 }
 
@@ -230,41 +242,64 @@ async function main() {
     assert.equal(received.body.status, 'feedback'); assert.equal(received.body.items.length, 1);
     assert.equal((await request('GET', `/api/await?key=${getSession().key}&timeoutMs=1`)).body.status, 'waiting');
   }));
-  await test('postcommit drain failure cannot turn durable acceptance into a rejection', () => fixture(async ({ getSession, store, directory, request }) => {
-    const parked = request('GET', `/api/await?key=${getSession().key}&timeoutMs=1000`);
-    await new Promise(resolve => setTimeout(resolve, 20));
+  await test('postcommit drain failure cannot turn durable acceptance into a rejection', () => fixture(async ({ getSession, store, directory, request, parkAwait }) => {
+    const parked = parkAwait();
+    assert.equal(await parked.ready, 200);
     const original = store.queueFeedback; const obstacle = path.join(directory, 'state', 'sessions.json.tmp');
     store.queueFeedback = (...args) => { const result = original(...args); fs.mkdirSync(obstacle); return result; };
     const body = { deliveryId: 'e'.repeat(32), items: [{ kind: 'edits', edits: [edit('a')], html: '<html>accepted before wake fault</html>' }] };
     const accepted = await request('POST', 'feedback', body);
     assert.equal(accepted.status, 200); assert.deepEqual(accepted.body.acceptedEditIds, ['a']);
-    assert.equal((await parked).body.status, 'waiting'); assert.equal(getSession().pendingFeedback.length, 1);
+    assert.equal((await parked.result).body.status, 'waiting'); assert.equal(getSession().pendingFeedback.length, 1);
     store.queueFeedback = original; fs.rmdirSync(obstacle);
     const retry = await request('POST', 'feedback', body);
     assert.equal(retry.status, 200); assert.equal(getSession().uiBatches.length, 1); assert.equal(getSession().chat.length, 1);
     assert.equal((await request('GET', `/api/await?key=${getSession().key}&timeoutMs=1`)).body.items.length, 1);
   }));
-  await test('immediate long-poll drain returns a fresh receipt and pending count', () => fixture(async ({ getSession, request }) => {
-    const parked = request('GET', `/api/await?key=${getSession().key}&timeoutMs=1000`);
-    await new Promise(resolve => setTimeout(resolve, 20));
+  await test('immediate long-poll drain returns a fresh receipt and pending count', () => fixture(async ({ getSession, request, parkAwait }) => {
+    const parked = parkAwait();
+    assert.equal(await parked.ready, 200);
     const body = { deliveryId: 'f'.repeat(32), items: [{ kind: 'edits', edits: [edit('a')], html: '<html>fresh receipt</html>' }] };
     const result = await request('POST', 'feedback', body);
     assert.equal(result.status, 200); assert.deepEqual(result.body.acceptedEditIds, ['a']);
-    assert.equal((await parked).body.items.length, 1);
+    assert.equal((await parked.result).body.items.length, 1);
     assert.equal(result.body.pending, 0); assert.equal(getSession().pendingFeedback.length, 0);
     assert.equal((await request('POST', 'feedback', body)).body.pending, 0);
     assert.equal(getSession().uiBatches.length, 1);
   }));
-  await test('artifact watcher acknowledges batches from the latest replacement session', () => fixture(async ({ getSession, file, request, apply }) => {
-    assert.equal((await request('POST', '/api/sessions', { file, mode: 'ui' })).status, 200);
-    const html = '<html><body>watcher observes accepted snapshot</body></html>';
-    const id = await apply([edit('a')], html);
-    fs.writeFileSync(file, html);
-    const deadline = Date.now() + 2000;
-    while (getSession().uiBatches.length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
-    assert.deepEqual(getSession().uiBatches, []);
-    assert.deepEqual(getSession().uiAcknowledged.map(batch => batch.id), [id]);
-  }));
+  await test('registered watcher callback reads the latest session and durably acknowledges its snapshot', async () => {
+    let registeredCallback;
+    let watchedDirectory;
+    let closed = false;
+    class CallbackWatcher extends EventEmitter { close() { closed = true; } }
+    const watch = (directory, callback) => {
+      watchedDirectory = directory;
+      registeredCallback = callback;
+      return new CallbackWatcher();
+    };
+    await fixture(async ({ getSession, file, directory, request, apply }) => {
+      assert.equal((await request('POST', '/api/sessions', { file, mode: 'ui' })).status, 200);
+      assert.equal(typeof registeredCallback, 'function');
+      assert.equal(watchedDirectory, path.dirname(getSession().file));
+      const html = '<html><body>watcher observes accepted snapshot</body></html>';
+      const id = await apply([edit('a')], html);
+      fs.writeFileSync(file, html);
+      // Callback-state evidence, independent of platform watch startup.
+      // The default native watch workflow is verified separately.
+      registeredCallback('change', path.basename(file));
+      const deadline = Date.now() + 2000;
+      while (getSession().uiBatches.length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+      assert.deepEqual(getSession().uiBatches, []);
+      assert.deepEqual(getSession().uiAcknowledged.map(batch => batch.id), [id]);
+      const durable = createSessionStore({ stateDir: path.join(directory, 'state') }).get(getSession().key);
+      assert.deepEqual(durable.uiBatches, []);
+      assert.deepEqual(durable.uiAcknowledged.map(batch => batch.id), [id]);
+      const artifact = await request('GET', `/artifact/${getSession().key}/`);
+      assert.equal(artifact.status, 200);
+      assert.match(artifact.body, /watcher observes accepted snapshot/);
+    }, { watch });
+    assert.equal(closed, true, 'server.close must release the registered watcher');
+  });
   await test('delivery tokens are validated, session scoped, and cannot bypass explicit End', () => fixture(async ({ getSession, store, directory, request }) => {
     const item = { kind: 'edits', edits: [edit('a')], html: '<html>one</html>' }; const before = fs.readdirSync(directory).sort();
     for (const deliveryId of [null, '', 'a'.repeat(31), 'A'.repeat(32), {}, 3]) {

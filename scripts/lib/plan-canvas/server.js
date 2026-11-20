@@ -244,6 +244,7 @@ function createPlanCanvasServer({
   typingExpiryMs = DEFAULT_TYPING_EXPIRY_MS,
   presenceSweepMs = DEFAULT_PRESENCE_SWEEP_MS,
   onIdleShutdown = null,
+  watch = fs.watch,
   log = () => {}
 } = {}) {
   if (!store) throw new Error('createPlanCanvasServer requires a session store');
@@ -396,7 +397,7 @@ function createPlanCanvasServer({
     const base = path.basename(session.file);
     let debounce = null;
     try {
-      const watcher = fs.watch(dir, (eventType, filename) => {
+      const watcher = watch(dir, (eventType, filename) => {
         if (filename && filename !== base) return;
         clearTimeout(debounce);
         debounce = setTimeout(() => {
