@@ -13,7 +13,7 @@ const MAX_FORMATTER_OUTPUT = 2 * 1024 * 1024;
 const FORMATS = new Set(['.js', '.jsx', '.ts', '.tsx', '.json', '.md']);
 const PACKAGE_NAMES = { prettier: 'prettier', biome: '@biomejs/biome' };
 const PRETTIER_CONFIGS = [
-  '.editorconfig', '.prettierignore', '.prettierrc',
+  '.editorconfig', '.prettierignore', '.prettierrc', 'package.yaml',
   ...['json', 'json5', 'yaml', 'yml', 'toml', 'js', 'mjs', 'cjs', 'ts', 'mts', 'cts'].flatMap(extension => [
     '.prettierrc.' + extension, 'prettier.config.' + extension,
   ]),
@@ -40,10 +40,14 @@ function parseArgs(args) {
   return result;
 }
 
+function hasPathControlCharacter(value) {
+  return Array.from(value).some(character => character.charCodeAt(0) < 0x20);
+}
+
 function relativeParts(filename, reason) {
   if (path.posix.isAbsolute(filename) || path.win32.isAbsolute(filename)) fail(reason);
   const parts = filename.split(/[\\/]/);
-  if (parts.some(part => !part || part === '.' || part === '..' || /[<>:"|?*\u0000-\u001f]|[. ]$/.test(part)
+  if (parts.some(part => !part || part === '.' || part === '..' || /[<>:"|?*]|[. ]$/.test(part) || hasPathControlCharacter(part)
       || /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i.test(part))) {
     fail(reason);
   }

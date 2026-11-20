@@ -185,6 +185,16 @@ function verifyInstalledQuality(root, packageRoot, env) {
   assert.equal(fs.readFileSync(retained, 'utf8'), 'fixture moved source directory');
   assert.deepEqual(fs.readdirSync(path.dirname(retained)), ['retained.js']);
 
+  const yamlManifest = path.join(project, 'source directory', 'package.yaml');
+  fs.writeFileSync(yamlManifest, 'prettier:\n  semi: false\n');
+  fs.writeFileSync(retained, 'const x=1;\n');
+  assert.equal(invoke(['--file', nested, '--fix'], 2).reason, 'project-config-present');
+  assert.equal(fs.readFileSync(retained, 'utf8'), 'const x=1;\n');
+  assert.equal(invoke(['--file', nested, '--defaults'], 1).projectConfig, 'bypassed');
+  fs.writeFileSync(yamlManifest, 'name: example\n');
+  assert.equal(invoke(['--file', nested], 2).reason, 'project-config-present');
+  fs.unlinkSync(yamlManifest);
+
   fs.writeFileSync(target, 'const x=1;\n');
   fs.writeFileSync(path.join(project, '.prettierrc.cjs'), 'throw new Error("Never load fixture project config");\n');
   const blocked = invoke(['--file', file, '--fix'], 2);
@@ -195,6 +205,7 @@ function verifyInstalledQuality(root, packageRoot, env) {
   for (const input of ['../outside.js', path.resolve(target), '.']) {
     assert.equal(invoke(['--file', input], 2).fixed, false);
   }
+  assert.equal(invoke(['--file', 'source\tfile.js'], 2).reason, 'unsafe-file');
   const linkedDirectory = path.join(project, 'linked');
   const externalDirectory = path.join(root, 'existing linked destination');
   fs.mkdirSync(externalDirectory);
