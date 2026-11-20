@@ -1716,6 +1716,7 @@ function saveState(state) {
     let mergedCapAllows = getCapAllowCount(state);
     let mergedTrivialAllows = getTrivialAllowCount(state);
     let mergedReadonlyPasses = getRoutineReadonlyPassCount(state);
+    let mergedBatchDenials = getBatchDenials(state);
 
     try {
       if (fs.existsSync(stateFile)) {
@@ -1735,6 +1736,7 @@ function saveState(state) {
         mergedCapAllows = Math.max(mergedCapAllows, getCapAllowCount(diskState));
         mergedTrivialAllows = Math.max(mergedTrivialAllows, getTrivialAllowCount(diskState));
         mergedReadonlyPasses = Math.max(mergedReadonlyPasses, getRoutineReadonlyPassCount(diskState));
+        mergedBatchDenials = mergeBatchDenials(getBatchDenials(diskState), mergedBatchDenials);
       }
     } catch (_) {
       /* ignore malformed or transient disk state */
@@ -1751,7 +1753,8 @@ function saveState(state) {
       sibling_allows: mergedSiblingAllows,
       cap_allows: mergedCapAllows,
       trivial_allows: mergedTrivialAllows,
-      routine_readonly_passes: mergedReadonlyPasses
+      routine_readonly_passes: mergedReadonlyPasses,
+      batch_denials: capBatchDenials(mergedBatchDenials)
     };
 
     // Atomic write: temp file + rename prevents partial reads
@@ -1857,7 +1860,46 @@ function markCheckedWith(key, update) {
   return { ok: saveState(state), value };
 }
 
-function markCheckedAndCountDenial(key, { cls, dirGate, cap = Number.POSITIVE_INFINITY } = {}) {
+const MAX_BATCH_DENIALS = 50;
+
+function getBatchDenials(state) {
+  const raw = state && state.batch_denials;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return Object.create(null);
+  const out = Object.create(null);
+  for (const [k, v] of Object.entries(raw)) {
+    if (k && k !== '__proto__' && k !== 'constructor' && k !== 'prototype' && v && typeof v.batchId === 'string' && typeof v.at === 'number') {
+      out[k] = { batchId: v.batchId, at: v.at };
+    }
+  }
+  return out;
+}
+
+function mergeBatchDenials(older, newer) {
+  const merged = Object.assign(Object.create(null), older);
+  for (const [k, entry] of Object.entries(newer)) {
+    if (!Object.hasOwn(merged, k) || entry.at >= merged[k].at) merged[k] = entry;
+  }
+  return merged;
+}
+
+function capBatchDenials(map) {
+  const entries = Object.entries(map);
+  if (entries.length <= MAX_BATCH_DENIALS) return map;
+  const trimmed = Object.create(null);
+  for (const [k, v] of entries.sort((a, b) => b[1].at - a[1].at).slice(0, MAX_BATCH_DENIALS)) trimmed[k] = v;
+  return trimmed;
+}
+
+function matchingBatchDenial(ctx, keys) {
+  const denials = getBatchDenials(loadState());
+  const candidates = keys.filter(k => Object.hasOwn(denials, k));
+  if (candidates.length === 0) return null;
+  const batchId = turnScan().excludedBatchId(ctx.getTurnScan(), ctx.data);
+  if (!batchId) return null;
+  return candidates.some(k => denials[k].batchId === batchId) ? batchId : null;
+}
+
+function markCheckedAndCountDenial(key, { cls, dirGate, batchId, cap = Number.POSITIVE_INFINITY } = {}) {
   const { ok, value: denials } = markCheckedWith(key, state => {
     if (getDenialCount(state) >= cap) {
       return { state: { ...state, cap_allows: getCapAllowCount(state) + 1 }, value: null };
@@ -1869,6 +1911,9 @@ function markCheckedAndCountDenial(key, { cls, dirGate, cap = Number.POSITIVE_IN
       ...(cls ? { denials_by_class: incrementClassCount(getClassCounts(state, 'denials_by_class'), cls) } : {}),
       ...(dirGate
         ? { dir_gates: withEntry(getDirGates(state), dirGate.key, { turn: dirGate.turn || null, at: Date.now(), first: dirGate.first, ordinal }) }
+        : {}),
+      ...(batchId
+        ? { batch_denials: withEntry(getBatchDenials(state), key, { batchId, at: Date.now() }) }
         : {})
     };
     return { state: next, value: ordinal };
@@ -2561,6 +2606,23 @@ function gateSingleEdit(ctx) {
   const fileKey = canonicalPathKey(filePath, data);
   if (!isChecked([fileKey, filePath])) return firstTouchSingleEdit(ctx, filePath, fileKey);
 
+  if (matchingBatchDenial(ctx, [fileKey, filePath])) {
+    const cls = classifyTargetFor(filePath, data);
+    const { sensitive, linked, restricted } = allowanceFacts(filePath, data);
+    const profile = singleEditProfile(ctx, filePath, cls, restricted);
+    const denials = Math.max(1, getDenialCount(loadState()));
+    return firstTouchDenial(filePath, {
+      isWrite: toolName === 'Write',
+      denials,
+      cls,
+      sensitive,
+      linked,
+      profile,
+      miss: null,
+      reason: 'batch-sibling'
+    });
+  }
+
   recordDecision('pass-checked', 'checked', { target: filePath });
   return rawInput; // allow
 }
@@ -2613,7 +2675,8 @@ function firstTouchSingleEdit(ctx, filePath, fileKey) {
     return { additionalContext: siblingNote(sibling), exitCode: 0 };
   }
   const cap = restricted ? Number.POSITIVE_INFINITY : getMaxDenialBudget();
-  const { ok, denials } = markCheckedAndCountDenial(fileKey, { cls, dirGate, cap });
+  const batchId = turnScan().excludedBatchId(getTurnScan(), data);
+  const { ok, denials } = markCheckedAndCountDenial(fileKey, { cls, dirGate, batchId, cap });
   if (!ok) {
     return allowWithStateWarning();
   }
