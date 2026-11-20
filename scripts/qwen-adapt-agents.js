@@ -108,16 +108,68 @@ function formatToolLine(tools) {
   return `tools: ${tools.join(', ')}`;
 }
 
+function stripUnquotedYamlComment(value) {
+  let quote = null;
+  let escaped = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (quote === '"') {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') quote = null;
+      continue;
+    }
+    if (quote === "'") {
+      if (character === "'" && value[index + 1] === "'") index += 1;
+      else if (character === "'") quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === '#' && (index === 0 || /\s/.test(value[index - 1]))) {
+      return value.slice(0, index).trim();
+    }
+  }
+
+  return value.trim();
+}
+
+function unquoteYamlScalar(rawValue) {
+  if (
+    rawValue.length >= 2
+    && ((rawValue.startsWith('"') && rawValue.endsWith('"'))
+      || (rawValue.startsWith("'") && rawValue.endsWith("'")))
+  ) {
+    return rawValue.slice(1, -1);
+  }
+  return rawValue;
+}
+
+function adaptModel(line) {
+  const match = line.match(/^model\s*:\s*(.*)$/);
+  if (!match) {
+    return null;
+  }
+  const value = unquoteYamlScalar(stripUnquotedYamlComment(match[1]));
+  if (value === 'haiku' || value === 'sonnet' || value === 'opus') {
+    return { line: 'model: inherit', changed: true };
+  }
+  return null;
+}
+
 function adaptColor(line) {
   const trimmed = line.trimStart();
   const colon = trimmed.indexOf(':');
   if (colon < 0 || trimmed.slice(0, colon).trimEnd() !== 'color') {
     return null;
   }
-  const rawValue = trimmed.slice(colon + 1).trim();
+  const rawValue = stripUnquotedYamlComment(trimmed.slice(colon + 1));
   if (!rawValue) return null;
   const indent = line.slice(0, line.length - trimmed.length);
-  const value = rawValue.replace(/^["']|["']$/g, '');
+  const value = unquoteYamlScalar(rawValue);
   if (VALID_COLORS.has(value)) {
     return { line, changed: false };
   }
@@ -130,25 +182,85 @@ function adaptColor(line) {
   return { line: null, changed: true };
 }
 
-function adaptFrontmatter(text) {
-  // Normalize CRLF first. Matching only LF would silently skip a Windows-saved
-  // agent and report it as already compatible while `tools: Read` and
-  // `color: teal` stayed in place. The original ending style is restored below.
-  const usesCrlf = text.includes('\r\n');
-  const source = usesCrlf ? text.replace(/\r\n/g, '\n') : text;
+function advanceFlowBracketState(rawLine, state) {
+  for (let index = 0; index < rawLine.length; index += 1) {
+    const ch = rawLine[index];
+    if (state.quote === '"') {
+      if (state.escaped) state.escaped = false;
+      else if (ch === '\\') state.escaped = true;
+      else if (ch === '"') state.quote = null;
+      continue;
+    }
+    if (state.quote === "'") {
+      if (ch === "'" && rawLine[index + 1] === "'") index += 1;
+      else if (ch === "'") state.quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") state.quote = ch;
+    else if (ch === '#' && (index === 0 || /\s/.test(rawLine[index - 1]))) break;
+    else if (ch === '[') state.depth += 1;
+    else if (ch === ']') state.depth -= 1;
+  }
+}
 
-  const match = source.match(/^---\n([\s\S]*?)\n---(\n|$)/);
-  if (!match) {
-    return { text, changed: false };
+function findToolsBlockEnd(lines, startIndex) {
+  const line = lines[startIndex];
+  const afterColon = stripUnquotedYamlComment(line.slice(line.indexOf(':') + 1));
+  const valuePart = afterColon.replace(/^(?:(?:&|!)[^\s]+\s*)+/, '');
+
+  if (valuePart.startsWith('[')) {
+    const state = { depth: 0, quote: null, escaped: false };
+    advanceFlowBracketState(valuePart, state);
+    let end = startIndex;
+    while ((state.depth > 0 || state.quote !== null) && end + 1 < lines.length) {
+      end += 1;
+      advanceFlowBracketState(lines[end], state);
+    }
+    return end;
   }
 
-  const firstMappingLine = match[1].split('\n').find(line => line.trim() && !line.trimStart().startsWith('#'));
+  const allowIndentlessSequence = valuePart === '';
+  let lastToolLine = startIndex;
+  let lookahead = startIndex;
+  while (lookahead + 1 < lines.length) {
+    const nextLine = lines[lookahead + 1];
+    const isBlankOrComment = /^\s*(?:#|$)/.test(nextLine);
+    const isIndentedContent = /^[ \t]+[^#\s]/.test(nextLine);
+    const isSequenceItem = allowIndentlessSequence && /^-(?:\s|$)/.test(nextLine);
+    if (!isBlankOrComment && !isIndentedContent && !isSequenceItem) {
+      break;
+    }
+    lookahead += 1;
+    if (isIndentedContent || isSequenceItem) {
+      lastToolLine = lookahead;
+    }
+  }
+  return lastToolLine;
+}
+
+function buildAdaptedToolsLine(sourceTools) {
+  const adaptedTools = [];
+  const seen = new Set();
+
+  for (const tool of sourceTools.map(adaptToolName)) {
+    if (!tool || seen.has(tool)) {
+      continue;
+    }
+    seen.add(tool);
+    adaptedTools.push(tool);
+  }
+
+  return formatToolLine(adaptedTools);
+}
+
+function parseSourceTools(rawFrontmatter) {
+  const firstMappingLine = rawFrontmatter.split('\n').find(line => line.trim() && !line.trimStart().startsWith('#'));
   if (firstMappingLine && /^\s/.test(firstMappingLine)) {
     throw new Error('Unsupported indented Qwen agent frontmatter: use unindented root mapping keys');
   }
 
-  const frontmatter = yaml.load(match[1]);
-  const hasTools = frontmatter && Object.hasOwn(frontmatter, 'tools');
+  const frontmatter = yaml.load(rawFrontmatter);
+  const hasTools = Boolean(frontmatter && Object.hasOwn(frontmatter, 'tools'));
   const sourceTools = hasTools ? normalizeAgentTools(frontmatter.tools) : null;
   // Qwen 0.25.0 definition files interpret [] as inherit-all, unlike its
   // internal runtime ToolConfig. Reject rather than broaden source authority.
@@ -157,62 +269,60 @@ function adaptFrontmatter(text) {
     throw new Error('Unsupported empty tools allowlist: Qwen Code inherits all tools for an empty agent list; omit tools only when inheritance is intended');
   }
 
-  if (hasTools && !/^tools\s*:/m.test(match[1])) {
+  if (hasTools && !/^tools\s*:/m.test(rawFrontmatter)) {
     throw new Error('Unsupported Qwen tools key format: use an unquoted root tools key');
   }
 
+  return { hasTools, sourceTools };
+}
+
+function rewriteFrontmatterLines(lines, hasTools, sourceTools) {
   let changed = false;
   const updatedLines = [];
 
-  const lines = match[1].split('\n');
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    // Claude tiers are not Qwen provider IDs; inherit the configured session.
-    if (/^model:\s*["']?(haiku|sonnet|opus)["']?\s*$/.test(line)) {
-      updatedLines.push('model: inherit');
+    const model = adaptModel(line);
+    if (model) {
+      updatedLines.push(model.line);
       changed = true;
       continue;
     }
     const color = line === line.trimStart() ? adaptColor(line) : null;
     if (color) {
-      if (color.changed) {
-        changed = true;
-      }
-      if (color.line !== null) {
-        updatedLines.push(color.line);
-      }
+      if (color.changed) changed = true;
+      if (color.line !== null) updatedLines.push(color.line);
       continue;
     }
-
     if (/^tools\s*:/.test(line) && hasTools) {
-      // YAML permits sequence items at the same indentation as their key.
-      // Consume both list styles before publishing the native scalar.
-      while (index + 1 < lines.length
-        && /^(?:\s|#|$|-(?:\s|$))/.test(lines[index + 1])) {
-        index += 1;
+      const endIndex = findToolsBlockEnd(lines, index);
+      if (endIndex > index) {
+        index = endIndex;
         changed = true;
       }
-      const adaptedTools = [];
-      const seen = new Set();
-
-      for (const tool of sourceTools.map(adaptToolName)) {
-        if (!tool || seen.has(tool)) {
-          continue;
-        }
-        seen.add(tool);
-        adaptedTools.push(tool);
-      }
-
-      const updatedLine = formatToolLine(adaptedTools);
-      if (updatedLine !== line) {
-        changed = true;
-      }
+      const updatedLine = buildAdaptedToolsLine(sourceTools);
+      if (updatedLine !== line) changed = true;
       updatedLines.push(updatedLine);
       continue;
     }
-
     updatedLines.push(line);
   }
+
+  return { changed, updatedLines };
+}
+
+function adaptFrontmatter(text) {
+  const match = text.match(/^---(\r?\n)([\s\S]*?)\r?\n---(\r?\n|$)/);
+  if (!match) {
+    return { text, changed: false };
+  }
+
+  const headerEol = match[1];
+  const trailingFenceEol = match[3];
+  const originalBody = text.slice(match[0].length);
+  const rawFrontmatter = match[2].replace(/\r\n/g, '\n');
+  const { hasTools, sourceTools } = parseSourceTools(rawFrontmatter);
+  const { changed, updatedLines } = rewriteFrontmatterLines(rawFrontmatter.split('\n'), hasTools, sourceTools);
 
   if (!changed) {
     return { text, changed: false };
@@ -226,10 +336,10 @@ function adaptFrontmatter(text) {
     throw new Error('Unsupported Qwen frontmatter conversion: transformed YAML is invalid; use a plain tools list');
   }
 
-  const adapted = `---\n${updatedLines.join('\n')}\n---${match[2]}${source.slice(match[0].length)}`;
+  const adaptedHeader = `---${headerEol}${updatedLines.join(headerEol)}${headerEol}---${trailingFenceEol}`;
 
   return {
-    text: usesCrlf ? adapted.replace(/\n/g, '\r\n') : adapted,
+    text: `${adaptedHeader}${originalBody}`,
     changed: true,
   };
 }
