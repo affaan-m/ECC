@@ -280,6 +280,23 @@ function run() {
     assert.strictEqual(result.status, 0, result.stderr || result.stdout);
   })) passed++; else failed++;
 
+  if (test('rejects npm install, i aliases, and chained unguarded installs (#3889)', () => {
+    const result = runValidator({
+      'unsafe-aliases.yml': `name: Unsafe\non:\n  pull_request:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm install\n      - run: npm i\n      - run: npm ci && npm ci --ignore-scripts\n`,
+    });
+    assert.notStrictEqual(result.status, 0);
+    assert.match(result.stderr, /npm (?:ci|install) must include --ignore-scripts/);
+  })) passed++; else failed++;
+
+  if (test('ignores commented-out mitigations and handles nested bullets inside checkout (#3889)', () => {
+    const result = runValidator({
+      'unsafe-commented.yml': 'name: Unsafe\non:\n  pull_request_target:\npermissions:\n  contents: write\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        env:\n          NOTE: |\n            - bullet\n        with:\n          # persist-credentials: false\n          ref: ${{ github.event.pull_request.head.sha }}\n',
+    });
+    assert.notStrictEqual(result.status, 0);
+    assert.match(result.stderr, /pull_request\.head\.sha/);
+    assert.match(result.stderr, /persist-credentials: false/);
+  })) passed++; else failed++;
+
   console.log(`\nPassed: ${passed}`);
   console.log(`Failed: ${failed}`);
 
