@@ -2185,6 +2185,7 @@ Contributions are welcome across skills, agents, rules, hooks, docs, tests, adap
 - [Skill development guide](docs/SKILL-DEVELOPMENT-GUIDE.md)
 - [Skill placement policy](docs/SKILL-PLACEMENT-POLICY.md)
 - [Command quick reference](COMMANDS-QUICK-REF.md)
+- [Community Simplified Chinese skill translations (unofficial)](https://github.com/yanqingwang/agent-skills-zh)
 
 The short version:
 1. Fork the repo
