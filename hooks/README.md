@@ -86,6 +86,10 @@ idempotent updates and safe uninstall. On Windows, the Claude config root is
 | **Desktop notify** | `Stop` | Sends macOS desktop notification with task summary (standard+) |
 | **Session end marker** | `SessionEnd` | Lifecycle marker and cleanup log |
 
+## Windows Defender Transcript False Positives (#2687)
+
+If Windows Defender quarantines live Claude Code session transcripts on heuristic `VirTool:JS/Anomelesz.A` due to the minified inline `node -e` resolvers logged in `hooks/hooks.json`, point generated hook configs at the readable file-based launcher `scripts/hooks/run-hook-bootstrap.js` instead of embedding inline IIFEs.
+
 ## Customizing Hooks
 
 ### Disabling a Hook
