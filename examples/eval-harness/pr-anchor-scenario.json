@@ -1,0 +1,14 @@
+{
+  "id": "pr-review-candidate-squash-anchors",
+  "issue": 3879,
+  "description": "Ensure coordinator checks paginated review comments across candidate-A and squash-B commit anchors without treating empty candidate-only queries as absence of findings.",
+  "anchors": {
+    "candidateCommit": "candidate-A",
+    "squashCommit": "squash-B"
+  },
+  "assertions": [
+    "Read paginated review comments across both candidate-A and squash-B",
+    "Preserve comment timestamps relative to integration cutoff",
+    "Distinguish unavailable retrieval from empty findings"
+  ]
+}
