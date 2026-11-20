@@ -8,6 +8,7 @@ const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const vm = require('vm');
 
 const { findProjectRoot, detectFormatter, resolveFormatterBin, clearCaches } = require('../../scripts/lib/resolve-formatter');
 
@@ -127,6 +128,75 @@ function runTests() {
     const second = findProjectRoot(root);
 
     assert.strictEqual(first, second);
+  });
+
+  run('findProjectRoot: finds shared formatter config above workspace packages', () => {
+    for (const config of ['biome.json', '.prettierrc', 'prettier.config.ts']) {
+      const root = makeTmpDir();
+      const workspace = path.join(root, 'packages', 'web');
+      const source = path.join(workspace, 'src');
+      fs.mkdirSync(source, { recursive: true });
+      fs.writeFileSync(path.join(root, config), '{}');
+      fs.writeFileSync(path.join(root, 'package.json'), '{}');
+      fs.writeFileSync(path.join(workspace, 'package.json'), '{}');
+      assert.strictEqual(findProjectRoot(source), root, config);
+      assert.strictEqual(detectFormatter(findProjectRoot(source)), config === 'biome.json' ? 'biome' : 'prettier');
+    }
+  });
+
+  run('findProjectRoot: workspace formatter overrides the shared config', () => {
+    const root = makeTmpDir();
+    const workspace = path.join(root, 'packages', 'web');
+    fs.mkdirSync(workspace, { recursive: true });
+    fs.writeFileSync(path.join(root, 'biome.json'), '{}');
+    fs.writeFileSync(path.join(workspace, 'package.json'), JSON.stringify({ prettier: {} }));
+    assert.strictEqual(findProjectRoot(workspace), workspace);
+    assert.strictEqual(detectFormatter(workspace), 'prettier');
+  });
+
+  run('findProjectRoot: retains the nearest package when no formatter is configured', () => {
+    const root = makeTmpDir();
+    const workspace = path.join(root, 'packages', 'web');
+    fs.mkdirSync(workspace, { recursive: true });
+    fs.writeFileSync(path.join(root, 'package.json'), '{}');
+    fs.writeFileSync(path.join(workspace, 'package.json'), '{}');
+    assert.strictEqual(findProjectRoot(workspace), workspace);
+  });
+
+  run('findProjectRoot: keeps the home boundary across Windows path casing', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../../scripts/lib/resolve-formatter.js'), 'utf8');
+    const existing = new Set([
+      'c:\\users\\alice\\.prettierrc',
+      'c:\\users\\alice\\project\\package.json',
+    ]);
+    const mod = { exports: {} };
+    const dependencies = {
+      path: path.win32,
+      os: { homedir: () => 'C:\\Users\\Alice' },
+      fs: {
+        existsSync: file => existing.has(file.toLowerCase()),
+        readFileSync: () => '{}',
+      },
+    };
+    vm.runInNewContext(source, { module: mod, require: id => dependencies[id] });
+    for (const project of ['c:\\Users\\Alice\\project', 'C:\\USERS\\ALICE\\project']) {
+      assert.strictEqual(mod.exports.findProjectRoot(path.win32.join(project, 'src')), project);
+      assert.strictEqual(mod.exports.detectFormatter(project), null);
+    }
+  });
+
+  run('findProjectRoot: does not borrow a formatter from outside a repository', () => {
+    for (const isWorktree of [false, true]) {
+      const outer = makeTmpDir();
+      const repo = path.join(outer, 'repo');
+      const source = path.join(repo, 'src');
+      fs.mkdirSync(source, { recursive: true });
+      fs.writeFileSync(path.join(outer, 'biome.json'), '{}');
+      fs.writeFileSync(path.join(repo, 'package.json'), '{}');
+      if (isWorktree) fs.writeFileSync(path.join(repo, '.git'), 'gitdir: ../worktrees/repo');
+      else fs.mkdirSync(path.join(repo, '.git'));
+      assert.strictEqual(findProjectRoot(source), repo);
+    }
   });
 
   // ── detectFormatter ───────────────────────────────────────────

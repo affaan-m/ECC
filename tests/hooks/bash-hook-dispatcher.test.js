@@ -134,6 +134,31 @@ function runTests() {
     assert.ok(!disabled.stderr.includes('Review changes before push'), 'Disabled hook should not emit reminder');
   })) passed++; else failed++;
 
+  if (test('pre dispatcher keeps a GateGuard deny when an advisory hook also adds context', () => {
+    // In the strict profile the git-push reminder adds additionalContext for
+    // every `git push`, and GateGuard denies a force-push with a
+    // permissionDecision on stdout at exit 0. The advisory note must not
+    // replace the denial.
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-bash-dispatcher-gateguard-'));
+    try {
+      const input = {
+        tool_name: 'Bash',
+        session_id: 'dispatcher-deny-precedence',
+        tool_input: { command: 'git push --force origin main' },
+      };
+      const result = runScript(preDispatcher, input, {
+        ECC_HOOK_PROFILE: 'strict',
+        GATEGUARD_STATE_DIR: stateDir,
+      });
+      assert.strictEqual(result.status, 0, result.stderr);
+      const output = parseHookOutput(result.stdout).hookSpecificOutput;
+      assert.strictEqual(output.permissionDecision, 'deny', `Expected GateGuard deny, got: ${result.stdout}`);
+      assert.ok(output.permissionDecisionReason.includes('Destructive command'), 'Expected the GateGuard reason');
+    } finally {
+      fs.rmSync(stateDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('pre dispatcher respects hook profiles inside the consolidated path', () => {
     const input = { tool_input: { command: 'git push origin main' } };
     const result = runScript(preDispatcher, input, { ECC_HOOK_PROFILE: 'minimal' });

@@ -7,6 +7,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const yaml = require('js-yaml');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const commandsDir = path.join(repoRoot, 'skills', 'ck', 'commands');
@@ -42,6 +43,23 @@ function runOk(home, project, script, args, payload) {
 }
 
 console.log('\nck init tests:');
+
+test('saving a summary with YAML punctuation preserves the native memory name', home => {
+  const project = path.join(home, 'app');
+  fs.mkdirSync(project);
+  runOk(home, project, 'save.mjs', ['--init'], { name: 'app', path: project });
+  runOk(home, project, 'save.mjs', [], { summary: 'Fix: reconnect #42' });
+
+  const projectsDir = path.join(home, '.claude', 'projects');
+  const [projectDir] = fs.readdirSync(projectsDir);
+  const memoryDir = path.join(projectsDir, projectDir, 'memory');
+  const file = fs.readdirSync(memoryDir).find(name => name.startsWith('ck_') && name.endsWith('.md'));
+  assert.ok(file, 'expected a native memory file');
+  const markdown = fs.readFileSync(path.join(memoryDir, file), 'utf8');
+  const frontmatter = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  assert.ok(frontmatter, 'expected YAML frontmatter');
+  assert.match(yaml.load(frontmatter[1]).name, /^Session \d{4}-\d{2}-\d{2} — Fix: reconnect #42$/);
+});
 
 test('initializing a registered project again keeps its saved sessions', home => {
   const project = path.join(home, 'app');

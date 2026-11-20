@@ -49,7 +49,11 @@ function parseArgs(argv) {
     }
   }
 
-  return parsed;
+  const dryRunEnv = process.env.ECC_DRY_RUN;
+  if (dryRunEnv !== undefined && dryRunEnv !== '0' && dryRunEnv !== '1') {
+    throw new Error('ECC_DRY_RUN must be "1" or "0" when set');
+  }
+  return { ...parsed, dryRun: parsed.dryRun || dryRunEnv === '1' };
 }
 
 function deriveRepoRootFromState(state) {

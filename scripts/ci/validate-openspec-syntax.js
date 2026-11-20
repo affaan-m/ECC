@@ -221,7 +221,7 @@ function collectEnforcedAnchors(content) {
  */
 function splitBlocks(content) {
   const blocks = [];
-  const lines = content.split('\n');
+  const lines = content.split(/\r?\n/);
   let current = null;
   for (const line of lines) {
     let m = line.match(REQUIREMENT_RE);

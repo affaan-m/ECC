@@ -401,24 +401,20 @@ function runTests() {
   if (test('settings snapshots request BigInt stats and reject inodes that collide as Numbers', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-bigint-identity-'));
     const settingsPath = path.join(tempDir, 'settings.json');
-    const originalOpenSync = fs.openSync;
     const originalFstatSync = fs.fstatSync;
     const originalLstatSync = fs.lstatSync;
-    let settingsDescriptor;
+    let identityDescriptor;
     let sawBigIntFstat = false;
     let sawBigIntLstat = false;
     const descriptorIno = 9007199254740992n;
     const pathIno = 9007199254740993n;
     try {
       fs.writeFileSync(settingsPath, '{"theme":"initial"}\n');
-      fs.openSync = function(targetPath, ...args) {
-        const descriptor = originalOpenSync.call(fs, targetPath, ...args);
-        if (targetPath === settingsPath) settingsDescriptor = descriptor;
-        return descriptor;
-      };
+      identityDescriptor = fs.openSync(settingsPath, 'r');
+      const settingsIdentity = originalFstatSync.call(fs, identityDescriptor, { bigint: true });
       fs.fstatSync = function(descriptor, options) {
         const stats = originalFstatSync.call(fs, descriptor, options);
-        if (descriptor !== settingsDescriptor) return stats;
+        if (stats.dev !== settingsIdentity.dev || stats.ino !== settingsIdentity.ino) return stats;
         sawBigIntFstat = options && options.bigint === true;
         return deriveStats(stats, {
           ino: typeof stats.ino === 'bigint' ? descriptorIno : Number(descriptorIno),
@@ -442,13 +438,18 @@ function runTests() {
       );
       assert.strictEqual(sawBigIntFstat, true);
       assert.strictEqual(sawBigIntLstat, true);
-      assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), {
-        theme: 'initial',
-      });
-    } finally {
-      fs.openSync = originalOpenSync;
       fs.fstatSync = originalFstatSync;
       fs.lstatSync = originalLstatSync;
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(identityDescriptor, 'utf8')), {
+        theme: 'initial',
+      });
+      const currentIdentity = fs.lstatSync(settingsPath, { bigint: true });
+      assert.strictEqual(currentIdentity.dev, settingsIdentity.dev);
+      assert.strictEqual(currentIdentity.ino, settingsIdentity.ino);
+    } finally {
+      fs.fstatSync = originalFstatSync;
+      fs.lstatSync = originalLstatSync;
+      if (identityDescriptor !== undefined) fs.closeSync(identityDescriptor);
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   })) passed++; else failed++;

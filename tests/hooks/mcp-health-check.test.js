@@ -215,6 +215,34 @@ async function runTests() {
     assert.strictEqual(result.stderr, '', 'Expected no stderr for non-MCP tool');
   })) passed++; else failed++;
 
+  if (test('uses the MCP tool namespace when tool arguments also contain server and tool fields', () => {
+    const tempDir = createTempDir();
+    const statePath = path.join(tempDir, 'mcp-health.json');
+    const payload = {
+      tool_name: 'mcp__deployment__lookup__status',
+      tool_input: { server: 'reporting', tool: 'archived' },
+      error: '503 Service Unavailable',
+    };
+    const env = {
+      ECC_MCP_CONFIG_PATH: path.join(tempDir, 'missing.json'),
+      ECC_MCP_HEALTH_STATE_PATH: statePath,
+      ECC_MCP_RECONNECT_ALLOW: null,
+      ECC_MCP_RECONNECT_COMMAND: null,
+      ECC_MCP_HEALTH_FAIL_OPEN: null,
+    };
+    try {
+      const failure = runHook(payload, { ...env, CLAUDE_HOOK_EVENT_NAME: 'PostToolUseFailure' });
+      assert.strictEqual(failure.code, 0, failure.stderr);
+      assert.deepStrictEqual(Object.keys(readState(statePath).servers), ['deployment']);
+
+      const retry = runHook(payload, { ...env, CLAUDE_HOOK_EVENT_NAME: 'PreToolUse' });
+      assert.strictEqual(retry.code, 2, retry.stderr);
+      assert.match(retry.stderr, /deployment is marked unhealthy.*skipping lookup__status/);
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
   if (test('blocks truncated MCP hook input by default', () => {
     const rawInput = JSON.stringify({ tool_name: 'mcp__flaky__search', tool_input: {} });
     const result = runRawHook(rawInput, {
