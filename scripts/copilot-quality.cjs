@@ -63,9 +63,34 @@ function locate(root, parts, type, reason) {
   return current;
 }
 
+function sameIdentity(left, right) {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
 function sameFile(left, right) {
-  return left.dev === right.dev && left.ino === right.ino && left.size === right.size
+  return sameIdentity(left, right) && left.size === right.size
     && left.mtimeMs === right.mtimeMs && left.ctimeMs === right.ctimeMs;
+}
+
+function captureSourceDirectories(root, parts) {
+  const directories = [root];
+  for (const part of parts.slice(0, -1)) directories.push(path.join(directories.at(-1), part));
+  return directories.map(directory => {
+    const state = fs.lstatSync(directory, { throwIfNoEntry: false });
+    if (!state?.isDirectory()) fail('unsafe-file');
+    return { directory, state };
+  });
+}
+
+function sourceDirectoriesUnchanged(directories) {
+  try {
+    return directories.every(({ directory, state }) => {
+      const current = fs.lstatSync(directory, { throwIfNoEntry: false });
+      return current?.isDirectory() && sameIdentity(state, current);
+    });
+  } catch {
+    return false;
+  }
 }
 
 function readFile(file, limit, reason, { allowHardLinks = false } = {}) {
@@ -214,31 +239,45 @@ function runFormatter(root, formatter, bin, extension, bytes) {
   }
 }
 
-function assertUnchanged(root, parts, original) {
+function assertUnchanged(file, original, directories) {
   try {
-    const file = locate(root, parts, 'file', 'file-changed');
+    if (!sourceDirectoriesUnchanged(directories)) fail('file-changed');
     const current = readFile(file, MAX_SOURCE_BYTES, 'file-changed');
-    if (!sameFile(original.state, current.state) || !original.bytes.equals(current.bytes)) fail('file-changed');
+    if (!sourceDirectoriesUnchanged(directories) || !sameFile(original.state, current.state)
+      || !original.bytes.equals(current.bytes)) fail('file-changed');
   } catch {
     fail('file-changed');
   }
 }
 
-function writeFix(root, parts, file, original, replacement) {
+function writeFix(file, original, replacement, directories) {
   const staging = path.join(path.dirname(file), '.ecc-quality-' + crypto.randomBytes(12).toString('hex'));
   const mode = original.state.mode & 0o777;
+  if (!sourceDirectoriesUnchanged(directories)) fail('file-changed');
   const handle = fs.openSync(staging, 'wx', mode);
+  let stageState;
+  let published = false;
   try {
     try {
+      stageState = fs.fstatSync(handle);
+      if (!sourceDirectoriesUnchanged(directories)) fail('file-changed');
       fs.writeFileSync(handle, replacement);
       if (process.platform !== 'win32') fs.fchmodSync(handle, mode);
     } finally {
       fs.closeSync(handle);
     }
-    assertUnchanged(root, parts, original);
+    if (!sourceDirectoriesUnchanged(directories)) fail('file-changed');
+    const currentStage = fs.lstatSync(staging, { throwIfNoEntry: false });
+    if (!currentStage?.isFile() || currentStage.nlink !== 1 || currentStage.size !== replacement.length
+      || !sameIdentity(stageState, currentStage)) fail('file-changed');
+    assertUnchanged(file, original, directories);
     fs.renameSync(staging, file);
+    published = true;
   } finally {
-    fs.rmSync(staging, { force: true });
+    if (!published && stageState && sourceDirectoriesUnchanged(directories)) {
+      const currentStage = fs.lstatSync(staging, { throwIfNoEntry: false });
+      if (currentStage?.isFile() && sameIdentity(stageState, currentStage)) fs.rmSync(staging, { force: true });
+    }
   }
 }
 
@@ -256,8 +295,10 @@ function main(args) {
     const extension = path.extname(parts.at(-1)).toLowerCase();
     if (!FORMATS.has(extension)) fail('unsupported-format');
     const root = fs.realpathSync(process.cwd());
-    const file = locate(root, parts, 'file', 'unsafe-file');
+    const directories = captureSourceDirectories(root, parts);
+    const file = path.join(root, ...parts);
     const original = readFile(file, MAX_SOURCE_BYTES, 'unsafe-file');
+    if (!sourceDirectoriesUnchanged(directories)) fail('unsafe-file');
     let input;
     try {
       input = UTF8.decode(original.bytes);
@@ -277,6 +318,7 @@ function main(args) {
     if (config === 'present') fail('project-config-present');
 
     const details = { formatter, projectConfig: config, fixed: false };
+    if (!sourceDirectoriesUnchanged(directories)) fail('file-changed');
     const formatted = runFormatter(root, formatter, bin, extension, original.bytes);
     if (formatted.status !== 0) return report('failed', { ...details, reason: 'formatter-failed' });
     if (formatted.stdout.length > MAX_FORMATTER_OUTPUT) fail('formatter-output-limit');
@@ -286,10 +328,10 @@ function main(args) {
       fail('invalid-formatter-output');
     }
     if (formatted.stdout.length === 0 && input.trim() !== '') fail('invalid-formatter-output');
-    assertUnchanged(root, parts, original);
+    assertUnchanged(file, original, directories);
     if (formatted.stdout.equals(original.bytes)) return report('passed', details);
     if (!options['--fix']) return report('failed', { ...details, reason: 'formatting-difference' });
-    writeFix(root, parts, file, original, formatted.stdout);
+    writeFix(file, original, formatted.stdout, directories);
     return report('passed', { ...details, fixed: true });
   } catch (error) {
     return report('unavailable', {

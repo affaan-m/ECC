@@ -66,6 +66,32 @@ Track:
 - pass@1 and pass@3
 - cost per successful task
 
+## Verify The Work Product
+
+Define a narrow completion check before the worker starts. Keep queue selection,
+session hosting, action selection, and result validation separate so different
+tools and models can share the same contract.
+
+ECC's opt-in [verified work-item flow](https://github.com/affaan-m/ECC/blob/main/docs/architecture/verified-work-item-outcomes.md)
+registers a deterministic artifact check and records failed and successful
+attempts. Start with the `harness-adapter-documentation/v1` validator for adapter
+matrix documentation. Repair the artifact after a failed check, then verify it
+again. A manual `done` status is not evidence that a validator passed.
+
+From an ECC checkout, set `ECC_SESSION_ID` to an existing session ID in the same
+state database, then use a new work-item ID:
+
+```bash
+node scripts/work-items.js upsert adapter-docs --title 'Check adapter matrix' \
+  --repo-root "$PWD" --verify harness-adapter-documentation/v1 \
+  --artifact docs/architecture/harness-adapter-compliance.md
+node scripts/work-items.js claim adapter-docs --owner docs-worker --as agent --session-id "$ECC_SESSION_ID"
+node scripts/work-items.js verify adapter-docs --json
+```
+
+Compact models can eventually choose or repair tool calls through these same
+interfaces; the current flow does not train models or automate those repairs.
+
 ## Anti-Patterns
 
 - Too many tools with overlapping semantics.

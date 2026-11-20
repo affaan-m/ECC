@@ -589,7 +589,8 @@ function renderSessionListHtml(sessions) {
     const link = s.status === 'ended'
       ? escapeHtml(path.basename(s.file))
       : `<a href="/canvas/${escapeHtml(s.key)}">${escapeHtml(path.basename(s.file))}</a>`;
-    return `<tr><td>${link}</td><td class="mono">${escapeHtml(s.file)}</td><td><span class="badge ${escapeHtml(s.status)}">${status}</span></td></tr>`;
+    const mode = s.mode === 'ui' ? '<span class="badge mode">ui canvas</span> ' : '';
+    return `<tr><td>${mode}${link}</td><td class="mono">${escapeHtml(s.file)}</td><td><span class="badge ${escapeHtml(s.status)}">${status}</span></td></tr>`;
   }).join('\n');
   return `<!DOCTYPE html>
 <html lang="en">
@@ -609,17 +610,19 @@ ${TOKENS_CSS}
   .mono{font-family:var(--mono);font-size:11.5px;color:var(--text2)}
   .badge{font-size:11px;padding:2px 8px;border-radius:99px;background:var(--bg3);border:1px solid var(--border);color:var(--text2)}
   .badge.open,.badge.feedback{color:var(--green);border-color:var(--green);background:var(--green-glow)}
+  .badge.mode{color:var(--pink);border-color:var(--pink);background:var(--pink-glow);margin-right:6px}
   .empty{margin-top:24px;color:var(--text3);font-size:13px}
 </style>
 </head>
 <body>
 <span class="logo">E</span><h1>Plan Canvas sessions</h1>
-${sessions.length ? `<table><thead><tr><th>Artifact</th><th>Path</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="empty">No sessions yet. Ask your agent to open a plan with the plan-canvas skill.</p>'}
+${sessions.length ? `<table><thead><tr><th>Artifact</th><th>Path</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="empty">No sessions yet. Ask your agent to open a plan with the plan-canvas skill or a mockup with the ui-canvas skill.</p>'}
 </body>
 </html>`;
 }
 
 module.exports = {
+  TOKENS_CSS,
   canvasCss,
   canvasClientJs,
   renderCanvasHtml,

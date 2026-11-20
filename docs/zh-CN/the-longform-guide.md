@@ -57,7 +57,7 @@ Claude 创建一个总结当前状态的文件。审阅它，如果需要则要�
 我学到的一个模式是：与其将所有内容都放在 CLAUDE.md（用户作用域）或 `.claude/rules/`（项目作用域）中，让它们每次会话都加载，不如使用 CLI 标志动态注入上下文。
 
 ```bash
-claude --system-prompt "$(cat memory.md)"
+claude --append-system-prompt-file memory.md
 ```
 
 这让你可以更精确地控制何时加载哪些上下文。系统提示内容比用户消息具有更高的权威性，而用户消息又比工具结果具有更高的权威性。
@@ -66,13 +66,13 @@ claude --system-prompt "$(cat memory.md)"
 
 ```bash
 # Daily development
-alias claude-dev='claude --system-prompt "$(cat ~/.claude/contexts/dev.md)"'
+alias claude-dev='claude --append-system-prompt-file ~/.claude/contexts/dev.md'
 
 # PR review mode
-alias claude-review='claude --system-prompt "$(cat ~/.claude/contexts/review.md)"'
+alias claude-review='claude --append-system-prompt-file ~/.claude/contexts/review.md'
 
 # Research/exploration mode
-alias claude-research='claude --system-prompt "$(cat ~/.claude/contexts/research.md)"'
+alias claude-research='claude --append-system-prompt-file ~/.claude/contexts/research.md'
 ```
 
 **高级：记忆持久化钩子**

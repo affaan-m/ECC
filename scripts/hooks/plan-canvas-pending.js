@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Plan Canvas undelivered-feedback guard (Stop)
+ * Plan Canvas and UI Canvas undelivered-feedback guard (Stop)
  *
  * Cross-platform (Windows, macOS, Linux)
  *
@@ -98,11 +98,20 @@ function isInside(dir, file) {
 /**
  * Sessions holding feedback the agent has never seen, oldest activity first.
  */
+// Save and Finish ends a UI session in the same request that queues the
+// final handoff, so an ended UI session still delivers an undelivered finish.
+// Other ended sessions only hold stale feedback and stay quiet.
+function deliverable(session) {
+  if (session.status !== 'ended') return true;
+  return session.mode === 'ui' && session.pendingFeedback.some(item => item && item.kind === 'finish');
+}
+
 function pendingSessions(state, cwd, env = process.env) {
   const scopeAll = String(env.ECC_PLAN_CANVAS_STOP_SCOPE || '').trim().toLowerCase() === 'all';
   return Object.values((state && state.sessions) || {})
-    .filter(session => session && validSessionKey(session.key) && typeof session.file === 'string' && session.file.length > 0 && session.status !== 'ended')
+    .filter(session => session && validSessionKey(session.key) && typeof session.file === 'string' && session.file.length > 0)
     .filter(session => Array.isArray(session.pendingFeedback) && session.pendingFeedback.length > 0)
+    .filter(deliverable)
     .filter(session => (scopeAll ? true : isInside(cwd, session.file)))
     .sort((a, b) => String(a.updatedAt || '').localeCompare(String(b.updatedAt || '')));
 }
@@ -193,26 +202,49 @@ function describeItem(item) {
     const where = anchor.snippet || anchor.selector || 'the artifact';
     return item.text ? `on "${where}": ${item.text}` : null;
   }
+  // UI Canvas batches: the snapshot lives on disk; only paths travel here.
+  if (item.kind === 'finish' || item.kind === 'edits') {
+    const count = Number(item.editCount) || (Array.isArray(item.edits) ? item.edits.length : 0);
+    const label = item.kind === 'finish' ? 'SAVED AND FINISHED' : 'APPLIED EDITS TO THE PREVIEW';
+    const where = [item.exportPath ? `final markup: ${item.exportPath}` : null, item.editsPath ? `edit log: ${item.editsPath}` : null]
+      .filter(Boolean)
+      .join(', ');
+    return `${label} (${count} edit${count === 1 ? '' : 's'})${where ? ` - ${where}` : ''}${item.text ? `: ${item.text}` : ''}`;
+  }
+  if (item.kind === 'chat' && item.anchor && item.text) {
+    const where = item.anchor.snippet || item.anchor.selector;
+    return where ? `on "${where}": ${item.text}` : item.text;
+  }
   return item.text || null;
 }
 
 function buildReason(delivered) {
+  const allUi = delivered.length > 0 && delivered.every(entry => entry.mode === 'ui');
   const lines = [
-    'Plan Canvas: the human sent feedback in the browser that was never delivered to you.',
+    `${allUi ? 'UI Canvas' : 'Plan Canvas'}: the human sent feedback in the browser that was never delivered to you.`,
     'Handle it now instead of ending the turn.',
     ''
   ];
   for (const entry of delivered) {
+    const bin = entry.mode === 'ui' ? 'ecc-ui-canvas' : 'ecc-plan-canvas';
     lines.push(`Artifact: ${entry.file}`);
     for (const text of entry.messages.slice(0, MAX_ITEMS_REPORTED)) lines.push(`  - ${text}`);
     const extra = entry.messages.length - MAX_ITEMS_REPORTED;
     if (extra > 0) lines.push(`  - (+${extra} more)`);
-    if (entry.sessionEnded) {
+    if (entry.sessionEnded && entry.mode === 'ui') {
+      lines.push('  The user saved and finished (or ended) this preview after sending. Read the exported markup');
+      lines.push('  named above, reproduce that exact design in the real component, and report back in your');
+      lines.push('  normal reply; do not reopen the canvas.');
+    } else if (entry.sessionEnded) {
       lines.push('  The user ended this review after sending. Address the feedback and report back in');
       lines.push('  your normal reply; do not reopen the canvas.');
     } else {
       lines.push('  Reply IN THE CANVAS so the human sees it, and keep listening, with one command:');
-      lines.push(`    ecc-plan-canvas await ${JSON.stringify(entry.file)} --reply "<what you did>"`);
+      if (typeof entry.key === 'string' && entry.key.length === 12 && /^[a-f0-9]{12}$/.test(entry.key)) {
+        lines.push(`    ${bin} await --session-key ${entry.key} --reply "<what you did>"`);
+      } else {
+        lines.push('  Resume information is unavailable; inspect canvas pending sessions for a valid session key.');
+      }
     }
     lines.push('');
   }
@@ -229,7 +261,7 @@ async function collectDeliveries(sessions, port) {
     if (!result) continue;
     const messages = result.items.map(describeItem).filter(Boolean);
     if (messages.length === 0) continue;
-    delivered.push({ file: session.file, messages, sessionEnded: Boolean(result.sessionEnded) });
+    delivered.push({ key: session.key, file: session.file, mode: session.mode === 'ui' ? 'ui' : 'plan', messages, sessionEnded: Boolean(result.sessionEnded) });
   }
   return delivered;
 }

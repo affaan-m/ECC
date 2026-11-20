@@ -81,6 +81,13 @@ if (input === 'fixture failure') {
 } else if (input === 'fixture concurrent edit') {
   fs.writeFileSync(${JSON.stringify(concurrentFile)}, 'editor fixture update');
   process.stdout.write('replacement fixture');
+} else if (input === 'fixture moved source directory') {
+  const sourceDirectory = path.join(${JSON.stringify(project)}, 'source directory');
+  const previousDirectory = path.join(${JSON.stringify(project)}, 'previous directory');
+  fs.renameSync(sourceDirectory, previousDirectory);
+  fs.mkdirSync(sourceDirectory);
+  fs.renameSync(path.join(previousDirectory, 'nested'), path.join(sourceDirectory, 'nested'));
+  process.stdout.write('replacement fixture');
 } else {
   process.stdout.write(input.replace('const x=1;', 'const x = 1;'));
 }
@@ -167,6 +174,16 @@ function verifyInstalledQuality(root, packageRoot, env) {
   assert.equal(changed.reason, 'file-changed');
   assert.equal(changed.fixed, false);
   assert.equal(fs.readFileSync(target, 'utf8'), 'editor fixture update');
+
+  const nested = path.join('source directory', 'nested', 'retained.js');
+  const retained = path.join(project, nested);
+  fs.mkdirSync(path.dirname(retained), { recursive: true });
+  fs.writeFileSync(retained, 'fixture moved source directory');
+  const moved = invoke(['--file', nested, '--fix'], 2);
+  assert.equal(moved.reason, 'file-changed');
+  assert.equal(moved.fixed, false);
+  assert.equal(fs.readFileSync(retained, 'utf8'), 'fixture moved source directory');
+  assert.deepEqual(fs.readdirSync(path.dirname(retained)), ['retained.js']);
 
   fs.writeFileSync(target, 'const x=1;\n');
   fs.writeFileSync(path.join(project, '.prettierrc.cjs'), 'throw new Error("Never load fixture project config");\n');
