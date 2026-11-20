@@ -1,5 +1,5 @@
 ---
-description: Send Claude-written code to GPT-6-Astra (ChatGPT, via Codex CLI) for an independent cross-provider review, then fix what it finds.
+description: Send Claude-written code to GPT-6-Astra (ChatGPT, via Codex CLI) for an independent cross-provider review, then fix what it finds. Use when requesting a cross-provider GPT/Codex review of Claude changes.
 argument-hint: "[--base <branch> | --commit <sha> | --files <paths> | --files-from-commit <sha>] [extra reviewer instructions]"
 model: opus
 ---

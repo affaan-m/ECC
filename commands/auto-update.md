@@ -1,5 +1,5 @@
 ---
-description: Pull the latest ECC repo changes and reinstall the current managed targets.
+description: Pull the latest ECC repo changes and reinstall the current managed targets. Use when updating an existing ECC installation to the latest repo revision.
 disable-model-invocation: true
 ---
 

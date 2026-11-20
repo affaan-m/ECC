@@ -1,5 +1,5 @@
 ---
-description: Create, verify, or list workflow checkpoints after running verification checks.
+description: Create, verify, or list workflow checkpoints after running verification checks. Use when saving, verifying, or listing workflow checkpoints.
 ---
 
 # Checkpoint Command

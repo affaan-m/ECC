@@ -1,5 +1,5 @@
 ---
-description: Comprehensive C++ code review for memory safety, modern C++ idioms, concurrency, and security. Invokes the cpp-reviewer agent.
+description: Comprehensive C++ code review for memory safety, modern C++ idioms, concurrency, and security. Invokes the cpp-reviewer agent. Use when reviewing C++ changes for memory safety and concurrency.
 ---
 
 # C++ Code Review
