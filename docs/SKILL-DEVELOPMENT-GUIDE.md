@@ -918,3 +918,7 @@ npm run test:e2e
 ---
 
 **Remember**: A good skill is focused, actionable, and immediately useful. Write skills you'd want to use yourself.
+
+## Cross-Harness Portability
+
+See [SKILL-PORTABILITY-VERBS.md](SKILL-PORTABILITY-VERBS.md) for optional `requires` metadata and semantic capability verbs.
