@@ -72,3 +72,8 @@ What helps:
 - [token-optimization.md](./token-optimization.md)
 - [hooks/README.md](../hooks/README.md)
 - [issue #644](https://github.com/affaan-m/ECC/issues/644)
+
+## Reducing Per-Call Hook Latency (#2834)
+
+- Prefer local Node hook entrypoints over `npx package@version` on hot tool calls (`PreToolUse`) to eliminate npm CLI startup overhead.
+- Use minimal hook profiles (`ECC_HOOK_PROFILE=minimal`) or `ECC_DISABLED_HOOKS` on high-frequency workflows where strict gating is unnecessary.
