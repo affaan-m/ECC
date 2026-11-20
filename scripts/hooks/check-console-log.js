@@ -32,12 +32,23 @@ const MAX_DIRECT_STDIN_BYTES = 16 * 1024 * 1024;
 // This Stop hook inspects the session's working directory. Inherited GIT_*
 // variables from another Git process can silently redirect discovery and diff
 // commands to a different repository, so give every Git call the same clean env.
+const MAX_GIT_SUBPROCESS_TIMEOUT_MS = 3000;
+
+function resolveGitTimeoutMs(env = process.env) {
+  const deadline = Number(env.ECC_HOOK_DEADLINE_MS);
+  if (Number.isFinite(deadline) && deadline > Date.now()) {
+    // Leave at least 500ms headroom for remaining Stop hook checks/flush.
+    return Math.max(250, Math.min(MAX_GIT_SUBPROCESS_TIMEOUT_MS, deadline - Date.now() - 500));
+  }
+  return MAX_GIT_SUBPROCESS_TIMEOUT_MS;
+}
+
 function sessionGitOptions() {
   const env = { ...process.env };
   for (const name of Object.keys(env)) {
     if (name.toUpperCase().startsWith('GIT_')) delete env[name];
   }
-  return { env };
+  return { env, timeout: resolveGitTimeoutMs(env) };
 }
 
 let data = '';
@@ -85,7 +96,10 @@ process.stdin.on('end', () => {
     const root = runCommand('git rev-parse --show-toplevel', gitOptions).output;
     const files = getGitModifiedFiles(['\\.tsx?$', '\\.jsx?$'], gitOptions)
       .filter(f => fs.existsSync(path.join(root, f)))
-      .filter(f => !EXCLUDED_PATTERNS.some(pattern => pattern.test(f)));
+      .filter(f => {
+        const normalized = String(f).replace(/\\/g, '/');
+        return !EXCLUDED_PATTERNS.some(pattern => pattern.test(normalized));
+      });
 
     let hasConsole = false;
 
