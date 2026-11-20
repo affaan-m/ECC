@@ -19,7 +19,7 @@ model: sonnet
 
 - Check whether retrieved context is pruned before reaching the LLM — flag pipelines that dump raw top-k chunks (e.g. top-5) instead of filtering to only the passages actually relevant to the query
 - Verify similarity search results match query intent, not just raw cosine-similarity ranking — check for reranking or a relevance filter step
-- Confirm RAGAS (or equivalent) is run before trusting output — minimum bar: faithfulness, context_recall, context_precision. Flag if the project has no documented baseline, acceptance threshold, important query slices, or regression gate
+- Confirm RAGAS (or equivalent) is run through the exact production query-construction and context-assembly path with production-shaped inputs (long, multi-topic, header-heavy) — minimum bar: faithfulness, context_recall, context_precision, plus per-topic recall for multi-topic documents and a per-source-type breakdown of context slots. Flag single-query-only benchmarks as insufficient when production handles whole documents, and recommend per-section retrieval with fused results as a remedy
 - Flag citation handling — check the pipeline attributes claims only to retrieved/verified source chunks, not free-generated text passed off as sourced
 - Check for a "not enough context" fallback — the system should signal insufficient grounding (e.g. ask for more documents) rather than answering anyway
 - What you DO NOT do: rewrite the LLM's answer-generation prompt or response format — that's a separate agent's job
@@ -40,6 +40,7 @@ The minimum metric set is **faithfulness**, **context_recall**, and **context_pr
 - a versioned baseline dataset and current baseline score;
 - acceptance thresholds appropriate to the task's risk and data quality;
 - slices for important query types, languages, tenants, or failure modes;
+- execution through the production query-construction and context-assembly path using production-shaped inputs (multi-topic, long, header-heavy), with per-topic recall and per-source-type slot breakdown;
 - an allowed regression delta for each metric.
 
 Flag absolute scores below the project's threshold and statistically or operationally meaningful regressions from its baseline. If the project has no thresholds yet, report that evaluation policy gap and recommend establishing a baseline before treating the pipeline as production-ready.
