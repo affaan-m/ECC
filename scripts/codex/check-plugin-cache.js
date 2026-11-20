@@ -239,6 +239,23 @@ function checkCache(options) {
     return 1;
   }
 
+  const binDir = path.join(cacheDir, 'node_modules', '.bin');
+  if (fs.existsSync(binDir)) {
+    try {
+      const binSymlinks = fs.readdirSync(binDir, { withFileTypes: true })
+        .filter((entry) => entry.isSymbolicLink())
+        .map((entry) => entry.name);
+      if (binSymlinks.length > 0) {
+        log(`[FAIL] node_modules/.bin contains symlinks rejected by Codex plugin fingerprinting: ${binSymlinks.join(', ')}`);
+        log('Reinstall dependencies with --no-bin-links (or remove node_modules/.bin symlinks):');
+        log('  npm ci --omit=dev --ignore-scripts --no-bin-links --no-audit --no-fund');
+        return 1;
+      }
+    } catch {
+      // Ignore unreadable .bin directory and rely on manifest reference checks.
+    }
+  }
+
   log('All cached manifest references resolve.');
   return 0;
 }
