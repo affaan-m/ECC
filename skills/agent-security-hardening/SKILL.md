@@ -175,3 +175,7 @@ Redact before values enter the logger, tracer, exception, or model context. Add 
 - `agent-harness-construction`
 - `security-review`
 - `security-scan`
+
+### First-Write Staging Boundary
+
+When copying or staging sensitive manifests or audit artifacts, enforce `0o700` on directories and `0o600` on files at open/create time (`openSync(..., 0o600)` + `fchmodSync`), rather than writing with a default umask and tightening permissions afterwards.
