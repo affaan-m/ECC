@@ -372,6 +372,14 @@ Reference documentation is in the `reference/` directory adjacent to this SKILL.
 | Need to combine/trim clips | `VideoAsset` on a `Timeline` |
 | Need to generate voiceover, music, or SFX | `coll.generate_voice()`, `generate_music()`, `generate_sound_effect()` |
 
+### 2. Connect VideoDB as an MCP Server (Claude, ChatGPT & Any MCP Client)
+
+VideoDB can also be added directly as an MCP server across AI clients:
+
+- **Claude Code / Claude Desktop**: Add a `videodb` MCP entry pointing at your VideoDB MCP endpoint or stdio runner with `VIDEO_DB_API_KEY` configured in `env`.
+- **ChatGPT / Remote MCP Clients**: Register the VideoDB MCP server URL in Developer Mode / Connectors and authorize with your VideoDB API key.
+- **Any MCP Client**: Supply `VIDEO_DB_API_KEY` in environment configuration and verify tool discovery before running video ingest or search workflows.
+
 ## Provenance
 
 Reference material for this skill is vendored locally under `skills/videodb/reference/`.

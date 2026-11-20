@@ -384,3 +384,8 @@ recent_visual = [
 実行時に外部リポジトリリンクをたどるのではなく、上記のローカルコピーを使用する。
 
 **メンテナー：** [VideoDB](https://www.videodb.io/)
+
+
+### MCP サーバーとしての VideoDB 接続（Claude / ChatGPT / MCP クライアント）
+
+Claude Code、Claude Desktop、ChatGPT、その他の MCP クライアントでは `VIDEO_DB_API_KEY` を設定した上で VideoDB MCP サーバーを登録すると、動画の取り込み・検索・クリップ作成を直接呼び出せます。
