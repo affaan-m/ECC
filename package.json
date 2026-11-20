@@ -116,6 +116,7 @@
     "scripts/agent-convert.js",
     "scripts/antigravity/",
     "scripts/catalog.js",
+    "scripts/copilot-cost-report.cjs",
     "scripts/config-health.py",
     "scripts/config_health_constants.py",
     "scripts/config_health_paths.py",

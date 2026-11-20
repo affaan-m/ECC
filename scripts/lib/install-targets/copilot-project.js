@@ -90,6 +90,21 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
   }
 
   if (hasPrefix(normalizedSourcePath, 'skills')) {
+    if (['skills/cost-tracking', 'skills/cost-tracking/SKILL.md'].includes(normalizedSourcePath)) {
+      return [
+        createManagedOperation({
+          moduleId: module.id,
+          sourceRelativePath: 'manifests/install-assets/copilot-cost-tracking-skill.md',
+          destinationPath: path.join(targetRoot, 'skills', 'cost-tracking', 'SKILL.md'),
+        }),
+        createManagedOperation({
+          moduleId: module.id,
+          sourceRelativePath: 'scripts/copilot-cost-report.cjs',
+          destinationPath: path.join(targetRoot, 'ecc', 'scripts', 'usage', 'copilot-cost-report.cjs'),
+        }),
+      ];
+    }
+
     return [
       createManagedOperation({
         moduleId: module.id,

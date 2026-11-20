@@ -81,6 +81,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/control-pane.js",
     "scripts/dashboard-web.js",
     "scripts/discussion-audit.js",
+    "scripts/copilot-cost-report.cjs",
     "scripts/doctor.js",
     "scripts/status.js",
     "scripts/sessions-cli.js",
