@@ -33,6 +33,20 @@ function defaultRunImpl(args, options = {}) {
   };
 }
 
+function parseModernConflictFiles(stdout) {
+  const lines = String(stdout || '').replace(/\r\n/g, '\n').split('\n');
+  const files = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    if (lines[i] === '') {
+      break;
+    }
+    if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i.test(lines[i])) {
+      files.push(lines[i]);
+    }
+  }
+  return files;
+}
+
 function createGitRunner(repoRoot, runImpl = defaultRunImpl) {
   function run(args) {
     return runImpl(args, { cwd: repoRoot });
@@ -76,7 +90,14 @@ function createGitRunner(repoRoot, runImpl = defaultRunImpl) {
           if (current) {
             worktrees.push(current);
           }
-          current = { path: line.slice('worktree '.length), branch: null, head: null, detached: false, bare: false };
+          current = {
+            path: line.slice('worktree '.length),
+            branch: null,
+            head: null,
+            detached: false,
+            bare: false,
+            isMain: worktrees.length === 0
+          };
         } else if (current && line.startsWith('branch ')) {
           current.branch = line.slice('branch '.length).replace(/^refs\/heads\//, '').trim();
         } else if (current && line.startsWith('HEAD ')) {
@@ -122,22 +143,23 @@ function createGitRunner(repoRoot, runImpl = defaultRunImpl) {
     // Predict merge conflicts WITHOUT touching the working tree using
     // `git merge-tree`. Prefers the modern --write-tree form (Git 2.38+),
     // which exits non-zero and lists conflicted paths on conflict.
-    predictMergeConflicts(branch, baseBranch) {
-      const modern = run(['merge-tree', '--write-tree', '--name-only', baseBranch, branch]);
+    predictMergeConflicts(branch, baseBranch, cwd = repoRoot) {
+      const modern = runImpl(['merge-tree', '--write-tree', '--name-only', baseBranch, branch], { cwd });
       if (modern.status === 0) {
         return { conflicted: false, files: [], method: 'merge-tree' };
       }
 
       // Non-zero with parseable output => real conflict (modern form).
-      if (modern.stdout && /\S/.test(modern.stdout)) {
-        const lines = modern.stdout.split('\n').map(l => l.trim()).filter(Boolean);
-        // First line is the tree oid; subsequent lines are conflicted paths.
-        const files = lines.slice(1).filter(line => !/^[0-9a-f]{40}$/i.test(line));
-        return { conflicted: true, files, method: 'merge-tree' };
+      if (modern.status === 1 && modern.stdout && /\S/.test(modern.stdout)) {
+        return {
+          conflicted: true,
+          files: parseModernConflictFiles(modern.stdout),
+          method: 'merge-tree'
+        };
       }
 
       // Fallback to the legacy form (older Git): conflict markers in output.
-      const legacy = run(['merge-tree', baseBranch, baseBranch, branch]);
+      const legacy = runImpl(['merge-tree', baseBranch, baseBranch, branch], { cwd });
       const hasMarkers = /^<{7}|^={7}|^>{7}/m.test(legacy.stdout || '')
         || /\+<{7}|changed in both/m.test(legacy.stdout || '');
       return { conflicted: hasMarkers, files: [], method: 'merge-tree-legacy' };

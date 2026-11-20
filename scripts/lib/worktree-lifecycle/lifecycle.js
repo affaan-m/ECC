@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const { createGitRunner } = require('./git');
 
 const DEFAULT_STALE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -60,11 +62,42 @@ function classifyWorktree(facts, { staleThresholdMs, nowMs }) {
   return STATES.IDLE;
 }
 
+function tryRealpath(targetPath) {
+  try {
+    return fs.realpathSync(targetPath);
+  } catch {
+    return targetPath;
+  }
+}
+
+function normalizeWorktreePath(targetPath) {
+  if (typeof targetPath !== 'string' || !targetPath) {
+    return '';
+  }
+  if (/^(?:[A-Za-z]:[\\/]|\\\\|\/\/)/.test(targetPath)) {
+    const resolved = path.win32.resolve(targetPath);
+    const canonical = process.platform === 'win32' ? tryRealpath(resolved) : resolved;
+    return canonical.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  }
+  return tryRealpath(path.resolve(targetPath));
+}
+
+function isMainWorktree(worktree, baseBranch, repoRoot) {
+  if (worktree.branch === baseBranch) {
+    return true;
+  }
+  if (typeof worktree.isMain === 'boolean') {
+    return worktree.isMain;
+  }
+  const candidate = worktree.canonicalRepoRoot || worktree.path;
+  return Boolean(candidate && repoRoot && (
+    candidate === repoRoot || normalizeWorktreePath(candidate) === normalizeWorktreePath(repoRoot)
+  ));
+}
+
 function analyzeWorktree(worktree, options, git) {
   const { baseBranch, staleThresholdMs, nowMs } = options;
-  const isMain = worktree.canonicalRepoRoot === git.repoRoot
-    || worktree.path === git.repoRoot
-    || worktree.branch === baseBranch;
+  const isMain = isMainWorktree(worktree, baseBranch, git.repoRoot);
 
   const branch = worktree.branch;
   const dirty = git.isDirty(worktree.path);
@@ -75,7 +108,7 @@ function analyzeWorktree(worktree, options, git) {
   const ahead = aheadBehind ? aheadBehind.ahead : 0;
   let conflictResult = { conflicted: false, files: [], method: null };
   if (!isMain && !dirty && branch && ahead > 0) {
-    conflictResult = git.predictMergeConflicts(branch, baseBranch);
+    conflictResult = git.predictMergeConflicts(branch, baseBranch, worktree.path);
   }
 
   const facts = {
