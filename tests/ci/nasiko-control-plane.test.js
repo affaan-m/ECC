@@ -86,6 +86,27 @@ async function main() {
       assert.throws(() => normalizePlatform('freebsd', 'x64'), /unsupported platform/i);
       assert.throws(() => normalizePlatform('darwin', 'ia32'), /unsupported architecture/i);
     }],
+    ['cleans up newly created empty install directory when manifest returns 404 (#3937)', async () => {
+      const { installNasiko } = require('../../scripts/lib/nasiko-release');
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-nasiko-404-'));
+      const missingDir = path.join(root, 'bin');
+      try {
+        await assert.rejects(
+          installNasiko(
+            { version: 'v0.1.0', yes: true, installDir: missingDir },
+            {
+              platform: 'linux',
+              arch: 'x64',
+              fetchBytes: async () => { throw new Error('Nasiko registry returned HTTP 404.'); },
+            }
+          ),
+          /re-qualification/i
+        );
+        assert.strictEqual(fs.existsSync(missingDir), false);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    }],
     ['requires explicit consent while dry-run remains offline and read-only', async () => {
       const { installNasiko } = require('../../scripts/lib/nasiko-release');
       let fetchCount = 0;

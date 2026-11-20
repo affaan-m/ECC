@@ -408,7 +408,16 @@ function installPathsFor(options, dependencies, release) {
 
 async function fetchVerifiedBinary(release, dependencies) {
   const retrieve = dependencies.fetchBytes || fetchBytes;
-  const manifestBytes = await retrieve(`${REGISTRY_ORIGIN}/v2/${REPOSITORY}/manifests/${release.manifestDigest}`, { accept: 'application/vnd.oci.image.manifest.v1+json', maxBytes: MAX_MANIFEST_BYTES });
+  const manifestUrl = `${REGISTRY_ORIGIN}/v2/${REPOSITORY}/manifests/${release.manifestDigest}`;
+  let manifestBytes;
+  try {
+    manifestBytes = await retrieve(manifestUrl, { accept: 'application/vnd.oci.image.manifest.v1+json', maxBytes: MAX_MANIFEST_BYTES });
+  } catch (error) {
+    if (/HTTP 404/.test(error.message)) {
+      throw new Error(`Nasiko registry returned HTTP 404 for pinned manifest ${release.manifestDigest} (${release.version} ${release.os}/${release.arch}); upstream tag may have been republished and requires re-qualification.`);
+    }
+    throw error;
+  }
   assertDigest(manifestBytes, release.manifestDigest, 'Nasiko manifest');
   const layer = validateManifest(manifestBytes);
   const archiveBytes = await retrieve(`${REGISTRY_ORIGIN}/v2/${REPOSITORY}/blobs/${layer.digest}`, { maxBytes: MAX_ARCHIVE_BYTES });
@@ -456,19 +465,37 @@ async function installNasiko(options = {}, dependencies = {}) {
   const plan = { dryRun: Boolean(options.dryRun), version: base.version, platform: release.os, architecture: release.arch, manifestDigest: release.manifestDigest, binaryDigest: release.binaryDigest, registryOrigin: REGISTRY_ORIGIN, destination, license: release.license, sourceUrl: release.sourceUrl };
   if (options.dryRun) return plan;
   if (!options.yes) throw new Error('Nasiko installation requires explicit --yes consent.');
+  const dirExistedBefore = fs.existsSync(installDirectory);
   fs.mkdirSync(installDirectory, { recursive: true, mode: 0o755 });
   assertPrivateInstallDirectory(installDirectory);
   const releaseLock = acquireLifecycleLock(installDirectory);
+  let succeeded = false;
   try {
     const existing = inspectInstalledNasiko(destination);
     if (existing.installed) {
-      if (existing.qualified && existing.version === plan.version) return { ...plan, dryRun: false, installed: true, reused: true };
+      if (existing.qualified && existing.version === plan.version) {
+        succeeded = true;
+        return { ...plan, dryRun: false, installed: true, reused: true };
+      }
       throw new Error('An unqualified or incompatible Nasiko executable or receipt already exists at the destination.');
     }
     const { binary, layer } = await fetchVerifiedBinary(release, dependencies);
     if (dependencies.beforePublish) dependencies.beforePublish(destination);
-    return publishBinary(plan, release, layer, binary, dependencies);
-  } finally { releaseLock(); }
+    const published = publishBinary(plan, release, layer, binary, dependencies);
+    succeeded = true;
+    return published;
+  } finally {
+    releaseLock();
+    if (!succeeded && !dirExistedBefore) {
+      try {
+        if (fs.existsSync(installDirectory) && fs.readdirSync(installDirectory).length === 0) {
+          fs.rmdirSync(installDirectory);
+        }
+      } catch (_cleanupError) {
+        // Best-effort cleanup of newly created empty directory
+      }
+    }
+  }
 }
 
 function removeOrRetain(remove, target, retained) {
