@@ -108,39 +108,118 @@ function formatToolLine(tools) {
   return `tools: ${tools.join(', ')}`;
 }
 
+function splitYamlComment(raw) {
+  let quote = null;
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+    if (quote === "'") {
+      if (ch === "'") {
+        if (raw[i + 1] === "'") {
+          i += 1;
+          continue;
+        }
+        quote = null;
+      }
+      continue;
+    }
+    if (quote === '"') {
+      if (ch === '\\') {
+        i += 1;
+        continue;
+      }
+      if (ch === '"') quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      continue;
+    }
+    if (ch === '#' && (i === 0 || /\s/.test(raw[i - 1]))) {
+      const valuePart = raw.slice(0, i);
+      const trimmedValue = valuePart.replace(/\s+$/, '');
+      const wsBeforeComment = valuePart.slice(trimmedValue.length);
+      return { valuePart: trimmedValue, commentSuffix: wsBeforeComment + raw.slice(i) };
+    }
+  }
+  return { valuePart: raw.replace(/\s+$/, ''), commentSuffix: '' };
+}
+
+function unquoteScalar(raw) {
+  const trimmed = raw.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length >= 2)
+    || (trimmed.startsWith("'") && trimmed.endsWith("'") && trimmed.length >= 2)
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function findToolsBlockEnd(lines, startIndex) {
+  const firstLine = lines[startIndex];
+  const { valuePart } = splitYamlComment(firstLine.slice(firstLine.indexOf(':') + 1));
+  const scalar = valuePart.trim();
+  let endIndex = startIndex;
+  if (scalar.startsWith('[') && !scalar.includes(']')) {
+    for (let j = startIndex + 1; j < lines.length; j += 1) {
+      endIndex = j;
+      if (splitYamlComment(lines[j]).valuePart.includes(']')) {
+        break;
+      }
+    }
+    return endIndex;
+  }
+  if (scalar !== '' && scalar !== '|' && scalar !== '>') {
+    return startIndex;
+  }
+  for (let j = startIndex + 1; j < lines.length; j += 1) {
+    const candidate = lines[j];
+    if (/^(?:\s+\S|-\s|-$)/.test(candidate)) {
+      endIndex = j;
+    } else if (/^(?:\s*$|\s*#)/.test(candidate)) {
+      continue;
+    } else {
+      break;
+    }
+  }
+  return endIndex;
+}
+
 function adaptColor(line) {
   const trimmed = line.trimStart();
   const colon = trimmed.indexOf(':');
   if (colon < 0 || trimmed.slice(0, colon).trimEnd() !== 'color') {
     return null;
   }
-  const rawValue = trimmed.slice(colon + 1).trim();
+  const afterColon = trimmed.slice(colon + 1);
+  const { valuePart, commentSuffix } = splitYamlComment(afterColon);
+  const rawValue = valuePart.trim();
   if (!rawValue) return null;
   const indent = line.slice(0, line.length - trimmed.length);
-  const value = rawValue.replace(/^["']|["']$/g, '');
+  const value = unquoteScalar(rawValue);
   if (VALID_COLORS.has(value)) {
     return { line, changed: false };
   }
 
   const remapped = COLOR_MAP.get(value);
   if (remapped) {
-    return { line: `${indent}color: ${remapped}`, changed: true };
+    return { line: `${indent}color: ${remapped}${commentSuffix}`, changed: true };
   }
 
   return { line: null, changed: true };
 }
 
 function adaptFrontmatter(text) {
-  // Normalize CRLF first. Matching only LF would silently skip a Windows-saved
-  // agent and report it as already compatible while `tools: Read` and
-  // `color: teal` stayed in place. The original ending style is restored below.
-  const usesCrlf = text.includes('\r\n');
-  const source = usesCrlf ? text.replace(/\r\n/g, '\n') : text;
-
-  const match = source.match(/^---\n([\s\S]*?)\n---(\n|$)/);
-  if (!match) {
+  // Parse only the YAML frontmatter span so body line endings (including mixed
+  // LF/CRLF content) remain byte-identical when frontmatter is updated.
+  const rawMatch = text.match(/^---(\r?\n)([\s\S]*?)\r?\n---(?=\r?\n|$)/);
+  if (!rawMatch) {
     return { text, changed: false };
   }
+  const fmEol = rawMatch[1];
+  const fmRaw = rawMatch[2].replace(/\r\n/g, '\n');
+  const body = text.slice(rawMatch[0].length);
+  const match = [rawMatch[0], fmRaw];
 
   const firstMappingLine = match[1].split('\n').find(line => line.trim() && !line.trimStart().startsWith('#'));
   if (firstMappingLine && /^\s/.test(firstMappingLine)) {
@@ -168,10 +247,14 @@ function adaptFrontmatter(text) {
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     // Claude tiers are not Qwen provider IDs; inherit the configured session.
-    if (/^model:\s*["']?(haiku|sonnet|opus)["']?\s*$/.test(line)) {
-      updatedLines.push('model: inherit');
-      changed = true;
-      continue;
+    const modelMatch = line.match(/^model\s*:(.*)$/);
+    if (modelMatch) {
+      const { valuePart, commentSuffix } = splitYamlComment(modelMatch[1]);
+      if (/^(haiku|sonnet|opus)$/.test(unquoteScalar(valuePart))) {
+        updatedLines.push(`model: inherit${commentSuffix}`);
+        changed = true;
+        continue;
+      }
     }
     const color = line === line.trimStart() ? adaptColor(line) : null;
     if (color) {
@@ -185,11 +268,9 @@ function adaptFrontmatter(text) {
     }
 
     if (/^tools\s*:/.test(line) && hasTools) {
-      // YAML permits sequence items at the same indentation as their key.
-      // Consume both list styles before publishing the native scalar.
-      while (index + 1 < lines.length
-        && /^(?:\s|#|$|-(?:\s|$))/.test(lines[index + 1])) {
-        index += 1;
+      const endIndex = findToolsBlockEnd(lines, index);
+      if (endIndex > index) {
+        index = endIndex;
         changed = true;
       }
       const adaptedTools = [];
@@ -226,10 +307,10 @@ function adaptFrontmatter(text) {
     throw new Error('Unsupported Qwen frontmatter conversion: transformed YAML is invalid; use a plain tools list');
   }
 
-  const adapted = `---\n${updatedLines.join('\n')}\n---${match[2]}${source.slice(match[0].length)}`;
+  const adapted = `---${fmEol}${updatedLines.join(fmEol)}${fmEol}---${body}`;
 
   return {
-    text: usesCrlf ? adapted.replace(/\n/g, '\r\n') : adapted,
+    text: adapted,
     changed: true,
   };
 }
