@@ -126,3 +126,19 @@ represent a deny-all agent through that native field. Use a nonempty explicit
 allowlist, or omit the field only when parent-tool inheritance is intended.
 These checks verify adaptation and write prevention; they do not certify native
 provider execution or sandbox containment.
+
+## Native Extension Baseline Rules Supplement (#3788)
+
+When installing ECC via Qwen's native extension manager (`qwen extensions install https://github.com/affaan-m/ECC:ecc`), Qwen requires extension rules to be conditional (`paths:` frontmatter) and skips unconditional baseline policies under `rules/common/*.md` (plus `rules/README.md`).
+
+If you want those always-on common guidelines active across sessions or in a single trusted project without duplicating language-specific rules or loading `rules/README.md`:
+
+```bash
+# Global user rules (applies across trusted sessions; manage updates/removal separately)
+mkdir -p ~/.qwen/rules && cp -n rules/common/*.md ~/.qwen/rules/
+
+# Or project-local only
+mkdir -p .qwen/rules && cp -n rules/common/*.md .qwen/rules/
+```
+
+Warnings from the extension loader about the original copies in the extension bundle remain expected behavior and do not prevent skills or commands from loading.
