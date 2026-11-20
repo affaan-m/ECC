@@ -177,6 +177,16 @@ For Claude Code plugin setup, updates, scope changes, and hook-profile changes:
 npx ecc-universal@2.2.3 setup
 ```
 
+For **Google Antigravity**, **Gemini CLI**, **Codex**, **Cursor**, **OpenCode**, and other project-level harnesses (do **not** use `claude plugin` for these):
+
+```bash
+npx ecc-universal@2.2.3 install --target antigravity typescript
+npx ecc-universal@2.2.3 install --target gemini typescript
+npx ecc-universal@2.2.3 install --target cursor typescript
+npx ecc-universal@2.2.3 install --target codex typescript
+npx ecc-universal@2.2.3 install --target opencode typescript
+```
+
 #### Windows first-time walkthrough
 
 If you are new to command-line tools, use this copy-and-paste path:
