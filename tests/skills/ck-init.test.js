@@ -125,6 +125,25 @@ test('initializing a registered v1 project points to migrate until nothing is le
   assert.ok(fs.existsSync(path.join(contextDir, 'context.json')), 'init did not register the project');
 });
 
+test('saving a session summary containing colons produces valid quoted YAML frontmatter', home => {
+  const project = path.join(home, 'app');
+  fs.mkdirSync(project);
+  runOk(home, project, 'save.mjs', ['--init'], { name: 'app', path: project });
+  runOk(home, project, 'save.mjs', [], { summary: 'Fix: reconnect #42' });
+
+  const slug = project.replace(/[^a-zA-Z0-9]/g, '-');
+  const memDir = path.join(home, '.claude', 'projects', slug, 'memory');
+  const files = fs.readdirSync(memDir).filter(f => f.startsWith('ck_') && f.endsWith('.md'));
+  assert.strictEqual(files.length, 1);
+  const content = fs.readFileSync(path.join(memDir, files[0]), 'utf8');
+  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  assert.ok(fmMatch, 'expected YAML frontmatter');
+  const nameLine = fmMatch[1].split(/\r?\n/).find(l => l.startsWith('name: '));
+  assert.ok(nameLine, 'expected name line in frontmatter');
+  const parsedName = JSON.parse(nameLine.slice('name: '.length));
+  assert.ok(parsedName.includes('Fix: reconnect #42'));
+});
+
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);
 process.exit(failed > 0 ? 1 : 0);

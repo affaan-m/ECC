@@ -191,13 +191,14 @@ try {
     ? session.blockers.map(b => `- ${b}`).join('\n')
     : '- None';
 
+  const quoteYamlScalar = value => JSON.stringify(String(value ?? '').replace(/[\r\n]+/g, ' '));
   const memContent = [
     `---`,
-    `name: Session ${today()} — ${session.summary}`,
-    `description: Key decisions and outcomes from ck session ${sessionId.slice(0, 8)}`,
+    `name: ${quoteYamlScalar(`Session ${today()} — ${session.summary}`)}`,
+    `description: ${quoteYamlScalar(`Key decisions and outcomes from ck session ${sessionId.slice(0, 8)}`)}`,
     `type: project`,
     `source: ck`,
-    `sessionId: ${sessionId}`,
+    `sessionId: ${quoteYamlScalar(sessionId)}`,
     `---`,
     ``,
     `# Session: ${session.summary}`,
