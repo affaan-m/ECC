@@ -23,17 +23,22 @@ if (isDryRun) {
 
 // ── v1 markdown parsers ───────────────────────────────────────────────────────
 
+function normalizeLineEndings(text) {
+  return String(text || '').replace(/\r\n?/g, '\n');
+}
+
 function extractSection(md, heading) {
+  const normalized = normalizeLineEndings(md);
   const re = new RegExp(`## ${heading}\\n([\\s\\S]*?)(?=\\n## |$)`);
-  const m = md.match(re);
+  const m = normalized.match(re);
   return m ? m[1].trim() : null;
 }
 
 function parseBullets(text) {
   if (!text) return [];
-  return text.split('\n')
-    .filter(l => /^[-*\d]\s/.test(l.trim()))
-    .map(l => l.replace(/^[-*\d]+\.?\s+/, '').trim())
+  return normalizeLineEndings(text).split('\n')
+    .filter(l => /^(?:[-*]|\d+\.)\s/.test(l.trim()))
+    .map(l => l.replace(/^(?:[-*]|\d+\.)\s+/, '').trim())
     .filter(Boolean);
 }
 
@@ -93,23 +98,31 @@ for (const [projectPath, info] of Object.entries(projects)) {
   const contextMdPath   = resolve(contextDirPath, 'CONTEXT.md');
   const metaPath        = resolve(contextDirPath, 'meta.json');
 
-  // Already v2
+  // Already v2 or unreadable/incompatible context.json
   if (existsSync(contextJsonPath)) {
+    let existing;
     try {
-      const existing = JSON.parse(readFileSync(contextJsonPath, 'utf8'));
-      if (existing.version === 2) {
-        console.log(`  ✓ ${contextDir} — already v2, skipping`);
-        skipped++;
-        continue;
-      }
-    } catch { /* fall through to migrate */ }
+      existing = JSON.parse(readFileSync(contextJsonPath, 'utf8'));
+    } catch (e) {
+      console.log(`  ✗ ${contextDir} — unreadable context.json (${e.message}); leaving files untouched`);
+      errors++;
+      continue;
+    }
+    if (existing && existing.version === 2) {
+      console.log(`  ✓ ${contextDir} — already v2, skipping`);
+      skipped++;
+      continue;
+    }
+    console.log(`  ✗ ${contextDir} — existing context.json is not v2; leaving files untouched`);
+    errors++;
+    continue;
   }
 
   console.log(`\n  → Migrating: ${contextDir}`);
 
   try {
     // Read v1 files
-    const contextMd = existsSync(contextMdPath) ? readFileSync(contextMdPath, 'utf8') : '';
+    const contextMd = existsSync(contextMdPath) ? normalizeLineEndings(readFileSync(contextMdPath, 'utf8')) : '';
     let meta = {};
     if (existsSync(metaPath)) {
       try {
