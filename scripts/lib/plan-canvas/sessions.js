@@ -275,20 +275,15 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     const session = get(key);
     if (!session) return null;
     const entry = { role: 'agent', kind: 'chat', text: sanitizeText(text), at: nowIso() };
-    session.chat.push(entry);
-    session.updatedAt = nowIso();
-    persist();
+    commitSession(key, { ...session, chat: [...session.chat, entry], updatedAt: nowIso() });
     return entry;
   }
 
   function end(key, endedBy) {
     const session = get(key);
     if (!session) return null;
-    session.status = 'ended';
-    session.endedBy = endedBy === 'user' ? 'user' : 'agent';
-    session.updatedAt = nowIso();
-    persist();
-    return session;
+    return commitSession(key, { ...session, status: 'ended',
+      endedBy: endedBy === 'user' ? 'user' : 'agent', updatedAt: nowIso() });
   }
 
   function list() {
