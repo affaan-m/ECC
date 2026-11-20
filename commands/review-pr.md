@@ -6,14 +6,15 @@ Run a comprehensive multi-perspective review of a pull request.
 
 ## Usage
 
-`/review-pr [PR-number-or-URL] [--focus=comments|tests|errors|types|code|simplify]`
+`/review-pr [PR-or-MR-number-or-URL] [--focus=comments|tests|errors|types|code|simplify]`
 
-If no PR is specified, review the current branch's PR. If no focus is specified, run the full review stack.
+If no PR/MR is specified, review the current branch's pull request or merge request. If no focus is specified, run the full review stack.
 
 ## Steps
 
-1. Identify the PR:
-   - use `gh pr view` to get PR details, changed files, and diff
+1. Identify the PR or Merge Request:
+   - On GitHub (default): use `gh pr view` and `gh pr diff` to get PR details, changed files, and diff
+   - On GitLab (gitlab.com or self-hosted, when given a GitLab MR IID/URL or a GitLab remote): use `glab mr view` and `glab mr diff` to fetch MR details, changed files, and diff
 2. Find project guidance:
    - look for `CLAUDE.md`, lint config, TypeScript config, repo conventions
 3. Run specialized review agents:
