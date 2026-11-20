@@ -1,6 +1,16 @@
 'use strict';
 
+const path = require('path');
 const { createGitRunner } = require('./git');
+
+function normalizeComparablePath(targetPath) {
+  if (!targetPath) return '';
+  let resolved = path.resolve(String(targetPath)).replace(/\\/g, '/');
+  if (process.platform === 'win32' || /^[A-Za-z]:\//.test(resolved)) {
+    resolved = resolved.toLowerCase();
+  }
+  return resolved.replace(/\/+$/, '');
+}
 
 const DEFAULT_STALE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -62,8 +72,11 @@ function classifyWorktree(facts, { staleThresholdMs, nowMs }) {
 
 function analyzeWorktree(worktree, options, git) {
   const { baseBranch, staleThresholdMs, nowMs } = options;
-  const isMain = worktree.canonicalRepoRoot === git.repoRoot
-    || worktree.path === git.repoRoot
+  const normalizedWorktreePath = normalizeComparablePath(worktree.path);
+  const normalizedRepoRoot = normalizeComparablePath(git.repoRoot);
+  const isMain = Boolean(worktree.isPrimary)
+    || Boolean(worktree.canonicalRepoRoot && normalizeComparablePath(worktree.canonicalRepoRoot) === normalizedRepoRoot)
+    || (normalizedWorktreePath !== '' && normalizedWorktreePath === normalizedRepoRoot)
     || worktree.branch === baseBranch;
 
   const branch = worktree.branch;
@@ -75,7 +88,7 @@ function analyzeWorktree(worktree, options, git) {
   const ahead = aheadBehind ? aheadBehind.ahead : 0;
   let conflictResult = { conflicted: false, files: [], method: null };
   if (!isMain && !dirty && branch && ahead > 0) {
-    conflictResult = git.predictMergeConflicts(branch, baseBranch);
+    conflictResult = git.predictMergeConflicts(branch, baseBranch, worktree.path);
   }
 
   const facts = {
