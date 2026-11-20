@@ -18,7 +18,7 @@ const {
 // slash-command argument substitution Copilot does not provide, so neither is
 // installed here.
 const SUPPORTED_SOURCE_PREFIXES = ['agents', 'skills', 'rules'];
-const COPILOT_HELPER_PATHS = new Set([
+const COPILOT_SOURCE_HELPER_PATHS = new Set([
   'scripts/setup-package-manager.js',
   'scripts/lib/package-manager.js',
   'scripts/lib/utils.js',
@@ -33,7 +33,7 @@ function hasPrefix(normalizedPath, prefix) {
 function supportsCopilotSourcePath(sourceRelativePath) {
   const normalizedPath = normalizeRelativePath(sourceRelativePath);
   if (normalizedPath.split('/').includes('..')) return false;
-  return COPILOT_HELPER_PATHS.has(normalizedPath)
+  return COPILOT_SOURCE_HELPER_PATHS.has(normalizedPath)
     || SUPPORTED_SOURCE_PREFIXES.some(prefix => hasPrefix(normalizedPath, prefix));
 }
 
@@ -125,7 +125,7 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
     return planCopilotRuleOperations(module, normalizedSourcePath, targetRoot, repoRoot);
   }
 
-  if (COPILOT_HELPER_PATHS.has(normalizedSourcePath)) {
+  if (COPILOT_SOURCE_HELPER_PATHS.has(normalizedSourcePath)) {
     return [createManagedOperation({
       moduleId: module.id,
       sourceRelativePath: normalizedSourcePath,
@@ -135,6 +135,9 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
 
   return [];
 }
+
+// Canvas installs its launcher through the skill projection, not a source path.
+const COPILOT_HELPER_PATHS = new Set([...COPILOT_SOURCE_HELPER_PATHS, 'scripts/copilot-canvas.js']);
 
 module.exports = createInstallTargetAdapter({
   id: 'copilot-project',
@@ -169,8 +172,7 @@ module.exports = createInstallTargetAdapter({
           repoRoot
         ));
     });
-    const helper = operations.find(operation => COPILOT_HELPER_PATHS.has(operation.sourceRelativePath)
-      || operation.sourceRelativePath === 'scripts/copilot-canvas.js');
+    const helper = operations.find(operation => COPILOT_HELPER_PATHS.has(operation.sourceRelativePath));
     if (!helper) return operations;
     // Keep managed helpers executable when the host project uses ES modules.
     return [...operations, createManagedOperation({
