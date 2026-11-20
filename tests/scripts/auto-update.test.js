@@ -107,6 +107,19 @@ function runTests() {
     assert.strictEqual(parsed.json, true);
   })) passed += 1; else failed += 1;
 
+  if (test('parseArgs honors ECC_DRY_RUN=1 and rejects invalid ECC_DRY_RUN', () => {
+    const prev = process.env.ECC_DRY_RUN;
+    try {
+      process.env.ECC_DRY_RUN = '1';
+      assert.strictEqual(parseArgs(['node', 'scripts/auto-update.js']).dryRun, true);
+      process.env.ECC_DRY_RUN = 'invalid';
+      assert.throws(() => parseArgs(['node', 'scripts/auto-update.js']), /ECC_DRY_RUN must be/);
+    } finally {
+      if (prev === undefined) delete process.env.ECC_DRY_RUN;
+      else process.env.ECC_DRY_RUN = prev;
+    }
+  })) passed += 1; else failed += 1;
+
   if (test('parseArgs rejects unknown arguments', () => {
     assert.throws(
       () => parseArgs(['node', 'scripts/auto-update.js', '--bogus']),

@@ -27,8 +27,16 @@ digests before extraction, and never executes fetched shell or PowerShell code.
 `;
 }
 
+function readDryRunEnv() {
+  const val = process.env.ECC_DRY_RUN;
+  if (val !== undefined && val !== '' && val !== '0' && val !== '1') {
+    throw new Error('ECC_DRY_RUN must be "1" or "0" when set');
+  }
+  return val === '1';
+}
+
 function parseMutationArguments(argumentsList, command = 'install') {
-  let options = { dryRun: false, installDir: undefined, json: false, version: undefined, yes: false };
+  let options = { dryRun: readDryRunEnv(), installDir: undefined, json: false, version: undefined, yes: false };
   for (let index = 0; index < argumentsList.length; index += 1) {
     const argument = argumentsList[index];
     if (argument === '--version' || argument === '--install-dir') {

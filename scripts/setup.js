@@ -59,9 +59,17 @@ Migration installs and verifies the destination before removing the source scope
 `);
 }
 
+function readDryRunEnv() {
+  const val = process.env.ECC_DRY_RUN;
+  if (val !== undefined && val !== '' && val !== '0' && val !== '1') {
+    throw new Error('ECC_DRY_RUN must be "1" or "0" when set');
+  }
+  return val === '1';
+}
+
 function parseArgs(argv) {
   const options = {
-    dryRun: false,
+    dryRun: readDryRunEnv(),
     help: false,
     hooks: undefined,
     json: false,
