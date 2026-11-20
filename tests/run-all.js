@@ -160,11 +160,25 @@ let filesPassed = 0;
 let filesFailed = 0;
 const failedFiles = [];
 
+// Location overrides from the developer's shell must not reach suites, which
+// set the ones they need for their own fixtures:
+// - config and data homes outrank HOME, so a suite that fakes only HOME would
+//   still read and write the real installs behind them (#4071);
+// - session recordings would land in the real recording directory;
+// - plugin roots and the MCP config path would point suites at an installed
+//   ECC copy instead of this checkout.
+const LOCATION_OVERRIDE_KEYS = [
+  'CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'AGENTS_HOME', 'OPENCODE_CONFIG_DIR', 'ECC_GROK_HOME', 'ECC_AGENT_DATA_HOME',
+  'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME',
+  'ECC_SESSION_RECORDING_DIR',
+  'CLAUDE_PLUGIN_ROOT', 'ECC_PLUGIN_ROOT', 'ECC_MCP_CONFIG_PATH',
+];
+
 function childEnvFor() {
   const childEnv = { ...process.env };
   // Git context would leak into fixtures; ONLY and JOBS are runner controls and
   // must not reach suites that spawn the runner themselves.
-  for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX', 'ECC_TEST_ONLY', 'ECC_TEST_JOBS', 'ECC_TEST_SERIAL', 'ECC_TEST_REPORT']) {
+  for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX', 'ECC_TEST_ONLY', 'ECC_TEST_JOBS', 'ECC_TEST_SERIAL', 'ECC_TEST_REPORT', ...LOCATION_OVERRIDE_KEYS]) {
     delete childEnv[key];
   }
   return childEnv;
