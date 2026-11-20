@@ -89,6 +89,14 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
     ];
   }
 
+  if (normalizedSourcePath === 'skills/skill-stocktake' || normalizedSourcePath === 'skills/skill-stocktake/SKILL.md') {
+    return [createManagedOperation({
+      moduleId: module.id,
+      sourceRelativePath: 'manifests/install-assets/copilot-skill-stocktake-skill.md',
+      destinationPath: path.join(targetRoot, 'skills', 'skill-stocktake', 'SKILL.md'),
+    })];
+  }
+
   if (hasPrefix(normalizedSourcePath, 'skills')) {
     return [
       createManagedOperation({
