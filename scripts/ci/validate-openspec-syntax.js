@@ -292,7 +292,7 @@ function validateSpecFile(filePath) {
 
   let content;
   try {
-    content = fs.readFileSync(filePath, 'utf8');
+    content = fs.readFileSync(filePath, 'utf8').replace(/\r\n?/g, '\n');
   } catch (err) {
     return [`${rel}: Cannot read file: ${err.message}`];
   }

@@ -500,5 +500,29 @@ describe('validate-openspec-syntax (v1 schema)', () => {
         fs.rmSync(root, { recursive: true, force: true });
       }
     });
+
+    it('detects missing Scenario and enforced anchor identically in CRLF files (#3985)', () => {
+      const lfSpec = [
+        '### Requirement: Print receipt',
+        'Print the receipt.',
+        '',
+        '### Invariant: Totals agree',
+        'The totals agree.',
+        '',
+      ].join('\n');
+      const crlfSpec = lfSpec.replace(/\n/g, '\r\n');
+      const root = makeTempProject({ 'checkout.md': crlfSpec });
+      try {
+        const result = runValidator(root);
+        assert.strictEqual(result.exitCode, 1);
+        const parsed = JSON.parse(result.stdout.split('\n').pop());
+        assert.strictEqual(parsed.valid, false);
+        assert.strictEqual(parsed.errors.length, 2);
+        assert.ok(parsed.errors.some((e) => e.includes('has no Scenario')));
+        assert.ok(parsed.errors.some((e) => e.includes('missing <!-- enforced: --> anchor')));
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
   });
 });
