@@ -368,7 +368,7 @@ function createPlanCanvasServer({
     const active = new Set(receipt.itemIds);
     return { status: 'queued', accepted: receipt.itemIds.length, pending,
       acceptedEditIds: receipt.editIds, acceptedText: receipt.text || '',
-      batches: (session.uiBatches || []).filter(batch => active.has(batch.id)),
+      batches: (session.uiBatches || []).filter(batch => active.has(batch.id)), acknowledgedBatches: session.uiAcknowledged || [],
       presence: presenceFor(session.key), sessionEnded: session.status === 'ended' };
   }
 

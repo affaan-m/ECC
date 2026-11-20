@@ -104,6 +104,19 @@ async function main() {
     assert.deepEqual(h.saved().edits, [later]);
     assert.deepEqual(h.saved().submittedBatches, []);
   });
+  await test('retry receipt reconciles missed durable acknowledgments without discarding newer edits', async () => {
+    const h = client({ boot: { uiBatches: [{ id: 'fb-1', edits: [first] }] } });
+    h.message({ type: 'uc:edits', edits: [later] }); h.node('applyBtn').handlers.click();
+    const packet = h.packets.find(item => item.type === 'uc:export');
+    h.message({ type: 'uc:export', requestId: packet.requestId, edits: [later], bakedEditIds: ['e1'], html: '<html>both</html>' }); await tick();
+    h.lose(); await tick(); h.message({ type: 'uc:ready' });
+    assert.deepEqual(h.packets.filter(item => item.type === 'uc:restore').at(-1).pendingBakedEditIds, ['e1']);
+    const newest = { ...later, id: 'e3' }; h.message({ type: 'uc:edits', edits: [later, newest] });
+    h.node('applyBtn').handlers.click(); await tick();
+    h.answer({ acceptedEditIds: ['e2'], batches: [], acknowledgedBatches: [{ id: 'fb-1', editIds: ['e1'] }, { id: 'fb-2', editIds: ['e2'] }] }); await tick();
+    assert.deepEqual(h.saved().submittedBatches, []); assert.deepEqual(h.saved().edits, [newest]);
+    assert.equal(h.saved().pendingDelivery, null);
+  });
   await test('failed Apply retains all edits and releases the snapshot lock', async () => {
     const h = client(); await capture(h);
     h.message({ type: 'uc:edits', edits: [first, later], canUndo: true });
@@ -297,6 +310,15 @@ async function main() {
     context.restore({ batches: [], edits: [first, later], deliveryRequest: 'unknown', pendingSnapshotHash: 'local-snapshot', pendingSourceRevision: 'old-source', pendingEditIds: ['e1'] });
     assert.equal(style.left, '2px', 'Exact local snapshot skips only its original pending nudge, preserving newer work');
     assert.deepEqual(Array.from(context.bakedEditIds), [], 'Local preview evidence is not durable submitted proof');
+    style.left = '2px';
+    context.restore({ batches: [{ id: 'fb-1', snapshotHash: 'older-snapshot', edits: [first] }], edits: [later, { ...later, id: 'e3' }], deliveryRequest: 'unknown', pendingSnapshotHash: 'local-snapshot', pendingSourceRevision: 'old-source', pendingEditIds: ['e2'], pendingBakedEditIds: ['e1'] });
+    assert.equal(style.left, '3px', 'An exact pending snapshot already contains its fully captured submitted batches and pending nudge; replay only newer work');
+    assert.deepEqual(Array.from(context.bakedEditIds), ['e1']);
+    assert.deepEqual(Array.from(context.edits, edit => edit.id), ['e2', 'e3'], 'Unknown delivery remains pending without acknowledgment');
+    style.left = '2px';
+    context.restore({ batches: [{ id: 'fb-1', snapshotHash: 'older-snapshot', edits: [first, { ...first, id: 'missing', selector: '#missing' }] }, { id: 'empty', edits: [] }], edits: [later], deliveryRequest: 'unknown', pendingSnapshotHash: 'local-snapshot', pendingSourceRevision: 'old-source', pendingEditIds: ['e2'], pendingBakedEditIds: ['e1'] });
+    assert.equal(style.left, '2px', 'Partial captured membership cannot bypass atomic missing-target rollback');
+    assert.deepEqual(Array.from(context.bakedEditIds), []); assert.ok(context.edits.slice(0, 2).every(edit => edit.stale && edit.submitted));
     style.left = '1px'; context.sourceRevision = 'changed-source';
     context.restore({ batches: [], edits: [first, later], deliveryRequest: 'unknown', pendingSnapshotHash: 'local-snapshot', pendingSourceRevision: 'old-source', pendingEditIds: ['e1'] });
     assert.equal(style.left, '2px'); assert.equal(context.edits[0].stale, true); assert.ok(!context.edits[1].stale);

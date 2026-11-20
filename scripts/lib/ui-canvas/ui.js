@@ -249,7 +249,7 @@ ${deliveryClientJs()}
       case 'uc:ready':
         frameReady = true;
         postToFrame({ type: 'uc:set-mode', mode: finishing ? 'interact' : mode });
-        postToFrame({ type: 'uc:restore', baked: submitted.flatMap(batch => batch.edits), batches: submitted, edits, deliveryRequest, pendingSnapshotHash: pendingDelivery && pendingDelivery.snapshotHash, pendingSourceRevision: pendingDelivery && pendingDelivery.sourceRevision, pendingEditIds: pendingDelivery ? pendingDelivery.item.edits.map(edit => edit.id) : [], scroll: lastScroll, selection: selection ? selection.selector : null, selectionRevision: selection ? selection.sourceRevision : null });
+        postToFrame({ type: 'uc:restore', baked: submitted.flatMap(batch => batch.edits), batches: submitted, edits, deliveryRequest, pendingSnapshotHash: pendingDelivery && pendingDelivery.snapshotHash, pendingSourceRevision: pendingDelivery && pendingDelivery.sourceRevision, pendingEditIds: pendingDelivery ? pendingDelivery.item.edits.map(edit => edit.id) : [], pendingBakedEditIds: pendingDelivery && Array.isArray(pendingDelivery.item.bakedEditIds) ? pendingDelivery.item.bakedEditIds : [], scroll: lastScroll, selection: selection ? selection.selector : null, selectionRevision: selection ? selection.sourceRevision : null });
         if (paused) postToFrame({ type: 'uc:pause-animations', paused: true });
         break;
       case 'uc:selection':
@@ -499,6 +499,7 @@ ${inspectorClientJs()}
       const delivery = await prepareDelivery(kind, item, snapshot && snapshot.sourceRevision);
       const body = await postFeedback([delivery.item], kind === 'finish', delivery.id);
       if (!Array.isArray(body.acceptedEditIds)) throw new Error('The delivery receipt was not readable; retry to confirm it.');
+      reconcileAcknowledgments(body.acknowledgedBatches || []);
       clearDelivery();
       if (input.value === draft && draft.trim() === body.acceptedText) input.value = '';
       if (kind === 'finish') {
@@ -588,22 +589,25 @@ ${inspectorClientJs()}
     presence.title = agent && agent.project ? agentName() + ' in ' + agent.project : '';
     renderActivity(state);
   }
+  function reconcileAcknowledgments(batches) {
+    const ids = new Set(batches.map(batch => batch.id));
+    const editIds = new Set(batches.flatMap(batch => batch.editIds));
+    editIds.forEach(id => acknowledgedEdits.add(id));
+    batches.forEach(batch => acknowledged.add(batch.id));
+    const changed = submitted.some(batch => ids.has(batch.id)) || edits.some(edit => editIds.has(edit.id));
+    submitted = submitted.filter(batch => !ids.has(batch.id));
+    edits = edits.filter(edit => !editIds.has(edit.id));
+    persistEdits();
+    renderEdits();
+    return changed;
+  }
   function connectEvents() {
     const es = new EventSource('/events/' + key);
     es.addEventListener('chat-sync', e => renderChat(JSON.parse(e.data).chat || []));
     es.addEventListener('presence', e => { const data = JSON.parse(e.data); applyPresence(data.state, data.agent); });
     es.addEventListener('ui-ack', e => {
       const data = JSON.parse(e.data);
-      const batches = data.batches || [];
-      const ids = new Set(batches.map(batch => batch.id));
-      const editIds = new Set(batches.flatMap(batch => batch.editIds));
-      editIds.forEach(id => acknowledgedEdits.add(id));
-      batches.forEach(batch => acknowledged.add(batch.id));
-      const changed = submitted.some(batch => ids.has(batch.id)) || edits.some(edit => editIds.has(edit.id));
-      submitted = submitted.filter(batch => !ids.has(batch.id));
-      edits = edits.filter(edit => !editIds.has(edit.id));
-      persistEdits();
-      renderEdits();
+      const changed = reconcileAcknowledgments(data.batches || []);
       if (changed && frameReady) reloadArtifact();
     });
     // An unrelated agent save is not acknowledgment of queued Apply batches.

@@ -209,6 +209,17 @@ async function main() {
     assert.equal((await request('POST', 'feedback', { ...body, items: [{ ...item, text: 'changed note' }] })).status, 409);
     assert.ok(fs.statSync(finalPath).isDirectory()); fs.rmdirSync(finalPath); fs.renameSync(preserved, finalPath);
   }));
+  await test('receipt retry returns durable acknowledgments missed during an exact source save', () => fixture(async ({ getSession, file, request, apply }) => {
+    const first = await apply([edit('a')], '<html>first</html>');
+    const body = { deliveryId: '7'.repeat(32), items: [{ kind: 'edits', edits: [edit('b')], bakedEditIds: ['a'], html: '<html>both</html>' }] };
+    const accepted = await request('POST', 'feedback', body); assert.equal(accepted.status, 200);
+    const second = accepted.body.batches[0].id;
+    fs.writeFileSync(file, '<html>both</html>'); await request('GET', `/artifact/${getSession().key}/`);
+    const retry = await request('POST', 'feedback', body);
+    assert.deepEqual(retry.body.batches, []);
+    assert.deepEqual(retry.body.acknowledgedBatches.map(batch => batch.id).sort(), [first, second].sort());
+    assert.deepEqual(retry.body.acknowledgedBatches.flatMap(batch => batch.editIds).sort(), ['a', 'b']);
+  }));
   await test('failed drain preserves live feedback and the next await delivers it once', () => fixture(async ({ getSession, directory, request, apply }) => {
     await apply([edit('a')], '<html>retained feedback</html>'); const before = JSON.stringify(getSession());
     const obstacle = path.join(directory, 'state', 'sessions.json.tmp'); fs.mkdirSync(obstacle);

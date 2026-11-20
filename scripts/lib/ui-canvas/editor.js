@@ -501,8 +501,10 @@ function uiEditorJs() {
     // the represented part of a batch applied twice on a partially edited file.
     var batches = Array.isArray(payload.batches) ? payload.batches : [{ edits: baked }];
     var represented = Object.create(null);
+    var pendingBaked = deliveryRequest && sourceRevision && payload.pendingSnapshotHash === sourceRevision && Array.isArray(payload.pendingBakedEditIds) ? payload.pendingBakedEditIds : [];
     batches.forEach(function (batch) {
       if (sourceRevision && batch.snapshotHash === sourceRevision) { represented[batch.id] = true; (batch.includedBatches || []).forEach(function (id) { represented[id] = true; }); }
+      if (batch.edits && batch.edits.length && batch.edits.every(function (edit) { return pendingBaked.indexOf(edit.id) >= 0; })) represented[batch.id] = true;
     });
     for (var b = 0; b < batches.length; b++) {
       var applied = [], failed = false;
