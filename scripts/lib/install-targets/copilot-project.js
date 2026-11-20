@@ -17,7 +17,6 @@ const {
 // ECC's hooks target Claude Code's event model, and commands rely on
 // slash-command argument substitution Copilot does not provide, so neither is
 // installed here.
-const CONTINUOUS_LEARNING_SKILL = 'skills/continuous-learning-v2';
 const SUPPORTED_SOURCE_PREFIXES = ['agents', 'skills', 'rules'];
 const COPILOT_HELPER_PATHS = new Set([
   'scripts/setup-package-manager.js',
@@ -70,6 +69,8 @@ function planCopilotRuleOperations(module, normalizedSourcePath, targetRoot, rep
       contentTransform: 'copilot-rule-frontmatter',
     }));
 }
+
+const CONTINUOUS_LEARNING_SKILL = 'skills/continuous-learning-v2';
 
 function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRoot) {
   const normalizedSourcePath = normalizeRelativePath(sourceRelativePath);
