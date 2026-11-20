@@ -70,6 +70,8 @@ function planCopilotRuleOperations(module, normalizedSourcePath, targetRoot, rep
     }));
 }
 
+const CONTINUOUS_LEARNING_SKILL = 'skills/continuous-learning-v2';
+
 function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRoot) {
   const normalizedSourcePath = normalizeRelativePath(sourceRelativePath);
 
@@ -87,6 +89,19 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
         contentTransform: 'copilot-agent-frontmatter',
       }),
     ];
+  }
+
+  if ([CONTINUOUS_LEARNING_SKILL, `${CONTINUOUS_LEARNING_SKILL}/SKILL.md`].includes(normalizedSourcePath)) {
+    const assets = [
+      ['manifests/install-assets/copilot-learning-skill.md', `${CONTINUOUS_LEARNING_SKILL}/SKILL.md`],
+      ['scripts/copilot-learning.py', 'ecc/scripts/copilot-learning.py'],
+      [`${CONTINUOUS_LEARNING_SKILL}/scripts/instinct-cli.py`, `ecc/${CONTINUOUS_LEARNING_SKILL}/scripts/instinct-cli.py`],
+    ];
+    return assets.map(([sourceRelativePath, destination]) => createManagedOperation({
+      moduleId: module.id,
+      sourceRelativePath,
+      destinationPath: path.join(targetRoot, destination),
+    }));
   }
 
   if (hasPrefix(normalizedSourcePath, 'skills')) {

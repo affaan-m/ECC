@@ -117,6 +117,7 @@
     "scripts/antigravity/",
     "scripts/catalog.js",
     "scripts/config-health.py",
+    "scripts/copilot-learning.py",
     "scripts/config_health_constants.py",
     "scripts/config_health_paths.py",
     "scripts/config_health_scan.py",
