@@ -354,6 +354,32 @@ if (
   passed++;
 else failed++;
 
+if (
+  test('rotates oversized bash command logs and preserves restrictive permissions (#3846)', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-bash-rotate-'));
+    try {
+      const logFile = path.join(homeDir, '.claude', 'bash-commands.log');
+      fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      fs.writeFileSync(logFile, 'x'.repeat(256), 'utf8');
+      const result = spawnSync('node', [scriptPath, 'audit'], {
+        input: JSON.stringify({ tool_input: { command: 'echo ok' } }),
+        encoding: 'utf8',
+        env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir, ECC_BASH_LOG_MAX_BYTES: '100' },
+      });
+      assert.strictEqual(result.status, 0);
+      assert.ok(fs.existsSync(`${logFile}.1`), 'expected rotated .1 log file');
+      assert.ok(fs.readFileSync(logFile, 'utf8').includes('echo ok'));
+      if (process.platform !== 'win32') {
+        assert.strictEqual(fs.statSync(logFile).mode & 0o777, 0o600);
+      }
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })
+)
+  passed++;
+else failed++;
+
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);
 process.exit(failed > 0 ? 1 : 0);

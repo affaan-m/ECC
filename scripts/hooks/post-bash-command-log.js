@@ -190,9 +190,35 @@ function sanitizeCommand(command) {
     .replace(/\bgithub_pat_[A-Za-z0-9_]+\b/g, '<REDACTED>');
 }
 
+const DEFAULT_MAX_LOG_BYTES = 5 * 1024 * 1024;
+
+function rotateIfOversized(filePath, maxBytes) {
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.size >= maxBytes) {
+      fs.renameSync(filePath, `${filePath}.1`);
+    }
+  } catch {
+    // Missing or inaccessible file does not block logging.
+  }
+}
+
 function appendLine(filePath, line) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.appendFileSync(filePath, `${line}\n`, 'utf8');
+  const dir = path.dirname(filePath);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const maxBytes = Number(process.env.ECC_BASH_LOG_MAX_BYTES) > 0
+    ? Number(process.env.ECC_BASH_LOG_MAX_BYTES)
+    : DEFAULT_MAX_LOG_BYTES;
+  rotateIfOversized(filePath, maxBytes);
+  const fd = fs.openSync(filePath, 'a', 0o600);
+  try {
+    fs.writeSync(fd, `${line}\n`, undefined, 'utf8');
+    if (process.platform !== 'win32') {
+      try { fs.fchmodSync(fd, 0o600); } catch { /* ignore */ }
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 // Resolve the Claude profile directory the same way everywhere.
