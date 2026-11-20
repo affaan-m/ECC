@@ -57,6 +57,103 @@ function readAgent(dirPath, name) {
   return fs.readFileSync(path.join(dirPath, name), 'utf8');
 }
 
+function runCommentAndLineEndingTests() {
+  let passed = 0;
+  let failed = 0;
+
+  if (test('preserves frontmatter comments and blank lines after tools and stays a no-op when compatible', () => {
+    const tempDir = createTempDir();
+    const agentsDir = path.join(tempDir, '.qwen', 'agents');
+    try {
+      const compatible = [
+        '---', 'name: security-reviewer', 'tools: read_file, grep_search', '',
+        '# Keep red for security warnings', 'color: red', '---', '', 'Body'
+      ].join('\n');
+      writeAgent(agentsDir, 'security-reviewer.md', compatible);
+      const first = run([agentsDir]);
+      assert.strictEqual(first.code, 0, first.stderr);
+      assert.ok(first.stdout.includes('Updated 0 agent file(s)'), first.stdout);
+      assert.strictEqual(readAgent(agentsDir, 'security-reviewer.md'), compatible);
+
+      writeAgent(agentsDir, 'block.md', [
+        '---', 'name: block', 'tools:', '  - Read', '  - Grep', '',
+        '# Model setting', 'model: sonnet', '---', 'Body'
+      ].join('\n'));
+      assert.strictEqual(run([agentsDir]).code, 0);
+      const updatedBlock = readAgent(agentsDir, 'block.md');
+      assert.ok(updatedBlock.includes('tools: read_file, grep_search\n\n# Model setting\nmodel: inherit'), updatedBlock);
+    } finally { cleanupTempDir(tempDir); }
+  })) passed++; else failed++;
+
+  if (test('adapts multiline flow-sequence tools without swallowing following comments', () => {
+    const tempDir = createTempDir();
+    const agentsDir = path.join(tempDir, '.qwen', 'agents');
+    try {
+      writeAgent(agentsDir, 'flow.md', [
+        '---', 'name: flow', 'tools: [', '  Read,', '  MultiEdit,', '  Edit,', '  Grep', '  ]',
+        '# Keep section comment', 'model: opus', '---', '', 'Body'
+      ].join('\n'));
+      const result = run([agentsDir]);
+      assert.strictEqual(result.code, 0, result.stderr);
+      const updated = readAgent(agentsDir, 'flow.md');
+      assert.ok(updated.includes('tools: read_file, edit, grep_search\n# Keep section comment\nmodel: inherit'), updated);
+      assert.ok(!updated.includes(']'), updated);
+      const second = run([agentsDir]);
+      assert.strictEqual(second.code, 0, second.stderr);
+      assert.ok(second.stdout.includes('Updated 0 agent file(s)'), second.stdout);
+    } finally { cleanupTempDir(tempDir); }
+  })) passed++; else failed++;
+
+  if (test('handles inline YAML comments on color and model while respecting quoted # literals', () => {
+    const tempDir = createTempDir();
+    const agentsDir = path.join(tempDir, '.qwen', 'agents');
+    try {
+      const validCommented = [
+        '---', 'name: valid-comment', 'tools: read_file', 'color: red # security palette', '---', 'Body'
+      ].join('\n');
+      writeAgent(agentsDir, 'valid-comment.md', validCommented);
+      const unchanged = run([agentsDir]);
+      assert.strictEqual(unchanged.code, 0, unchanged.stderr);
+      assert.ok(unchanged.stdout.includes('Updated 0 agent file(s)'), unchanged.stdout);
+      assert.strictEqual(readAgent(agentsDir, 'valid-comment.md'), validCommented);
+
+      writeAgent(agentsDir, 'remap-comment.md', [
+        '---', 'name: remap-comment', 'tools: Read', 'color: teal # nearest cyan',
+        'model : sonnet # claude tier', '---', 'Body'
+      ].join('\n'));
+      writeAgent(agentsDir, 'quoted-hash.md', [
+        '---', 'name: quoted-hash', 'tools: Read', 'color: "teal # literal"', '---', 'Body'
+      ].join('\n'));
+      assert.strictEqual(run([agentsDir]).code, 0);
+      const remapped = readAgent(agentsDir, 'remap-comment.md');
+      assert.ok(remapped.includes('color: cyan'), remapped);
+      assert.ok(remapped.includes('model: inherit'), remapped);
+      assert.ok(!readAgent(agentsDir, 'quoted-hash.md').includes('color:'));
+    } finally { cleanupTempDir(tempDir); }
+  })) passed++; else failed++;
+
+  if (test('preserves mixed line endings in the body verbatim when adapting frontmatter', () => {
+    const tempDir = createTempDir();
+    const agentsDir = path.join(tempDir, '.qwen', 'agents');
+    const mixedBody = '\nFirst LF line\nPasted CRLF line\r\nFinal LF line\n';
+    try {
+      writeAgent(
+        agentsDir,
+        'mixed-endings.md',
+        `---\nname: mixed-endings\ntools: Read, Bash\ncolor: teal\n---\n${mixedBody}`
+      );
+      const result = run([agentsDir]);
+      assert.strictEqual(result.code, 0, result.stderr);
+      assert.strictEqual(
+        readAgent(agentsDir, 'mixed-endings.md'),
+        `---\nname: mixed-endings\ntools: read_file, run_shell_command\ncolor: cyan\n---\n${mixedBody}`
+      );
+    } finally { cleanupTempDir(tempDir); }
+  })) passed++; else failed++;
+
+  return { passed, failed };
+}
+
 function runTests() {
   console.log('\n=== Testing qwen-adapt-agents.js ===\n');
 
@@ -552,6 +649,10 @@ function runTests() {
       assert.strictEqual(readAgent(agentsDir, 'inherit-tools.md'), adapted);
     } finally { cleanupTempDir(tempDir); }
   })) passed++; else failed++;
+
+  const extra = runCommentAndLineEndingTests();
+  passed += extra.passed;
+  failed += extra.failed;
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
