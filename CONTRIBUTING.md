@@ -569,3 +569,11 @@ Never move or re-tag a published version; ship a new patch version instead.
 ---
 
 Thanks for contributing! Let's build a great resource together.
+
+## Automated Agent Feedback and Fork Testing
+
+When AI coding agents encounter failures in projects that use ECC:
+
+1. **Test on your fork first**: reproduce the issue against a clean ECC checkout without unrelated project plugins or local scripts.
+2. **Establish causality**: confirm that ECC code, hooks, skills, or prompts caused the failure rather than host tooling or project state.
+3. **Avoid auto-filing noise**: review agent-generated reports manually before opening an upstream issue, or run `node scripts/feedback.js` to format redacted diagnostics.
