@@ -304,13 +304,18 @@ async function cmdAwait(file, args, { stateDir, port }, profile = PLAN_PROFILE) 
     throw new Error('await --session-key requires a 12-character lowercase hexadecimal key');
   }
   if (!file && !requestedKey) throw new Error('await requires a file path');
+  const ack = valueAfter(args, '--ack');
+  const acknowledge = ack ? ack.split(',') : null;
+  if (args.includes('--ack') && (profile.mode !== 'ui' || !acknowledge || acknowledge.length > 50
+      || acknowledge.some(id => !/^fb-[1-9][0-9]{0,15}$/.test(id)))) throw new Error('await --ack requires comma-separated UI batch IDs');
   if (!(await healthCheck(port))) {
     return { status: 'no-server', hint: 'no canvas server is running; use `open` first', stateDir };
   }
   const reply = valueAfter(args, '--reply');
   const key = requestedKey || sessionKeyFor(canonicalizeArtifactPath(file));
-  if (reply) {
-    await request(port, 'POST', `/api/session/${key}/reply`, { text: reply });
+  if (reply || acknowledge) {
+    const sent = await request(port, 'POST', `/api/session/${key}/reply`, { ...(reply ? { text: reply } : {}), ...(acknowledge ? { acknowledge } : {}) });
+    if (sent.statusCode !== 200) throw new Error(sent.body.error || 'could not send reply');
   }
   const timeoutRaw = valueAfter(args, '--timeout-ms');
   const timeoutMs = timeoutRaw === null ? null : Number.parseInt(timeoutRaw, 10) || 0;

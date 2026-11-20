@@ -123,8 +123,18 @@ async function verifyInstalledCanvas(root, packageRoot, env) {
     const legacyAwait = new URL('/api/await', `http://127.0.0.1:${port}`);
     legacyAwait.searchParams.set('key', uiSession.key);
     const uiResult = await fetch(legacyAwait).then(response => response.json());
-    assert.equal(uiResult.items[0].kind, 'edits');
+    const [uiItem] = uiResult.items;
+    assert.equal(uiItem.kind, 'edits');
     assert.equal(store.get(uiSession.key).pendingFeedback.length, 0);
+    assert.equal(store.get(uiSession.key).uiBatches[0].id, uiItem.id);
+    const uiReply = await fetch(new URL(`/api/session/${uiSession.key}/reply`, legacyAwait), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ acknowledge: [uiItem.id], text: 'Applied the mockup edit' }),
+    });
+    assert.equal(uiReply.status, 200);
+    assert.equal(store.get(uiSession.key).uiBatches.length, 0);
+    assert.equal(store.get(uiSession.key).uiAcknowledged[0].id, uiItem.id);
 
     assert.equal((await bind(id)).nativeStatus, 'native-unverified');
     assert.equal((await feedback(id)).status, 'waiting');
@@ -138,6 +148,17 @@ async function verifyInstalledCanvas(root, packageRoot, env) {
     for (const headers of [{ host: 'example.invalid' }, { origin: 'https://example.invalid' }]) {
       const denied = await postBatch(endpoint, headers);
       assert.equal(denied.statusCode, 403);
+    }
+    const queued = store.get(session.key);
+    const obstacle = `${store.stateFile}.tmp`;
+    fs.mkdirSync(obstacle);
+    try {
+      const interrupted = await postBatch(endpoint);
+      assert.deepEqual({ code: interrupted.statusCode, pending: store.get(session.key).pendingFeedback.length }, { code: 500, pending: 1 });
+      assert.equal(store.get(session.key), queued);
+      assert.equal((await feedback(id)).status, 'unavailable');
+    } finally {
+      fs.rmdirSync(obstacle);
     }
     endpoint.searchParams.set('createdAt', '2000-01-01T00:00:00.000Z');
     const stale = await postBatch(endpoint);

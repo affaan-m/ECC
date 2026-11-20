@@ -52,6 +52,14 @@ function clampInt(value, { min = 0, max = MAX_DIMENSION } = {}) {
   return Math.min(max, Math.max(min, Math.round(number)));
 }
 
+// Dragging subtracts CSS positions, so even an integer gesture can produce
+// a fractional distance. Preserve that finite effect within the same bounds.
+function clampOffset(value) {
+  const number = typeof value === 'number' ? value : Number.parseFloat(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.min(MAX_DIMENSION, Math.max(-MAX_DIMENSION, number));
+}
+
 // A dimension of zero or less is "not provided", never a 1px viewport.
 function positiveInt(value) {
   const number = typeof value === 'number' ? value : Number.parseFloat(value);
@@ -109,6 +117,7 @@ function normalizeEdit(raw, position) {
     snippet: clampText(raw.snippet, MAX_SNIPPET),
     at: typeof raw.at === 'string' && raw.at ? clampText(raw.at, 40) : nowIso()
   };
+  if (typeof raw.sourceRevision === 'string' && /^[a-f0-9]{64}$/.test(raw.sourceRevision)) edit.sourceRevision = raw.sourceRevision;
   if (raw.stale === true) edit.stale = true;
 
   switch (raw.kind) {
@@ -142,8 +151,8 @@ function normalizeEdit(raw, position) {
       return edit;
     }
     case 'nudge': {
-      const dx = clampInt(raw.dx, { min: -MAX_DIMENSION });
-      const dy = clampInt(raw.dy, { min: -MAX_DIMENSION });
+      const dx = clampOffset(raw.dx);
+      const dy = clampOffset(raw.dy);
       if (dx === null || dy === null) return null;
       edit.dx = dx;
       edit.dy = dy;
@@ -239,6 +248,8 @@ function normalizeUiFeedbackItem(raw, counter) {
     }
     return item;
   }
+  if (typeof raw.snapshotHash === 'string' && /^[a-f0-9]{64}$/.test(raw.snapshotHash)) item.snapshotHash = raw.snapshotHash;
+  if (Array.isArray(raw.includedBatches)) item.includedBatches = raw.includedBatches.filter(id => typeof id === 'string' && /^fb-[1-9][0-9]{0,15}$/.test(id));
   item.edits = normalizeEdits(raw.edits);
   item.editCount = item.edits.length;
   const viewport = normalizeViewport(raw.viewport);
