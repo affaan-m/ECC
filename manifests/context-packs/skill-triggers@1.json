@@ -1,16 +1,16 @@
 {
   "coverage": {
-    "skills": 328,
-    "withTriggers": 43
+    "skills": 329,
+    "withTriggers": 44
   },
-  "generatedAt": "2026-10-30T00:01:34.569Z",
+  "generatedAt": "2026-11-20T16:37:39.877Z",
   "id": "skill-triggers@1",
   "model": {
     "effort": null,
     "id": "hand-seeded",
     "source": "manual-curation-pending-regeneration"
   },
-  "registryDigest": "e1ae66afd0ca1437da7cb799d413a74a8f5171f285074c9de8bbe2630dc02265",
+  "registryDigest": "31c05c59705e08b5960da111a0cacb027f5487b67b973781269e1a00493418b7",
   "schemaVersion": 1,
   "triggers": {
     "skill:agent-runtime-gateway-smoke-test": [
@@ -336,6 +336,18 @@
       "upload reel and short",
       "video captions per platform"
     ],
+    "skill:stripe-supabase-billing-guard": [
+      "audit stripe webhook signature verification",
+      "prevent duplicate stripe webhook credit grants",
+      "add check credits_balance non negative constraint",
+      "fix permissive supabase rls using true policy",
+      "harden postgres security definer search_path",
+      "prevent streaming llm denial of wallet race",
+      "two phase credit hold before streamtext",
+      "use integer cents instead of float for billing",
+      "stripe supabase billing migration security review",
+      "canonical invoice idempotency key for subscriptions"
+    ],
     "skill:tdd-workflow": [
       "write test first",
       "failing test",
@@ -358,6 +370,16 @@
       "bounded concurrency mapper",
       "module boundary exports"
     ],
+    "skill:ui-canvas": [
+      "preview the component before committing",
+      "show me a mockup in the browser",
+      "ui canvas",
+      "let me resize and move elements myself",
+      "edit the mockup by hand then build it",
+      "check the design on mobile and desktop",
+      "approve the ui before you implement it",
+      "lovable style visual editing"
+    ],
     "skill:verification-loop": [
       "pre pr checks",
       "verification report",
@@ -376,17 +398,7 @@
       "yoruba bilingual ui",
       "test yoruba character preservation",
       "yoruba accents not rendering"
-    ],
-    "skill:ui-canvas": [
-      "preview the component before committing",
-      "show me a mockup in the browser",
-      "ui canvas",
-      "let me resize and move elements myself",
-      "edit the mockup by hand then build it",
-      "check the design on mobile and desktop",
-      "approve the ui before you implement it",
-      "lovable style visual editing"
     ]
   },
-  "triggersDigest": "b00be40af04a07aec545fb55cd23ca3fce77d0613ca392a3177bbc2f0238fc9c"
+  "triggersDigest": "af42197392595b493a65cd74ff722515c2388894598e0b349a9a0b75fc292105"
 }
