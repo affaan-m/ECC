@@ -319,7 +319,8 @@ function scanGitGlobalOptions(words, budget, start) {
 function findGitBypassFlag(words, budget, start, command) {
   let skipNext = false;
   for (let index = start; index < words.length; index++) {
-    const value = words[index].value;
+    const token = words[index];
+    const value = token.value;
     budget.spend(value.length + 1);
     if (skipNext) { skipNext = false; continue; }
     if (value === '--') break;
@@ -329,6 +330,7 @@ function findGitBypassFlag(words, budget, start, command) {
     }
     if (command === 'push' && optionConsumesNextValue(value, PUSH_OPTIONS_WITH_VALUE)) { skipNext = true; continue; }
     if (isNoVerifyLongFlag(value) || (command === 'commit' && isCommitNoVerifyShortFlag(value))) return true;
+    if (token.dynamic && (/^--(?:no-?v|\$)/i.test(value) || (command === 'commit' && /^-(?:[a-zA-Z]*n|\$)/.test(value)))) return true;
   }
   return false;
 }
@@ -1317,18 +1319,65 @@ const PARAMETER_EXPANSION = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0
 
 function resolveShellSource(code, state, normalized, budget) {
   if (!code || typeof code !== 'string') return code;
-  return code.replace(PARAMETER_EXPANSION, (match, braced, bare) => {
-    const name = braced || bare;
-    budget.spend(name.length + 1);
-    if (normalized?.prefixAssignments?.has(name)) {
-      const ops = normalized.prefixAssignments.get(name);
-      return ops[ops.length - 1]?.value ?? match;
+  let current = code;
+  let replaced = true;
+  let iterations = 0;
+  while (replaced && iterations < 5) {
+    replaced = false;
+    iterations++;
+    current = current.replace(PARAMETER_EXPANSION, (match, braced, bare) => {
+      const name = braced || bare;
+      budget.spend(name.length + 1);
+      let val = null;
+      if (normalized?.prefixAssignments?.has(name)) {
+        const ops = normalized.prefixAssignments.get(name);
+        val = ops[ops.length - 1]?.value;
+      } else if (state?.variables?.has(name)) {
+        val = state.variables.get(name);
+      }
+      if (val !== null && val !== undefined && val !== match) {
+        replaced = true;
+        return val;
+      }
+      return match;
+    });
+  }
+  return current;
+}
+
+function resolveGitWords(words, state, normalized, budget) {
+  if (!state && !normalized) return words;
+  const result = [];
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    budget.spend(word.value.length + 1);
+    if (!word.dynamic) {
+      result.push(word);
+      continue;
     }
-    if (state?.variables?.has(name)) {
-      return state.variables.get(name);
+    const resolved = resolveShellSource(word.value, state, normalized, budget);
+    if (resolved === word.value) {
+      result.push(word);
+      continue;
     }
-    return match;
-  });
+    if (!word.quoted && /\s+/.test(resolved.trim())) {
+      const parts = resolved.trim().split(/\s+/);
+      for (const part of parts) {
+        result.push({
+          value: part,
+          dynamic: false,
+          quoted: false
+        });
+      }
+    } else {
+      result.push({
+        value: resolved,
+        dynamic: false,
+        quoted: word.quoted
+      });
+    }
+  }
+  return result;
 }
 
 function checkCommand(input) {
@@ -1339,12 +1388,13 @@ function checkCommand(input) {
     budget.spend(text.length + 1);
     pending.push({ text, opaque, context });
   }
-  function inspectOpaque(words, text, environment) {
-    for (let index = 0; index < words.length; index++) {
-      const word = words[index];
+  function inspectOpaque(words, text, environment, state, normalized) {
+    const resolved = resolveGitWords(words, state, normalized, budget);
+    for (let index = 0; index < resolved.length; index++) {
+      const word = resolved[index];
       budget.spend(word.value.length + 1);
       if (isGitExecutable(word.value)) {
-        const reason = checkGitWords(words, budget, index, environment);
+        const reason = checkGitWords(resolved, budget, index, environment);
         if (reason) return reason;
       }
       if (word.value !== text && /git/i.test(word.value) && /[\s'"()]/.test(word.value)) enqueue(word.value, true, { states: [shellState(environment, budget)] });
@@ -1403,9 +1453,10 @@ function checkCommand(input) {
   function inspectEnvironment(frame, role, normalized, environment, state) {
     const { task, command } = frame;
     const { words } = normalized;
+    const gitWords = resolveGitWords(words, state, normalized, budget);
     const reason = task.opaque || role.kind === 'opaque'
-      ? inspectOpaque(command.words, task.text, environment)
-      : role.kind === 'git' ? checkGitWords(words, budget, 0, environment) : null;
+      ? inspectOpaque(command.words, task.text, environment, state, normalized)
+      : role.kind === 'git' ? checkGitWords(gitWords, budget, 0, environment) : null;
     if (reason) return reason;
     if (role.code) {
       const code = role.dynamic

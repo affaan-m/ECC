@@ -2441,6 +2441,12 @@ if (test('blocks numeric separate -n limit on dynamic Git subcommand (git $SUB -
 if (test('blocks dynamic Git subcommand with -n and numeric file argument (SUBCMD=commit; git "$SUBCMD" -n 5 -m bypass-proof)', () => {
   const r = runHook({ tool_input: { command: 'SUBCMD=commit; git "$SUBCMD" -n 5 -m bypass-proof' } });
   assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks unresolved dynamic Git subcommand with -n and numeric file argument (git "$SUBCMD" -n 5 -m bypass-proof)', () => {
+  const r = runHook({ tool_input: { command: 'git "$SUBCMD" -n 5 -m bypass-proof' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
   assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git \$SUBCMD/);
 })) passed++; else failed++;
 
@@ -2524,6 +2530,60 @@ if (test('allows harmless variable use with git commit (git commit -m "$MSG")', 
 if (test('allows harmless bash -c with dynamic variable when no git bypass present (FOO=bar; bash -c "$FOO")', () => {
   const r = runHook({ tool_input: { command: 'FOO=bar; bash -c "$FOO"' } });
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify passed via variable to git commit (FLAG="--no-verify"; git commit $FLAG)', () => {
+  const r = runHook({ tool_input: { command: 'FLAG="--no-verify"; git commit $FLAG' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks -n passed via variable to git commit (FLAG="-n"; git commit $FLAG)', () => {
+  const r = runHook({ tool_input: { command: 'FLAG="-n"; git commit $FLAG' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify passed via variable to git push (FLAG="--no-verify"; git push $FLAG)', () => {
+  const r = runHook({ tool_input: { command: 'FLAG="--no-verify"; git push $FLAG' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git push/);
+})) passed++; else failed++;
+
+if (test('blocks combined options with --no-verify via variable (OPTS="-m test --no-verify"; git commit $OPTS)', () => {
+  const r = runHook({ tool_input: { command: 'OPTS="-m test --no-verify"; git commit $OPTS' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks core.hooksPath override passed via variable before git commit (FLAG="-c core.hooksPath=/dev/null"; git $FLAG commit)', () => {
+  const r = runHook({ tool_input: { command: 'FLAG="-c core.hooksPath=/dev/null"; git $FLAG commit' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: Overriding core.hooksPath is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks dynamically assembled --$X flag on git commit (X="no-verify"; git commit --"$X")', () => {
+  const r = runHook({ tool_input: { command: 'X="no-verify"; git commit --"$X"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks dynamically assembled -$X flag on git commit (X="n"; git commit -"$X")', () => {
+  const r = runHook({ tool_input: { command: 'X="n"; git commit -"$X"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks multi-level variable resolution through bash -c (A="git commit --no-verify"; B="$A"; bash -c "$B")', () => {
+  const r = runHook({ tool_input: { command: 'A="git commit --no-verify"; B="$A"; bash -c "$B"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks split variable resolution through bash -c (A="git"; B="commit --no-verify"; CMD="$A $B"; bash -c "$CMD")', () => {
+  const r = runHook({ tool_input: { command: 'A="git"; B="commit --no-verify"; CMD="$A $B"; bash -c "$CMD"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
 })) passed++; else failed++;
 
 console.log('─'.repeat(50));
