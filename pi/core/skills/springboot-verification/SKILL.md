@@ -48,9 +48,40 @@ mvn jacoco:report   # verify 80%+ coverage
 ./gradlew test jacocoTestReport
 ```
 
-Report:
-- Total tests, passed/failed
-- Coverage % (lines/branches)
+Report the number of passed, failed, and skipped tests and the line and branch
+coverage.
+
+### Required Integration Tests in Gradle
+
+Identify the modules, tasks, and suites that the project requires for
+readiness. Run each required integration test task, including any separate task
+such as `integrationTest`.
+
+With `@Testcontainers(disabledWithoutDocker = true)`, a Gradle build can succeed
+after skipping integration tests when Docker is unavailable. A later run can
+restore those skipped results from the build cache.
+
+Confirm Docker is available to Testcontainers and verify that each required
+integration test task executed in the current run. If Gradle reports
+`FROM-CACHE` or `UP-TO-DATE`, clean that task's outputs and rerun it with the
+build cache disabled. Use this command for the default `test` task.
+
+```bash
+./gradlew cleanTest test --no-build-cache
+```
+
+For a separate integration test task, use its matching clean task and module
+path.
+
+```bash
+./gradlew :app:cleanIntegrationTest :app:integrationTest --no-build-cache
+```
+
+Inspect this run's JUnit XML. Gradle writes these reports to
+`build/test-results/<task>/` in each module by default. Verify that the reports
+contain a result for every required test. Mark the test phase `FAIL` and the
+overall result `NOT READY` if any required result is missing, skipped, failed,
+or errored. Report optional skips allowed by the project separately.
 
 ### Unit Tests
 
@@ -213,7 +244,7 @@ VERIFICATION REPORT
 ===================
 Build:     [PASS/FAIL]
 Static:    [PASS/FAIL] (spotbugs/pmd/checkstyle)
-Tests:     [PASS/FAIL] (X/Y passed, Z% coverage)
+Tests:     [PASS/FAIL] (X passed, Y failed, Z skipped, C% coverage)
 Security:  [PASS/FAIL] (CVE findings: N)
 Diff:      [X files changed]
 
