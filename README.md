@@ -2224,3 +2224,7 @@ The short version:
 MIT. Use it freely, adapt it to your workflow, and contribute back when you can.
 
 **Star this repo if it helps. Read the guides. Build something great.**
+
+## MCP Installation Safety
+
+Review [docs/MCP-INSTALLATION-SAFETY.md](docs/MCP-INSTALLATION-SAFETY.md) before configuring third-party MCP servers.
