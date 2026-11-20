@@ -420,6 +420,41 @@ function runTargetSmoke(options) {
   );
 }
 
+function verifyCopilotConfigureSkill(runCli, projectDir) {
+  const args = ['--target', 'copilot', '--json'];
+  const selection = ['--skills', 'configure-ecc', '--no-hooks'];
+  const root = path.join(projectDir, '.github');
+  const skill = path.join(root, 'skills', 'configure-ecc', 'SKILL.md');
+  const state = path.join(root, 'ecc-install-state.json');
+  const sentinel = path.join(root, 'configure-sentinel.txt');
+  fs.mkdirSync(root, { recursive: true });
+  fs.writeFileSync(sentinel, 'keep this Copilot project file\n', 'utf8');
+
+  const preview = parseJsonOutput(runCli(['install', ...args, ...selection, '--dry-run']), 'Copilot install preview');
+  assert.strictEqual(preview.dryRun, true);
+  assert.ok(!fs.existsSync(skill) && !fs.existsSync(state));
+  parseJsonOutput(runCli(['install', ...args, ...selection]), 'Copilot install');
+  const projected = fs.readFileSync(skill, 'utf8');
+  assert.match(projected, /ecc list-installed --target copilot --json/);
+  assert.match(projected, /ecc repair --target copilot --dry-run --json/);
+  assert.doesNotMatch(projected, /claude plugin|npx\s|ecc setup/);
+  assert.ok(!fs.existsSync(path.join(root, 'hooks')));
+  assert.strictEqual(parseJsonOutput(runCli(['list-installed', ...args]), 'Copilot inventory').records.length, 1);
+  assert.strictEqual(parseJsonOutput(runCli(['doctor', ...args]), 'Copilot doctor').summary.okCount, 1);
+
+  fs.unlinkSync(skill);
+  const previousState = fs.readFileSync(state);
+  parseJsonOutput(runCli(['repair', ...args, '--dry-run']), 'Copilot repair preview');
+  assert.ok(!fs.existsSync(skill));
+  assert.deepStrictEqual(fs.readFileSync(state), previousState);
+  assert.strictEqual(parseJsonOutput(runCli(['repair', ...args]), 'Copilot repair').summary.errorCount, 0);
+  assert.strictEqual(fs.readFileSync(skill, 'utf8'), projected);
+  assert.strictEqual(parseJsonOutput(runCli(['doctor', ...args]), 'Copilot doctor after repair').summary.okCount, 1);
+  assert.strictEqual(parseJsonOutput(runCli(['uninstall', ...args]), 'Copilot uninstall').summary.errorCount, 0);
+  assert.ok(!fs.existsSync(skill) && !fs.existsSync(state));
+  assert.strictEqual(fs.readFileSync(sentinel, 'utf8'), 'keep this Copilot project file\n');
+}
+
 function runLifecycle(options) {
   assert.ok(fs.existsSync(options.packagePath), `release package does not exist: ${options.packagePath}`);
   assertDownloadedArtifact(options.packagePath, process.cwd());
@@ -844,6 +879,8 @@ function runLifecycle(options) {
     assert.strictEqual(statusAfterUninstall.installStateProjection.warningCount, 0);
     assert.strictEqual(statusAfterUninstall.readiness.status, 'ok');
 
+    verifyCopilotConfigureSkill(runCli, projectDir);
+
     const antigravityRoot = path.join(projectDir, '.agents');
     runTargetSmoke({
       runCli,
@@ -897,6 +934,7 @@ function runLifecycle(options) {
         'uninstall',
         'status-uninstalled',
         'sentinel-preserved',
+        'copilot-configure-preview-install-doctor-repair-uninstall',
         'antigravity-install-doctor-uninstall',
         'opencode-install-doctor-uninstall',
         'mistral-vibe-skill-install-doctor-uninstall',

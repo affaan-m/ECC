@@ -73,6 +73,14 @@ function planCopilotRuleOperations(module, normalizedSourcePath, targetRoot, rep
 function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRoot) {
   const normalizedSourcePath = normalizeRelativePath(sourceRelativePath);
 
+  if (normalizedSourcePath === 'skills/configure-ecc' || normalizedSourcePath === 'skills/configure-ecc/SKILL.md') {
+    return [createManagedOperation({
+      moduleId: module.id,
+      sourceRelativePath: 'manifests/install-assets/copilot-configure-ecc-skill.md',
+      destinationPath: path.join(targetRoot, 'skills', 'configure-ecc', 'SKILL.md'),
+    })];
+  }
+
   if (hasPrefix(normalizedSourcePath, 'agents')) {
     return [
       createManagedOperation({
