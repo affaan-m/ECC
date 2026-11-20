@@ -130,6 +130,14 @@
       },
       "description": "YouTube transcript search and monitoring for your AI: exact quotes, full transcripts and speakers. Needs an Arcmira API key, or drop the headers block on hosts that sign in with MCP OAuth."
     },
+    "getyoutubetranscript": {
+      "type": "http",
+      "url": "https://getyoutubetranscript.com/api/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_GETYOUTUBETRANSCRIPT_API_KEY_HERE"
+      },
+      "description": "YouTube video transcripts for your AI: the full transcript of any video in any caption language it has, with timestamps, plus YouTube search and channel and playlist listings. Needs a GetYouTubeTranscript API key, or drop the headers block on hosts that sign in with MCP OAuth."
+    },
     "context7": {
       "command": "npx",
       "args": ["-y", "@upstash/context7-mcp@latest"],
