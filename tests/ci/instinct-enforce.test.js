@@ -317,6 +317,39 @@ async function runTests() {
   });
 
   await withHomunculus({
+    id: 'dont-use-foowidget',
+    confidence: 0.91,
+    content: "## Action\nDon't use 'fooWidget'.\n",
+  }, async () => {
+    if (await test("contraction before single-quoted identifier in ## Action blocks at 0.91", async () => {
+      const hook = loadHook();
+      const result = await hook.run(JSON.stringify({
+        tool_name: 'Write',
+        tool_input: { file_path: '/src/a.js', content: 'fooWidget()' },
+      }));
+      assert.strictEqual(result.exitCode, 2);
+      assert.ok(String(result.stderr || '').includes('dont-use-foowidget'));
+    })) passed++; else failed++;
+  });
+
+  await withHomunculus({
+    id: 'evidence-only-never',
+    confidence: 0.91,
+    content: '## Action\nPrefer functional components.\n\n## Evidence\nPrevious code never handled nulls.\n',
+  }, async () => {
+    if (await test('ban language only in ## Evidence does not block edits matching the evidence word', async () => {
+      const hook = loadHook();
+      const result = await hook.run(JSON.stringify({
+        tool_name: 'Write',
+        tool_input: { file_path: '/src/a.js', content: 'handled = true' },
+      }));
+      assert.strictEqual(result.exitCode, 0);
+      assert.strictEqual(result.stdout, '');
+      assert.ok(!result.additionalContext);
+    })) passed++; else failed++;
+  });
+
+  await withHomunculus({
     id: 'no-foo-prefix',
     confidence: 0.91,
     content: 'NEVER foo prefix on new modules',

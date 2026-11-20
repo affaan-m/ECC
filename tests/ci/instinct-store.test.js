@@ -493,6 +493,90 @@ function runTests() {
     }), 'guidance');
   })) passed++; else failed++;
 
+  if (test('instinctMatchKind treats an apostrophe before a single-quoted ban as a prohibition', () => {
+    const { instinctMatchKind } = loadStore();
+    const instinct = {
+      id: 'dont-use-foowidget',
+      confidence: 0.91,
+      trigger: '',
+      content: "## Action\nDon't use 'fooWidget'.\n",
+    };
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: 'a.js',
+      content: 'fooWidget()',
+    }), 'prohibition');
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: 'a.js',
+      content: 'barWidget()',
+    }), null);
+    assert.strictEqual(instinctMatchKind(instinct, {
+      file_path: 'a.js',
+      content: 't use something',
+    }), null);
+
+    const mixedContractions = {
+      id: 'its-legacy-dont-use-foowidget',
+      confidence: 0.91,
+      trigger: '',
+      content: "It's legacy: don't use 'fooWidget', prefer 'barWidget'.",
+    };
+    assert.strictEqual(instinctMatchKind(mixedContractions, {
+      file_path: 'a.js',
+      content: 'fooWidget()',
+    }), 'prohibition');
+    assert.strictEqual(instinctMatchKind(mixedContractions, {
+      file_path: 'a.js',
+      content: 'barWidget()',
+    }), 'guidance');
+  })) passed++; else failed++;
+
+  if (test('instinctMatchKind derives prohibitions only from the ## Action section', () => {
+    const { instinctMatchKind } = loadStore();
+    const evidenceOnlyBan = {
+      id: 'prefer-functional',
+      confidence: 0.91,
+      trigger: '',
+      content: '## Action\nPrefer functional components.\n\n## Evidence\nPrevious code never handled nulls.\n',
+    };
+    assert.strictEqual(instinctMatchKind(evidenceOnlyBan, {
+      file_path: 'a.js',
+      content: 'handled = true',
+    }), null);
+
+    const evidenceQuotedBan = {
+      id: 'prefer-modern-api',
+      confidence: 0.91,
+      trigger: '',
+      content: '## Action\nPrefer `modernApi`.\n\n## Evidence\nPrevious code never awaited `legacyApi`.\n',
+    };
+    assert.strictEqual(instinctMatchKind(evidenceQuotedBan, {
+      file_path: 'a.js',
+      content: 'legacyApi()',
+    }), 'guidance');
+
+    const actionBan = {
+      id: 'no-legacy-api',
+      confidence: 0.91,
+      trigger: '',
+      content: '## Action\nNever use legacyApi.\n\n## Evidence\nSeen twice.\n',
+    };
+    assert.strictEqual(instinctMatchKind(actionBan, {
+      file_path: 'a.js',
+      content: 'legacyApi()',
+    }), 'prohibition');
+
+    const bareBodyBan = {
+      id: 'no-legacy-api-bare',
+      confidence: 0.91,
+      trigger: '',
+      content: 'Never use legacyApi.',
+    };
+    assert.strictEqual(instinctMatchKind(bareBodyBan, {
+      file_path: 'a.js',
+      content: 'legacyApi()',
+    }), 'prohibition');
+  })) passed++; else failed++;
+
   if (test('mergeProjectOverGlobal picks the copy SessionStart shows', () => {
     withEnv({ ECC_INSTINCT_CONFIDENCE_THRESHOLD: undefined }, () => {
       const { mergeProjectOverGlobal } = loadStore();

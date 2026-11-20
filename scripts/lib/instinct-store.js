@@ -16,7 +16,9 @@ const DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD = 0.7;
 const DEFAULT_MATCH_LIMIT = 3;
 const QUOTED_IDENTIFIER_MIN_LENGTH = 4;
 const MATCH_STOPWORDS = new Set(['when', 'always', 'never', 'the', 'and']);
-const QUOTED_IDENTIFIER_RE = /(["'`])([^"'`]+)\1/g;
+// An apostrophe inside a word (Don't, it's) never opens a single-quoted span.
+const QUOTED_IDENTIFIER_RE = /(["`]|(?<!\w)')([^"'`]+)\1/g;
+const ACTION_SECTION_RE = /(?:^|\r?\n)## Action[ \t]*(?=\r?\n|$)([\s\S]*?)(?:\r?\n## |\r?\n---|$)/;
 const PROHIBITION_MARKER_RE = /\b(?:never|do not|don't|dont)\b/i;
 // The trailing words stop before another marker, so "NEVER foo and NEVER bar"
 // leaves "NEVER bar" for the next match instead of swallowing it.
@@ -367,6 +369,12 @@ function extractNeverTokens(text) {
   return tokens;
 }
 
+function extractActionSection(content) {
+  const source = String(content || '');
+  const match = source.match(ACTION_SECTION_RE);
+  return (match ? match[1] : source).trim();
+}
+
 /**
  * How an instinct matches a tool payload: `'prohibition'` when the payload
  * hits something the instinct forbids (a "never X" token, or a quoted
@@ -388,7 +396,8 @@ function instinctMatchKind(instinct, toolInput) {
   const pathOrCommand = `${filePath}\n${command}`;
   const quotedHaystack = [payload, command, basename].join('\n');
 
-  const neverTokens = extractNeverTokens(instinct.content);
+  const actionContent = extractActionSection(instinct.content);
+  const neverTokens = extractNeverTokens(actionContent);
   const neverHaystack = payload.toLowerCase();
   for (const token of neverTokens) {
     if (neverHaystack.includes(token.toLowerCase())) {
@@ -396,10 +405,10 @@ function instinctMatchKind(instinct, toolInput) {
     }
   }
 
-  // A quoted name is a prohibition only when it sits in the clause that
-  // forbids something; a quoted file in the trigger stays guidance even when
-  // the content forbids something unrelated.
-  const prohibited = new Set(extractProhibitedClauses(instinct.content)
+  // A quoted name is a prohibition only when it sits in the clause of the
+  // Action section that forbids something; a quoted file in the trigger or
+  // non-Action sections stays guidance.
+  const prohibited = new Set(extractProhibitedClauses(actionContent)
     .flatMap(clause => extractQuotedIdentifiers(clause))
     .map(identifier => identifier.toLowerCase()));
   const quotedSource = `${instinct.trigger || ''}\n${instinct.content || ''}`;
