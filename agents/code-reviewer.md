@@ -321,3 +321,10 @@ When reviewing AI-generated changes, prioritize:
 Cost-awareness check:
 - Flag workflows that escalate to higher-cost models without clear reasoning need.
 - Recommend defaulting to lower-cost tiers for deterministic refactors.
+
+## Review Anchors (Candidate vs. Squash Commits)
+
+When summarizing PR review state:
+1. Query paginated review threads across both the candidate head commit and any landed/squash commit anchor.
+2. Preserve observation timestamps so post-merge review suggestions are distinguished from pre-integration findings.
+3. Never report an empty candidate-commit query as total absence of feedback if squash-commit threads exist or retrieval failed.
