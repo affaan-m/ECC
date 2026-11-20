@@ -366,3 +366,17 @@ If you need to switch back:
 For issues specific to:
 - **OpenCode CLI**: Report to OpenCode's issue tracker
 - **ECC Configuration**: Report to [github.com/affaan-m/ECC](https://github.com/affaan-m/ECC)
+
+## Step-by-Step OpenCode 2.x Installation (#3229)
+
+1. Build the compiled OpenCode V2 plugin payload inside your ECC checkout:
+   ```bash
+   npm ci --ignore-scripts
+   npm run build:opencode
+   ```
+2. Install globally into `~/.config/opencode/` (recommended — run from any workspace):
+   ```bash
+   ./install.sh --profile full --target opencode --enable-hooks
+   ```
+3. Open your target project directory and run OpenCode there; ECC installs globally into your OpenCode config root rather than inside the project root unless explicitly scoped.
+4. For OpenCode V2, place session-wide markdown instructions in `AGENTS.md` and confirm agents via `opencode debug agents`.
