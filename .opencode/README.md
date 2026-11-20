@@ -262,3 +262,9 @@ re-exporting the real definition from `index.ts` would register the id
 after the first as failed (`Duplicate plugin ID`). The source and published
 package barrel remain available for module imports; the package `./plugins`
 subpath maps to the live `dist/plugins/ecc-hooks.js` entry point.
+
+
+## OpenCode V2 Notes
+
+- **Existing `opencode.json`**: Merge ECC's `agent`, `command`, `plugin`, and `skills.paths` (`./skills`) entries into your existing `~/.config/opencode/opencode.json` (or use `mergeOpenCodeConfig` from `scripts/lib/install-targets/opencode-home.js`) instead of replacing your config wholesale.
+- **Instructions in V2**: OpenCode V2 loads project instructions from `AGENTS.md` rather than executing `opencode.json` `instructions` arrays automatically; copy or reference `.opencode/instructions/INSTRUCTIONS.md` from `AGENTS.md` when upgrading.
