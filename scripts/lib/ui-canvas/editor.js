@@ -29,6 +29,7 @@ function uiEditorJs() {
   if (window.__eccUiCanvasEditor) return;
   window.__eccUiCanvasEditor = true;
 
+  var sourceRevision = document.currentScript && document.currentScript.getAttribute('data-source-sha256');
   var post = function (msg) { window.parent.postMessage(msg, '*'); };
 
   // ---- state -------------------------------------------------------------
@@ -37,6 +38,8 @@ function uiEditorJs() {
   var hovered = null;
   var editing = null;
   var edits = [];
+  var deliveryRequest = null;
+  var bakedEditIds = [];
   var redoStack = [];
   var editSeq = 0;
   var gesture = null;
@@ -137,7 +140,7 @@ function uiEditorJs() {
     return step + ':nth-of-type(' + nthOfType(el) + ')';
   }
   // Prefer a unique id, else a type path scoped to the nearest id. Verified
-  // unique so re-application after a reload lands on the same node.
+  // unique within this source revision; positional paths cannot prove identity after a rewrite.
   function selectorFor(el) {
     if (!isElement(el)) return 'body';
     if (el.id && /^[A-Za-z_][\w-]*$/.test(el.id) && document.querySelectorAll('#' + esc(el.id)).length === 1) return '#' + esc(el.id);
@@ -157,7 +160,11 @@ function uiEditorJs() {
     return selector;
   }
   function resolve(selector) {
-    try { var el = document.querySelector(selector); return el && !isOurs(el) ? el : null; } catch (_e) { return null; }
+    try { var matches = document.querySelectorAll(selector); return matches.length === 1 && !isOurs(matches[0]) ? matches[0] : null; } catch (_e) { return null; }
+  }
+  function resolveForEdit(selector, revision) {
+    if (!/^(#[A-Za-z_][\w-]*|body|html)$/.test(selector) && (!revision || revision !== sourceRevision)) return null;
+    return resolve(selector);
   }
   function snippetFor(el) {
     if (!isElement(el)) return '';
@@ -237,7 +244,7 @@ function uiEditorJs() {
   function describe(el) {
     var rect = el.getBoundingClientRect();
     return {
-      selector: selectorFor(el),
+      selector: selectorFor(el), sourceRevision: sourceRevision,
       tag: el.tagName.toLowerCase(),
       id: el.id || '',
       classes: Array.prototype.slice.call(el.classList, 0, 6),
@@ -307,7 +314,7 @@ function uiEditorJs() {
   // ---- edit log -----------------------------------------------------------------
   function newEdit(kind, el, detail) {
     editSeq += 1;
-    var edit = { id: 'e' + editSeq + '-' + Date.now().toString(36), kind: kind, selector: selectorFor(el), tag: el.tagName.toLowerCase(), snippet: snippetFor(el), at: new Date().toISOString() };
+    var edit = { id: 'e' + editSeq + '-' + Date.now().toString(36), kind: kind, selector: selectorFor(el), sourceRevision: sourceRevision, tag: el.tagName.toLowerCase(), snippet: snippetFor(el), at: new Date().toISOString() };
     for (var key in detail) if (Object.prototype.hasOwnProperty.call(detail, key)) edit[key] = detail[key];
     return edit;
   }
@@ -368,7 +375,7 @@ function uiEditorJs() {
   // edit targets (resolved by selector during re-application). Returns false
   // when the document no longer matches, so the edit can be flagged stale.
   function applyEdit(edit, el) {
-    el = el || resolve(edit.selector);
+    el = el || resolveForEdit(edit.selector, edit.sourceRevision);
     if (edit.kind === 'remove') {
       if (!el) return false;
       var parent = el.parentElement;
@@ -404,8 +411,8 @@ function uiEditorJs() {
       return true;
     }
     if (edit.kind === 'move') {
-      var target = resolve(edit.to.parent);
-      if (!target) return false;
+      var target = resolveForEdit(edit.to.parent, edit.sourceRevision);
+      if (!target || target === el || el.contains(target)) return false;
       edit._fromParent = el.parentElement;
       edit._fromIndex = indexIn(el.parentElement, el);
       insertAt(target, el, edit.to.index);
@@ -424,7 +431,7 @@ function uiEditorJs() {
   }
   function revertEdit(edit) {
     if (edit.stale) return false;
-    var el = edit._el && edit._el.isConnected ? edit._el : (edit.kind === 'remove' ? edit._el : resolve(edit.selector));
+    var el = edit._el && edit._el.isConnected ? edit._el : (edit.kind === 'remove' ? edit._el : resolveForEdit(edit.selector, edit.sourceRevision));
     if (edit.kind === 'remove') {
       if (!el || !edit._parent) return false;
       insertAt(edit._parent, el, edit._index);
@@ -441,6 +448,7 @@ function uiEditorJs() {
     return false;
   }
   function undo() {
+    if (deliveryRequest) return;
     for (var i = edits.length - 1; i >= 0; i--) {
       if (edits[i].stale) continue;
       var edit = edits.splice(i, 1)[0];
@@ -455,6 +463,7 @@ function uiEditorJs() {
     scheduleBoxes();
   }
   function redo() {
+    if (deliveryRequest) return;
     var edit = redoStack.pop();
     if (!edit) return;
     if (applyEdit(edit, edit._el && edit._el.isConnected ? edit._el : null)) { edits.push(edit); toast('Redid ' + edit.kind); }
@@ -463,13 +472,14 @@ function uiEditorJs() {
     scheduleBoxes();
   }
   function resetAll() {
+    if (deliveryRequest) return;
     for (var i = edits.length - 1; i >= 0; i--) revertEdit(edits[i]);
-    edits = [];
+    edits = edits.filter(function (edit) { return edit.submitted; });
     redoStack = [];
     postEdits();
     postSelection();
     scheduleBoxes();
-    toast('All edits reverted');
+    toast(edits.length ? 'Pending edits reverted; applied changes still need agent resolution' : 'All edits reverted');
   }
   // After the agent rewrites the file the frame reloads from scratch; the
   // shell hands back the edit log and we replay it in order. Edits whose
@@ -484,24 +494,52 @@ function uiEditorJs() {
     var incoming = Array.isArray(payload.edits) ? payload.edits : [];
     var baked = Array.isArray(payload.baked) ? payload.baked : [];
     edits = [];
+    bakedEditIds = [];
+    deliveryRequest = payload.deliveryRequest || null;
     redoStack = [];
-    // Applied but not yet written to the file: re-apply without logging them,
-    // so the preview keeps showing what the human handed over.
-    for (var b = 0; b < baked.length; b++) {
-      applyEdit(copyEdit(baked[b]), null);
-      var bakedSeq = parseInt(String(baked[b].id).slice(1), 10);
-      if (bakedSeq > editSeq) editSeq = bakedSeq;
+    // Replay submitted batches atomically. A missing target must not leave
+    // the represented part of a batch applied twice on a partially edited file.
+    var batches = Array.isArray(payload.batches) ? payload.batches : [{ edits: baked }];
+    var represented = Object.create(null);
+    var pendingBaked = deliveryRequest && sourceRevision && payload.pendingSnapshotHash === sourceRevision && Array.isArray(payload.pendingBakedEditIds) ? payload.pendingBakedEditIds : [];
+    batches.forEach(function (batch) {
+      if (sourceRevision && batch.snapshotHash === sourceRevision) { represented[batch.id] = true; (batch.includedBatches || []).forEach(function (id) { represented[id] = true; }); }
+      if (batch.edits && batch.edits.length && batch.edits.every(function (edit) { return pendingBaked.indexOf(edit.id) >= 0; })) represented[batch.id] = true;
+    });
+    for (var b = 0; b < batches.length; b++) {
+      var applied = [], failed = false;
+      var batchEdits = batches[b].edits || [];
+      for (var n = 0; !represented[batches[b].id] && n < batchEdits.length; n++) {
+        var candidate = copyEdit(batchEdits[n]);
+        try { if (!applyEdit(candidate, null)) { failed = true; break; } }
+        catch (_error) { try { revertEdit(candidate); } catch (_rollbackError) { /* keep batch unresolved */ } failed = true; break; }
+        applied.push(candidate);
+      }
+      if (failed) {
+        for (var r = applied.length - 1; r >= 0; r--) { try { revertEdit(applied[r]); } catch (_rollbackError) { /* keep batch unresolved */ } }
+        batchEdits.forEach(function (edit) { edits.push(Object.assign(copyEdit(edit), { stale: true, submitted: true })); });
+      } else {
+        batchEdits.forEach(function (edit) { bakedEditIds.push(edit.id); });
+      }
+      batchEdits.forEach(function (edit) {
+        var seq = parseInt(String(edit.id).slice(1), 10);
+        if (seq > editSeq) editSeq = seq;
+      });
     }
     for (var i = 0; i < incoming.length; i++) {
+      if (incoming[i].submitted) continue;
       var edit = copyEdit(incoming[i]);
       delete edit.stale;
-      if (!applyEdit(edit, null)) edit.stale = true;
+      var pending = deliveryRequest && (payload.pendingEditIds || []).indexOf(edit.id) >= 0;
+      var inSource = pending && sourceRevision && payload.pendingSnapshotHash === sourceRevision;
+      if (edit.unverified || (!inSource && ((pending && payload.pendingSourceRevision !== sourceRevision) || !applyEdit(edit, null)))) edit.stale = true;
+      if (deliveryRequest) edit._exported = true;
       edits.push(edit);
       var seq = parseInt(String(edit.id).slice(1), 10);
       if (seq > editSeq) editSeq = seq;
     }
     if (payload.scroll) window.scrollTo(payload.scroll.x || 0, payload.scroll.y || 0);
-    if (payload.selection) { var el = resolve(payload.selection); if (el) selected = el; }
+    if (payload.selection) { var el = resolveForEdit(payload.selection, payload.selectionRevision); if (el) selected = el; }
     updateBoxes();
     postEdits();
     postSelection();
@@ -711,18 +749,35 @@ ${editorGesturesJs()}
       case 'uc:redo': redo(); break;
       case 'uc:reset': resetAll(); break;
       case 'uc:forget':
-        // The agent baked the current edits into the file: drop the log
-        // without touching the DOM so nothing is replayed twice.
-        edits = [];
-        redoStack = [];
+        if (deliveryRequest) break;
+        // Compatibility with an older shell: a scoped acknowledgment should
+        // always supply IDs so edits created after capture stay undoable.
+        edits = edits.filter(function (edit) { return edit.submitted || (Array.isArray(msg.editIds) && msg.editIds.indexOf(edit.id) < 0); });
         postEdits();
+        postSelection();
+        break;
+      case 'uc:delivery-end':
+        if (deliveryRequest !== msg.requestId) break;
+        if (msg.accepted) {
+          var captured = edits.filter(function (edit) { return msg.editIds.indexOf(edit.id) >= 0; });
+          var proven = msg.editIds.every(function (id) { return bakedEditIds.indexOf(id) >= 0 || captured.some(function (edit) { return edit.id === id && !edit.stale; }); });
+          if (proven) { bakedEditIds = bakedEditIds.concat(msg.editIds); edits = edits.filter(function (edit) { return msg.editIds.indexOf(edit.id) < 0; }); }
+          else captured.forEach(function (edit) { edit.stale = true; edit.submitted = true; });
+        }
+        if (!msg.retryPending) { deliveryRequest = null; edits.forEach(function (edit) { delete edit._exported; }); }
+        postEdits();
+        postSelection();
         break;
       case 'uc:pause-animations':
         animationsPaused = Boolean(msg.paused);
         if (animationsPaused) document.head.appendChild(pauseStyle); else pauseStyle.remove();
         break;
       case 'uc:export':
-        post({ type: 'uc:export', requestId: msg.requestId, html: exportHtml(), edits: edits.map(publicEdit) });
+        if (msg.lock) {
+          deliveryRequest = msg.requestId;
+          edits.forEach(function (edit) { edit._exported = true; });
+        }
+        post({ type: 'uc:export', requestId: msg.requestId, html: exportHtml(), sourceRevision: sourceRevision, edits: edits.map(publicEdit), bakedEditIds: bakedEditIds.slice() });
         break;
       case 'uc:scroll-to': window.scrollTo(msg.x || 0, msg.y || 0); break;
       default: break;

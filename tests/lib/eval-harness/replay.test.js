@@ -257,4 +257,116 @@ test('valid JSON scalar and array responses still replay with the verified fixtu
   } finally { cleanup(dir); }
 });
 
+test('record snapshots a key-sensitive response once and replays only its stored JSON', () => {
+  const dir = tempDir('response-json-snapshot');
+  try {
+    const store = new replay.FixtureStore(dir);
+    const seen = [];
+    const response = { toJSON(key) { seen.push(key); return { holder: key, generation: seen.length }; } };
+    let liveCalls = 0;
+    const declared = { custom: { effect_class: 'SE0', determinism: 'deterministic', impl() {
+      liveCalls += 1;
+      return response;
+    } } };
+    const recorder = replay.createReplayer(declared, { mode: 'record', store });
+    assert.strictEqual(recorder.call('custom', {}), response, 'Live callers retain their original return value');
+    assert.deepStrictEqual(seen, ['']);
+    const replayer = replay.createReplayer(declared, { store });
+    assert.deepStrictEqual(replayer.call('custom', {}), { holder: '', generation: 1 });
+    assert.strictEqual(liveCalls, 1);
+    assert.deepStrictEqual(seen, [''], 'Reading the fixture cannot rerun the response serializer');
+    const file = store.pathFor(recorder.calls[0].fixture_key);
+    const record = JSON.parse(fs.readFileSync(file, 'utf8'));
+    record.response.holder = 'response';
+    fs.writeFileSync(file, JSON.stringify(record));
+    const refused = replay.createReplayer(declared, { store });
+    assert.throws(() => refused.call('custom', {}), error => error.code === 'tool.fixture_mismatch');
+    assert.deepStrictEqual(refused.calls, []);
+    assert.strictEqual(liveCalls, 1);
+  } finally { cleanup(dir); }
+});
+
+test('key-sensitive request serializers use the same root snapshot for recording and replay', () => {
+  const dir = tempDir('request-json-snapshot');
+  try {
+    const store = new replay.FixtureStore(dir);
+    const recordedKeys = [];
+    const args = { toJSON(key) { recordedKeys.push(key); return { holder: key, sku: 'x' }; } };
+    let liveCalls = 0;
+    const declared = { custom: { effect_class: 'SE0', determinism: 'deterministic', impl(input) {
+      assert.strictEqual(input, args, 'Live implementations retain the original arguments');
+      liveCalls += 1;
+      return { count: 7 };
+    } } };
+    const recorder = replay.createReplayer(declared, { mode: 'record', store });
+    recorder.call('custom', args);
+    assert.deepStrictEqual(recordedKeys, ['']);
+    const replayedKeys = [];
+    const request = { toJSON(key) { replayedKeys.push(key); return { holder: key, sku: 'x' }; } };
+    const replayer = replay.createReplayer(declared, { store });
+    assert.deepStrictEqual(replayer.call('custom', request), { count: 7 });
+    assert.deepStrictEqual(replayedKeys, ['']);
+    assert.strictEqual(replayer.calls[0].fixture_key, recorder.calls[0].fixture_key);
+    assert.strictEqual(liveCalls, 1);
+  } finally { cleanup(dir); }
+});
+
+test('direct fixture methods serialize request identity once at the JSON root', () => {
+  const dir = tempDir('direct-request-json');
+  try {
+    const store = new replay.FixtureStore(dir);
+    const seen = [];
+    const request = { toJSON(key) { seen.push(key); return { holder: key }; } };
+    const expectedKey = store.key('custom', { holder: '' });
+    assert.strictEqual(store.key('custom', request), expectedKey);
+    const record = store.put('custom', request, { count: 7 });
+    assert.strictEqual(record.key, expectedKey);
+    assert.strictEqual(store.has('custom', request), true);
+    assert.deepStrictEqual(store.get('custom', request).response, { count: 7 });
+    assert.deepStrictEqual(seen, ['', '', '', '']);
+  } finally { cleanup(dir); }
+});
+
+test('failed response serialization preserves the existing fixture and emits no success', () => {
+  const dir = tempDir('failed-response-json');
+  try {
+    const store = new replay.FixtureStore(dir);
+    const original = store.put('custom', {}, { count: 7 });
+    const file = store.pathFor(original.key);
+    const before = fs.readFileSync(file);
+    const cycle = {}; cycle.self = cycle;
+    const failure = new Error('response serializer failed');
+    for (const response of [undefined, () => 1, Symbol('response'), 1n, cycle,
+      { toJSON() { return undefined; } }, { toJSON() { throw failure; } }]) {
+      const recorder = replay.createReplayer({ custom: {
+        effect_class: 'SE0', determinism: 'deterministic', impl() { return response; },
+      } }, { mode: 'record', store });
+      assert.throws(() => recorder.call('custom', {}));
+      assert.deepStrictEqual(recorder.calls, []);
+      assert.deepStrictEqual(fs.readFileSync(file), before);
+      assert.deepStrictEqual(fs.readdirSync(dir), [original.key + '.json']);
+    }
+    assert.deepStrictEqual(store.get('custom', {}).response, { count: 7 });
+  } finally { cleanup(dir); }
+});
+
+test('failed request serialization refuses before invoking a live tool', () => {
+  const dir = tempDir('failed-request-json');
+  try {
+    const store = new replay.FixtureStore(dir);
+    let liveCalls = 0;
+    const recorder = replay.createReplayer({ custom: {
+      effect_class: 'SE0', determinism: 'deterministic', impl() { liveCalls += 1; },
+    } }, { mode: 'record', store });
+    const cycle = {}; cycle.self = cycle;
+    for (const args of [() => 1, Symbol('request'), 1n, cycle,
+      { toJSON() { return undefined; } }, { toJSON() { throw new Error('request serializer failed'); } }]) {
+      assert.throws(() => recorder.call('custom', args));
+    }
+    assert.strictEqual(liveCalls, 0);
+    assert.deepStrictEqual(recorder.calls, []);
+    assert.deepStrictEqual(fs.readdirSync(dir), []);
+  } finally { cleanup(dir); }
+});
+
 finish('replay');

@@ -167,11 +167,12 @@ test('editor reports border-radius from real corner properties', () => {
   assert.ok(editor.includes('cs.borderTopLeftRadius') && !editor.includes("sides(cs, 'border', '-radius')"));
 });
 
-test('applied edits keep replaying until the agent rewrites the file', () => {
+test('applied batches replay until specific acknowledgment, not an unrelated reload', () => {
   const client = uiClientJs();
   const editor = uiEditorJs();
-  assert.ok(client.includes("type: 'uc:restore', baked: submitted, edits"), 'reloads replay submitted edits');
-  assert.ok(/addEventListener\('reload', \(\) => \{\s*submitted = \[\];/.test(client), 'a file change drops them');
+  assert.ok(client.includes("type: 'uc:restore', baked: submitted.flatMap(batch => batch.edits), batches: submitted, edits"), 'reloads replay submitted edits');
+  assert.ok(client.includes("es.addEventListener('reload', reloadArtifact)"));
+  assert.ok(client.includes("es.addEventListener('ui-ack'"));
   assert.ok(editor.includes('var baked = Array.isArray(payload.baked) ? payload.baked : [];'));
 });
 

@@ -125,3 +125,23 @@ The skill tells the agent to signal `typing --state thinking` immediately and re
 `node tests/integration/ui-canvas-e2e.test.js`, plus the existing Plan Canvas suites, run under
 `node tests/run-all.js`. Manual browser QA uses a mockup opened with
 `ECC_PLAN_CANVAS_STATE_DIR=/tmp/uc ECC_PLAN_CANVAS_PORT=4599 node scripts/ui-canvas.js open <file> --no-open`.
+
+Replay identifies a target only when its selector has exactly one match. Unique
+`#id` targets (and `body`/`html`) may survive an unrelated save; positional paths
+and positional move parents replay only against their captured source revision.
+Changed positional targets and duplicate IDs stay stale rather than editing a
+different element. Submitted batches replay atomically: if any target cannot be
+resolved safely, the whole batch stays visibly unresolved and Apply/Finish wait
+for agent resolution. Reset reverts unsent edits and retains unresolved submitted
+changes. The agent may acknowledge specific incorporated batches using UI Canvas
+`await --ack fb-123`; merely draining feedback or saving another change is not
+acknowledgment. An exact exported snapshot can acknowledge only the batch and
+older batches proven completely represented in that snapshot.
+
+Apply and Finish preserve an immutable pending delivery in browser session storage
+before posting it. Session-scoped delivery tokens bind the exact payload: a lost
+response may be retried without duplicating a batch or overwriting its export,
+and a changed payload cannot reuse the token. Only authoritative accepted edit
+IDs are retired, so later edits and draft text remain pending. Unknown outcomes
+retain the captured undo/coalescing barrier until confirmed; an uncertain Finish
+stays read-only. Chat remains outside this delivery-deduplication contract.

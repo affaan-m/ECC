@@ -124,14 +124,23 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     }
   }
 
-  function persist() {
+  function persist(candidate = state) {
     fs.mkdirSync(stateDir, { recursive: true });
     const tmpFile = `${stateFile}.tmp`;
-    fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2));
+    fs.writeFileSync(tmpFile, JSON.stringify(candidate, null, 2));
     fs.renameSync(tmpFile, stateFile);
   }
 
   load();
+
+  // Publish replacement state only after its complete snapshot is durable.
+  // Retained session references remain snapshots, including on failed writes.
+  function commitSession(key, session, feedbackCounter = state.feedbackCounter) {
+    const candidate = { ...state, sessions: { ...state.sessions, [key]: session }, feedbackCounter };
+    persist(candidate);
+    state = candidate;
+    return session;
+  }
 
   function get(key) {
     return state.sessions[key] || null;
@@ -189,30 +198,55 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
   // Queue feedback from the browser. Chat-shaped items are mirrored into the
   // session transcript immediately so the conversation panel stays coherent
   // across reloads.
-  function queueFeedback(key, rawItems, { endSession = false } = {}) {
+  function queueFeedback(key, rawItems, { endSession = false, deliveryId = null, fingerprint = null } = {}) {
     const session = get(key);
     if (!session || session.status === 'ended') return null;
     const normalize = session.mode === 'ui' ? normalizeUiFeedbackItem : normalizeFeedbackItem;
     const describe = session.mode === 'ui' ? uiChatLineFor : chatLineFor;
+    let counter = state.feedbackCounter;
     const accepted = [];
     for (const raw of Array.isArray(rawItems) ? rawItems : []) {
-      state.feedbackCounter += 1;
-      const item = normalize(raw, state.feedbackCounter);
+      counter += 1;
+      const item = normalize(raw, counter);
       if (item) accepted.push(item);
     }
-    session.pendingFeedback.push(...accepted);
-    for (const item of accepted) {
-      session.chat.push({ role: 'user', kind: item.kind, text: describe(item), at: item.at });
-    }
-    if (endSession) {
-      session.status = 'ended';
-      session.endedBy = 'user';
-    } else if (accepted.length > 0) {
-      session.status = 'feedback';
-    }
-    session.updatedAt = nowIso();
-    persist();
-    return { accepted, pending: session.pendingFeedback.length, session };
+    const item = accepted[0];
+    const next = {
+      ...session,
+      pendingFeedback: [...session.pendingFeedback, ...accepted],
+      ...(session.mode === 'ui' ? { uiBatches: [...(session.uiBatches || []), ...accepted.filter(entry => entry.kind === 'edits').map(entry => ({
+        id: entry.id, snapshotHash: entry.snapshotHash, includedBatches: entry.includedBatches || [], edits: entry.edits.filter(edit => !edit.stale)
+      }))] } : {}),
+      chat: [...session.chat, ...accepted.map(entry => ({ role: 'user', kind: entry.kind, text: describe(entry), at: entry.at }))],
+      status: endSession ? 'ended' : accepted.length ? 'feedback' : session.status,
+      ...(endSession ? { endedBy: 'user' } : {}),
+      ...(deliveryId ? { uiDeliveries: { ...(session.uiDeliveries || {}), [deliveryId]: {
+        fingerprint, kind: item.kind, itemIds: accepted.map(entry => entry.id),
+        editIds: item.edits.filter(edit => !edit.stale).map(edit => edit.id), text: item.text
+      } } } : {}),
+      updatedAt: nowIso()
+    };
+    commitSession(key, next, counter);
+    return { accepted, pending: next.pendingFeedback.length, session: next };
+  }
+
+  // Acknowledgment is distinct from delivery: taking feedback is not proof
+  // that the agent has incorporated it into the artifact.
+  function acknowledgeUiBatches(key, ids, replyText) {
+    const session = get(key);
+    if (!session || session.mode !== 'ui') return null;
+    const known = [...(session.uiBatches || []), ...(session.uiAcknowledged || [])];
+    if (ids.some(id => !known.some(batch => batch.id === id))) return null;
+    const accepted = (session.uiBatches || []).filter(batch => ids.includes(batch.id));
+    const entry = replyText ? { role: 'agent', kind: 'chat', text: sanitizeText(replyText), at: nowIso() } : null;
+    commitSession(key, {
+      ...session,
+      uiBatches: (session.uiBatches || []).filter(batch => !ids.includes(batch.id)),
+      uiAcknowledged: [...(session.uiAcknowledged || []), ...accepted.map(batch => ({ id: batch.id, editIds: batch.edits.map(edit => edit.id) }))],
+      chat: entry ? [...session.chat, entry] : session.chat,
+      updatedAt: nowIso()
+    });
+    return { batches: accepted.map(batch => ({ id: batch.id, editIds: batch.edits.map(edit => edit.id) })), entry };
   }
 
   // Deliver-and-drain: feedback is handed to exactly one await call, after
@@ -223,16 +257,12 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     if (!session) return { status: 'missing' };
     if (session.pendingFeedback.length > 0) {
       const items = session.pendingFeedback;
-      session.pendingFeedback = [];
       const result = { status: 'feedback', items };
       if (session.status === 'ended') {
         result.sessionEnded = true;
         result.endedBy = session.endedBy;
-      } else {
-        session.status = 'open';
       }
-      session.updatedAt = nowIso();
-      persist();
+      commitSession(key, { ...session, pendingFeedback: [], status: session.status === 'ended' ? 'ended' : 'open', updatedAt: nowIso() });
       return result;
     }
     if (session.status === 'ended') {
@@ -245,20 +275,15 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     const session = get(key);
     if (!session) return null;
     const entry = { role: 'agent', kind: 'chat', text: sanitizeText(text), at: nowIso() };
-    session.chat.push(entry);
-    session.updatedAt = nowIso();
-    persist();
+    commitSession(key, { ...session, chat: [...session.chat, entry], updatedAt: nowIso() });
     return entry;
   }
 
   function end(key, endedBy) {
     const session = get(key);
     if (!session) return null;
-    session.status = 'ended';
-    session.endedBy = endedBy === 'user' ? 'user' : 'agent';
-    session.updatedAt = nowIso();
-    persist();
-    return session;
+    return commitSession(key, { ...session, status: 'ended',
+      endedBy: endedBy === 'user' ? 'user' : 'agent', updatedAt: nowIso() });
   }
 
   function list() {
@@ -286,6 +311,7 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
     findByFile,
     queueFeedback,
     takeFeedback,
+    acknowledgeUiBatches,
     addAgentReply,
     setAgent,
     end,
