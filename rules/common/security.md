@@ -27,3 +27,8 @@ If security issue found:
 3. Fix CRITICAL issues before continuing
 4. Rotate any exposed secrets
 5. Review entire codebase for similar issues
+
+## Delegated Data Validation Output Minimization
+
+- Give delegated data validators an explicit allowlist of output fields they may return.
+- Report record counts, schema field names, and mismatch categories rather than echoing raw source values to stdout, stderr, or tool results on either pass or fail.
