@@ -9,6 +9,7 @@ const { execFileSync } = require('child_process');
 const { createGitRunner } = require('../../scripts/lib/worktree-lifecycle/git');
 const {
   STATES,
+  analyzeWorktree,
   classifyWorktree,
   buildLifecycleReport,
   planCleanup
@@ -328,6 +329,126 @@ test('real git: createGitRunner drives an actual repo (covers default spawn path
   assert.ok(runner.lastCommitMs('main') > 0);
 
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('git.predictMergeConflicts excludes merge-tree informational messages after the blank line', () => {
+  const withMessages = fakeGit('/repo', {
+    'merge-tree --write-tree --name-only main feature': {
+      status: 1,
+      stdout: [
+        '0123456789abcdef0123456789abcdef01234567',
+        'src/app.js',
+        'src/with spaces.js',
+        '',
+        'Auto-merging src/app.js',
+        'CONFLICT (content): Merge conflict in src/app.js',
+        ''
+      ].join('\n')
+    }
+  });
+  assert.deepStrictEqual(withMessages.predictMergeConflicts('feature', 'main'), {
+    conflicted: true,
+    files: ['src/app.js', 'src/with spaces.js'],
+    method: 'merge-tree'
+  });
+
+  const sha256MessageOnly = fakeGit('/repo', {
+    'merge-tree --write-tree --name-only main feature': {
+      status: 1,
+      stdout: `${'a'.repeat(64)}\n\nCONFLICT (submodule): Merge conflict in sub\n`
+    }
+  });
+  assert.deepStrictEqual(sha256MessageOnly.predictMergeConflicts('feature', 'main'), {
+    conflicted: true,
+    files: [],
+    method: 'merge-tree'
+  });
+});
+
+test('primary worktree stays main across non-base branches, Windows paths, and linked cwd', () => {
+  const recent = Math.floor((NOW - DAY) / 1000);
+  const git = fakeGit('c:\\Users\\dev\\repo\\packages\\app', {
+    'worktree list --porcelain -z': {
+      stdout: [
+        'worktree C:/Users/dev/repo', 'HEAD aaa', 'branch refs/heads/topic-on-root', '',
+        'worktree C:/Users/dev/repo-wt', 'HEAD bbb', 'branch refs/heads/ready', ''
+      ].join('\0')
+    },
+    'rev-list --left-right --count main...topic-on-root': { stdout: '0\t0\n' },
+    'log -1 --format=%ct topic-on-root': { stdout: `${recent}\n` },
+    'rev-list --left-right --count main...ready': { stdout: '0\t1\n' },
+    'log -1 --format=%ct ready': { stdout: `${recent}\n` },
+    'merge-tree --write-tree --name-only main ready': { status: 0, stdout: 'tree\n' }
+  });
+  const report = buildLifecycleReport('C:\\Users\\dev\\repo-wt', { baseBranch: 'main', nowMs: NOW }, { git });
+  assert.strictEqual(report.worktrees[0].state, STATES.MAIN);
+  assert.strictEqual(report.worktrees[1].state, STATES.MERGE_READY);
+  assert.deepStrictEqual(planCleanup(report).remove, []);
+
+  const direct = analyzeWorktree(
+    { path: 'C:/Users/dev/repo', branch: 'topic-on-root', head: 'aaa', detached: false },
+    { baseBranch: 'main', staleThresholdMs: 7 * DAY, nowMs: NOW },
+    fakeGit('c:\\Users\\dev\\repo', {})
+  );
+  assert.strictEqual(direct.state, STATES.MAIN);
+});
+
+function createRealWorktreeFixture(base) {
+  const mainDir = path.join(base, 'main-repo');
+  const conflictDir = path.join(base, 'wt-conflict');
+  const mergedDir = path.join(base, 'wt-merged');
+  const emptyConfig = path.join(base, 'empty.gitconfig');
+  fs.mkdirSync(path.join(mainDir, 'sub'), { recursive: true });
+  fs.writeFileSync(emptyConfig, '');
+  const inheritedGitKeys = new Set(['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX']);
+  const env = {
+    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !inheritedGitKeys.has(key))),
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: emptyConfig
+  };
+  const git = (args, cwd = mainDir) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  git(['init', '-q', '-b', 'main']);
+  git(['config', 'user.email', 't@e.st']);
+  git(['config', 'user.name', 'Test']);
+  fs.writeFileSync(path.join(mainDir, 'app.js'), 'base\n');
+  git(['add', 'app.js']);
+  git(['commit', '-q', '-m', 'init']);
+  git(['worktree', 'add', '-q', '-b', 'feat-conflict', conflictDir]);
+  fs.writeFileSync(path.join(conflictDir, 'app.js'), 'conflict side\n');
+  git(['add', 'app.js'], conflictDir);
+  git(['commit', '-q', '-m', 'feat'], conflictDir);
+  fs.writeFileSync(path.join(mainDir, 'app.js'), 'main side\n');
+  git(['add', 'app.js']);
+  git(['commit', '-q', '-m', 'main']);
+  git(['worktree', 'add', '-q', '-b', 'feat-merged', mergedDir]);
+  git(['checkout', '-q', '-b', 'topic-on-root']);
+  return { mainDir, mergedDir };
+}
+
+test('real git: primary worktree on a non-base branch stays protected and conflictFiles omits prose', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-wl-main-conflict-'));
+  try {
+    let dirs;
+    try {
+      dirs = createRealWorktreeFixture(base);
+    } catch (error) {
+      console.log('  (skipped real-git fixture: ' + (error && error.message ? error.message.split('\n')[0] : 'git unavailable') + ')');
+      return;
+    }
+    for (const cwd of [path.join(dirs.mainDir, 'sub'), dirs.mergedDir]) {
+      const report = buildLifecycleReport(cwd, { baseBranch: 'main' });
+      const byBranch = Object.fromEntries(report.worktrees.map(w => [w.branch, w]));
+      assert.strictEqual(byBranch['topic-on-root'].state, STATES.MAIN);
+      assert.strictEqual(byBranch['feat-merged'].state, STATES.MERGED);
+      assert.strictEqual(byBranch['feat-conflict'].state, STATES.CONFLICT);
+      if (byBranch['feat-conflict'].conflictMethod === 'merge-tree') {
+        assert.deepStrictEqual(byBranch['feat-conflict'].conflictFiles, ['app.js']);
+      }
+      assert.deepStrictEqual(planCleanup(report).remove.map(item => item.branch), ['feat-merged']);
+    }
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
 });
 
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
