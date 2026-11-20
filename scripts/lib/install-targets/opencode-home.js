@@ -82,7 +82,48 @@ function defaultValidateOpencodeHome(input = {}) {
   return [];
 }
 
-module.exports = createInstallTargetAdapter({
+/**
+ * Non-destructively merge ECC's OpenCode config entries (agents, commands,
+ * plugins, and config-root skills.paths) into an existing user opencode.json
+ * without clobbering existing user definitions.
+ */
+function mergeOpenCodeConfig(existingConfig = {}, managedConfig = {}, configRootSkillsPath = './skills') {
+  const existing = existingConfig && typeof existingConfig === 'object' && !Array.isArray(existingConfig)
+    ? existingConfig
+    : {};
+  const managed = managedConfig && typeof managedConfig === 'object' && !Array.isArray(managedConfig)
+    ? managedConfig
+    : {};
+  const merged = { ...existing };
+
+  for (const section of ['agent', 'command', 'permission']) {
+    if (managed[section] && typeof managed[section] === 'object' && !Array.isArray(managed[section])) {
+      merged[section] = {
+        ...managed[section],
+        ...(existing[section] && typeof existing[section] === 'object' ? existing[section] : {}),
+      };
+    }
+  }
+
+  const existingPlugins = Array.isArray(existing.plugin) ? existing.plugin : [];
+  const managedPlugins = Array.isArray(managed.plugin) ? managed.plugin : [];
+  if (existingPlugins.length > 0 || managedPlugins.length > 0) {
+    merged.plugin = Array.from(new Set([...existingPlugins, ...managedPlugins]));
+  }
+
+  const existingSkills = existing.skills && typeof existing.skills === 'object' ? existing.skills : {};
+  const existingSkillPaths = Array.isArray(existingSkills.paths) ? existingSkills.paths : [];
+  const managedSkillPaths = (Array.isArray(managed.skills?.paths) ? managed.skills.paths : [configRootSkillsPath])
+    .map((entry) => (entry === '../skills' ? configRootSkillsPath : entry));
+  merged.skills = {
+    ...existingSkills,
+    paths: Array.from(new Set([...existingSkillPaths, ...managedSkillPaths])),
+  };
+
+  return merged;
+}
+
+const adapter = createInstallTargetAdapter({
   id: 'opencode-home',
   target: 'opencode',
   kind: 'home',
@@ -125,4 +166,8 @@ module.exports = createInstallTargetAdapter({
     })];
   },
   validate: defaultValidateOpencodeHome,
+});
+module.exports = Object.freeze({
+  ...adapter,
+  mergeOpenCodeConfig,
 });
