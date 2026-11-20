@@ -90,6 +90,14 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
   }
 
   if (hasPrefix(normalizedSourcePath, 'skills')) {
+    if (normalizedSourcePath === 'skills/config-gc' || normalizedSourcePath === 'skills/config-gc/SKILL.md') {
+      return [createManagedOperation({
+        moduleId: module.id,
+        sourceRelativePath: 'manifests/install-assets/copilot-config-gc-skill.md',
+        destinationPath: path.join(targetRoot, 'skills', 'config-gc', 'SKILL.md'),
+      })];
+    }
+
     return [
       createManagedOperation({
         moduleId: module.id,

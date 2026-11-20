@@ -376,6 +376,51 @@ function findDriftCandidate(state, cursorRoot) {
   return resolveManagedExistingPath(operation.destinationPath, cursorRoot).path;
 }
 
+function verifyCopilotConfigAudit(runCli, projectDir) {
+  const copilotRoot = path.join(projectDir, '.github');
+  const doctor = (expectedStatus = 0) => parseJsonOutput(runCli(
+    ['doctor', '--target', 'copilot', '--json'], { cwd: projectDir, expectedStatus }
+  ), 'Copilot project config audit');
+  assert.equal(doctor().summary.checkedCount, 0);
+  assert.ok(!fs.existsSync(copilotRoot), 'doctor must not create an unconfigured project');
+
+  const install = parseJsonOutput(runCli(
+    ['install', '--target', 'copilot', '--skills', 'config-gc', '--no-hooks', '--json'],
+    { cwd: projectDir }
+  ), 'Copilot packed config audit skill install');
+  assert.equal(install.result.target, 'copilot');
+  const skillPath = path.join(copilotRoot, 'skills', 'config-gc', 'SKILL.md');
+  const statePath = path.join(copilotRoot, 'ecc-install-state.json');
+  const userFile = path.join(copilotRoot, 'user-owned.txt');
+  const skill = fs.readFileSync(skillPath, 'utf8');
+  const installState = fs.readFileSync(statePath, 'utf8');
+  const userContents = 'keep this user file\n';
+  fs.writeFileSync(userFile, userContents, 'utf8');
+  assert.match(skill, /ecc doctor --target copilot --json/);
+  assert.doesNotMatch(skill, /~\/\.claude|_gc_trash/);
+  assert.equal(doctor().summary.okCount, 1);
+
+  const driftedSkill = `${skill}\nUser changed this managed file.\n`;
+  fs.writeFileSync(skillPath, driftedSkill, 'utf8');
+  assert.ok(doctor(1).results[0].issues.some(issue => issue.code === 'drifted-managed-files'));
+  assert.equal(fs.readFileSync(skillPath, 'utf8'), driftedSkill);
+
+  fs.unlinkSync(skillPath);
+  assert.ok(doctor(1).results[0].issues.some(issue => issue.code === 'missing-managed-files'));
+  assert.ok(!fs.existsSync(skillPath), 'doctor must not repair a missing file');
+  assert.equal(fs.readFileSync(statePath, 'utf8'), installState);
+  assert.equal(fs.readFileSync(userFile, 'utf8'), userContents);
+  assert.ok(!fs.existsSync(path.join(copilotRoot, 'hooks')));
+
+  fs.writeFileSync(skillPath, skill, 'utf8');
+  const uninstall = parseJsonOutput(runCli(
+    ['uninstall', '--target', 'copilot', '--json'], { cwd: projectDir }
+  ), 'Copilot packed config audit cleanup');
+  assert.equal(uninstall.summary.errorCount, 0);
+  assert.ok(!fs.existsSync(statePath));
+  assert.equal(fs.readFileSync(userFile, 'utf8'), userContents);
+}
+
 function runTargetSmoke(options) {
   const selectionArgs = Array.isArray(options.selectionArgs)
     ? options.selectionArgs
@@ -472,6 +517,11 @@ function runLifecycle(options) {
         `packed lifecycle must not provide ${credentialName}`
       );
     }
+
+    const configAuditProject = path.join(projectDir, 'config audit project');
+    fs.mkdirSync(configAuditProject);
+    fs.writeFileSync(path.join(configAuditProject, 'package.json'), '{"type":"module"}\n', 'utf8');
+    verifyCopilotConfigAudit(runCli, configAuditProject);
 
     const fakeClaudeBinDir = path.join(tempRoot, 'fake-claude-bin');
     const fakeClaudeStatePath = path.join(tempRoot, 'fake-claude-state.json');
@@ -889,6 +939,7 @@ function runLifecycle(options) {
         'public-ecc-ito-fail-closed',
         'cursor-repeat-install',
         'doctor-clean',
+        'copilot-config-audit-read-only',
         'status-installed',
         'doctor-drift',
         'repair',
