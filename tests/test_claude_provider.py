@@ -42,7 +42,9 @@ def make_response(content: list[SimpleNamespace], stop_reason: str = "tool_use")
 @pytest.mark.parametrize(
     ("default_model", "request_model", "expected_model"),
     [
-        (None, None, "claude-sonnet-4-6"),
+        (None, None, "claude-sonnet-5-5"),
+        (None, "claude-opus-5-5", "claude-opus-5-5"),
+        (None, "claude-haiku-5-5", "claude-haiku-5-5"),
         (None, "claude-haiku-4-5", "claude-haiku-4-5"),
         ("claude-haiku-4-5", None, "claude-haiku-4-5"),
         ("claude-opus-4-8", None, "claude-opus-4-8"),
@@ -58,7 +60,7 @@ def test_generate_respects_configured_default_and_request_model(
     provider = ClaudeProvider(**provider_options)
     client = FakeClient(make_response([SimpleNamespace(type="text", text="ok")]))
     provider.client = client
-    expected_default = default_model or "claude-sonnet-4-6"
+    expected_default = default_model or "claude-sonnet-5-5"
 
     assert provider.get_default_model() == expected_default
 
@@ -67,7 +69,7 @@ def test_generate_respects_configured_default_and_request_model(
     )
 
     assert client.messages.last_params["model"] == expected_model
-    if expected_model == "claude-opus-4-8":
+    if expected_model in {"claude-opus-4-8", "claude-opus-5-5", "claude-sonnet-5-5"}:
         assert client.messages.last_params["thinking"] == {"type": "adaptive"}
         assert "temperature" not in client.messages.last_params
     assert provider.get_default_model() == expected_default
