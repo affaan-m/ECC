@@ -39,6 +39,36 @@ function sanitizeDiagnostic(value) {
     .replace(/[^\x20-\x7E]/g, '?');
 }
 
+function readClaudePluginConfigOptions(env = process.env) {
+  const candidates = [];
+  if (env.CLAUDE_CONFIG_DIR && String(env.CLAUDE_CONFIG_DIR).trim()) {
+    candidates.push(path.join(String(env.CLAUDE_CONFIG_DIR).trim(), 'settings.json'));
+  }
+  const home = env.HOME || env.USERPROFILE || require('os').homedir();
+  if (home) {
+    candidates.push(path.join(home, '.claude', 'settings.json'));
+  }
+  for (const settingsPath of candidates) {
+    try {
+      if (!fs.existsSync(settingsPath)) continue;
+      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      const options = settings && settings.pluginConfigs && (
+        settings.pluginConfigs['ecc@ecc']?.options
+        || settings.pluginConfigs['everything-claude-code@everything-claude-code']?.options
+      );
+      if (options && typeof options === 'object' && !Array.isArray(options)) {
+        return {
+          enabled: typeof options.hooks_enabled === 'boolean' ? options.hooks_enabled : undefined,
+          profile: typeof options.hook_profile === 'string' ? options.hook_profile : undefined,
+        };
+      }
+    } catch {
+      // Ignore unreadable or invalid settings.json and try next candidate
+    }
+  }
+  return { enabled: undefined, profile: undefined };
+}
+
 function readManagedHookConfig(env = process.env) {
   const pluginRoot = [env.CLAUDE_PLUGIN_ROOT, env.ECC_PLUGIN_ROOT]
     .map(value => typeof value === 'string' ? value.trim() : '')
@@ -68,7 +98,7 @@ function areHooksEnabled(env = process.env, managed = readManagedHookConfig(env)
     : (
       env.CLAUDE_PLUGIN_OPTION_HOOKS_ENABLED !== undefined
         ? env.CLAUDE_PLUGIN_OPTION_HOOKS_ENABLED
-        : managed.enabled
+        : (managed.enabled !== undefined ? managed.enabled : readClaudePluginConfigOptions(env).enabled)
     );
   return parseBoolean(raw, true);
 }
