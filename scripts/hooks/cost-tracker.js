@@ -114,7 +114,14 @@ function getRates(model, usage = {}) {
   if (LEGACY_OPUS_RE.test(m)) return RATE_TABLE.opusLegacy;
   if (/(?:^|[^a-z0-9])opus-5-5(?:[^a-z0-9]|$)/.test(m)) return RATE_TABLE.opus55;
   if (m.includes('opus'))  return RATE_TABLE.opus;
-  return RATE_TABLE.sonnet;
+  if (m.includes('sonnet')) return RATE_TABLE.sonnet;
+  return { ...RATE_TABLE.sonnet, isFallback: true };
+}
+
+function isKnownRateModel(model) {
+  const m = String(model || '').toLowerCase();
+  if (!m) return false;
+  return ['fable', 'mythos', 'haiku', 'opus', 'sonnet'].some((tok) => m.includes(tok));
 }
 
 function isSonnet5(model) {
@@ -277,8 +284,12 @@ process.stdin.on('end', () => {
       output_tokens:      outputTokens,
       cache_write_tokens: cacheWriteTokens,
       cache_read_tokens:  cacheReadTokens,
-      estimated_cost_usd: estimatedCostUsd
+      estimated_cost_usd: estimatedCostUsd,
+      ...(!isKnownRateModel(model) && model !== 'unknown' ? { pricing_fallback: true } : {}),
     };
+    if (!isKnownRateModel(model) && model && model !== 'unknown') {
+      process.stderr.write(`[Hook] cost-tracker: unrecognized model "${model}"; using fallback Sonnet pricing\n`);
+    }
 
     try {
       appendSessionCostRow(metricsDir, sessionId, row);
