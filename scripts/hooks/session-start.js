@@ -22,8 +22,9 @@ const {
   stripAnsi,
   log
 } = require('../lib/utils');
-const { resolveProjectContext, writeSessionLease, resolveSessionId, getHomunculusDir } = require('../lib/observer-sessions');
+const { resolveProjectContext, writeSessionLease, resolveSessionId } = require('../lib/observer-sessions');
 const { resolveHookSessionId } = require('../lib/hook-session');
+const { loadInstincts, getInstinctConfidenceThreshold } = require('../lib/instinct-store');
 const { getPackageManager, getSelectionPrompt } = require('../lib/package-manager');
 const { listAliases } = require('../lib/session-aliases');
 const { detectProjectType } = require('../lib/project-detect');
@@ -35,7 +36,6 @@ const {
 const path = require('path');
 const fs = require('fs');
 
-const DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD = 0.7;
 const DEFAULT_MAX_INJECTED_INSTINCTS = 6;
 const MAX_INJECTED_LEARNED_SKILLS = 6;
 const MAX_LEARNED_SKILL_SUMMARY_CHARS = 220;
@@ -122,30 +122,6 @@ function getSessionStartMaxContextChars() {
 
   const parsed = Number.parseInt(raw, 10);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : DEFAULT_SESSION_START_CONTEXT_MAX_CHARS;
-}
-
-/**
- * Resolve the minimum confidence an instinct needs to be injected at
- * SessionStart. Overridable via `ECC_INSTINCT_CONFIDENCE_THRESHOLD`
- * (a number in [0, 1]); falsy or out-of-range values fall back to
- * {@link DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD}.
- *
- * @returns {number} The confidence floor for injected instincts.
- */
-function getInstinctConfidenceThreshold() {
-  const raw = process.env.ECC_INSTINCT_CONFIDENCE_THRESHOLD;
-  if (!raw) return DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD;
-
-  // Require a plain decimal (e.g. "0.7", "1", "0.95") so trailing junk
-  // ("0.7x") and non-decimal numeric syntax like "0x1" (hex) or "1e2"
-  // (exponent) are rejected whole rather than silently accepted by Number().
-  const normalized = raw.trim();
-  if (!/^\d+(\.\d+)?$/.test(normalized)) return DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD;
-
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1
-    ? parsed
-    : DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD;
 }
 
 /**
@@ -368,82 +344,6 @@ function selectMatchingSession(sessions, cwd, currentProject) {
   return null;
 }
 
-function parseInstinctFile(content) {
-  const instincts = [];
-  let current = null;
-  let inFrontmatter = false;
-  let contentLines = [];
-
-  for (const line of String(content).split('\n')) {
-    if (line.trim() === '---') {
-      if (inFrontmatter) {
-        inFrontmatter = false;
-      } else {
-        if (current && current.id) {
-          current.content = contentLines.join('\n').trim();
-          instincts.push(current);
-        }
-        current = {};
-        contentLines = [];
-        inFrontmatter = true;
-      }
-      continue;
-    }
-
-    if (inFrontmatter) {
-      const separatorIndex = line.indexOf(':');
-      if (separatorIndex === -1) continue;
-      const key = line.slice(0, separatorIndex).trim();
-      let value = line.slice(separatorIndex + 1).trim();
-      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
-      }
-      if (key === 'confidence') {
-        const parsed = Number.parseFloat(value);
-        current[key] = Number.isFinite(parsed) ? parsed : 0.5;
-      } else {
-        current[key] = value;
-      }
-    } else if (current) {
-      contentLines.push(line);
-    }
-  }
-
-  if (current && current.id) {
-    current.content = contentLines.join('\n').trim();
-    instincts.push(current);
-  }
-
-  return instincts;
-}
-
-function readInstinctsFromDir(directory, scope) {
-  if (!directory || !fs.existsSync(directory)) return [];
-
-  const entries = fs.readdirSync(directory, { withFileTypes: true })
-    .filter(entry => entry.isFile() && /\.(ya?ml|md)$/i.test(entry.name))
-    .sort((left, right) => left.name.localeCompare(right.name));
-
-  const instincts = [];
-  for (const entry of entries) {
-    const filePath = path.join(directory, entry.name);
-    try {
-      const parsed = parseInstinctFile(fs.readFileSync(filePath, 'utf8'));
-      for (const instinct of parsed) {
-        instincts.push({
-          ...instinct,
-          _scopeLabel: scope,
-          _sourceFile: filePath,
-        });
-      }
-    } catch (error) {
-      log(`[SessionStart] Warning: failed to parse instinct file ${filePath}: ${error.message}`);
-    }
-  }
-
-  return instincts;
-}
-
 function extractInstinctAction(content) {
   const actionMatch = String(content || '').match(/## Action\s*\n+([\s\S]+?)(?:\n## |\n---|$)/);
   const actionBlock = (actionMatch ? actionMatch[1] : String(content || '')).trim();
@@ -456,20 +356,12 @@ function extractInstinctAction(content) {
 }
 
 function summarizeActiveInstincts(observerContext) {
-  const homunculusDir = getHomunculusDir();
-  const globalDirs = [
-    { dir: path.join(homunculusDir, 'instincts', 'personal'), scope: 'global' },
-    { dir: path.join(homunculusDir, 'instincts', 'inherited'), scope: 'global' },
-  ];
-  const projectDirs = observerContext.isGlobal ? [] : [
-    { dir: path.join(observerContext.projectDir, 'instincts', 'personal'), scope: 'project' },
-    { dir: path.join(observerContext.projectDir, 'instincts', 'inherited'), scope: 'project' },
-  ];
-
-  const scopedInstincts = [
-    ...projectDirs.flatMap(({ dir, scope }) => readInstinctsFromDir(dir, scope)),
-    ...globalDirs.flatMap(({ dir, scope }) => readInstinctsFromDir(dir, scope)),
-  ];
+  const loaded = loadInstincts(observerContext, {
+    onWarn(filePath, error) {
+      log(`[SessionStart] Warning: failed to parse instinct file ${filePath}: ${error.message}`);
+    }
+  });
+  const scopedInstincts = [...loaded.project, ...loaded.global];
 
   const confidenceThreshold = getInstinctConfidenceThreshold();
   const maxInjected = getMaxInjectedInstincts();
