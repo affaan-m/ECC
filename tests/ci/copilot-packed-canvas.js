@@ -92,9 +92,12 @@ async function verifyInstalledCanvas(root, packageRoot, env) {
   const { createPlanCanvasServer } = require(path.join(packageRoot, 'scripts/lib/plan-canvas/server.js'));
   const file = path.join(workspace, 'Review plan.md');
   fs.writeFileSync(file, '# Review plan\n');
+  const uiFile = path.join(workspace, 'Review mockup.html');
+  fs.writeFileSync(uiFile, '<h1>Review mockup</h1>\n');
   const stateDir = path.join(root, 'canvas state');
   const store = createSessionStore({ stateDir });
   const session = store.open(file).session;
+  const uiSession = store.open(uiFile, { mode: 'ui' }).session;
   const reviewServer = createPlanCanvasServer({ store });
   const { port } = await reviewServer.listen(0);
   const setServer = portNumber => fs.writeFileSync(path.join(stateDir, 'server.json'), JSON.stringify({
@@ -110,6 +113,19 @@ async function verifyInstalledCanvas(root, packageRoot, env) {
   const id = 'copilot-fixture';
   try {
     setServer(port);
+    store.queueFeedback(uiSession.key, [{ kind: 'edits', text: 'Mockup edit', edits: [] }]);
+    const uiEndpoint = new URL('/api/feedback-batch', `http://127.0.0.1:${port}`);
+    uiEndpoint.searchParams.set('key', uiSession.key);
+    uiEndpoint.searchParams.set('createdAt', uiSession.createdAt);
+    assert.deepEqual((await postBatch(uiEndpoint)).body, { status: 'missing' });
+    assert.equal(store.get(uiSession.key).pendingFeedback.length, 1);
+    await assert.rejects(invoke('bind', '--session', id, '--file', path.basename(uiFile), '--state-dir', stateDir));
+    const legacyAwait = new URL('/api/await', `http://127.0.0.1:${port}`);
+    legacyAwait.searchParams.set('key', uiSession.key);
+    const uiResult = await fetch(legacyAwait).then(response => response.json());
+    assert.equal(uiResult.items[0].kind, 'edits');
+    assert.equal(store.get(uiSession.key).pendingFeedback.length, 0);
+
     assert.equal((await bind(id)).nativeStatus, 'native-unverified');
     assert.equal((await feedback(id)).status, 'waiting');
     await assert.rejects(bind('other-session'));

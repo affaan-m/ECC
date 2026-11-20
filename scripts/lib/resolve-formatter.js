@@ -44,8 +44,6 @@ const PRETTIER_CONFIGS = [
   'prettier.config.cts'
 ];
 
-const PROJECT_ROOT_MARKERS = ['package.json', ...BIOME_CONFIGS, ...PRETTIER_CONFIGS];
-
 // ── Windows .cmd shim mapping ───────────────────────────────────────
 const WIN_CMD_SHIMS = { npx: 'npx.cmd', pnpm: 'pnpm.cmd', yarn: 'yarn.cmd', bunx: 'bunx.cmd' };
 
@@ -58,9 +56,9 @@ const FORMATTER_PACKAGES = {
 // ── Public helpers ──────────────────────────────────────────────────
 
 /**
- * Walk up from `startDir` until a directory containing a known project
- * root marker (package.json or formatter config) is found.
- * Returns `startDir` as fallback when no marker exists above it.
+ * Walk up from `startDir` to the closest configured formatter, including
+ * shared workspace configs above a package.json. Stop at a repository or
+ * home boundary. Fall back to the nearest package, or `startDir` if absent.
  *
  * @param {string} startDir - Absolute directory path to start from
  * @returns {string} Absolute path to the project root
@@ -70,21 +68,24 @@ function findProjectRoot(startDir) {
 
   const homeDir = os.homedir();
   let dir = startDir;
+  let nearestPackage = null;
   while (dir !== path.dirname(dir)) {
     // Stop before checking the home directory to avoid treating global
     // dotfiles (e.g. ~/.prettierrc) as a project root marker.
-    if (dir === homeDir) break;
-    for (const marker of PROJECT_ROOT_MARKERS) {
-      if (fs.existsSync(path.join(dir, marker))) {
-        projectRootCache.set(startDir, dir);
-        return dir;
-      }
+    if (path.relative(homeDir, dir) === '') break;
+    if (detectFormatter(dir)) {
+      projectRootCache.set(startDir, dir);
+      return dir;
     }
+    if (nearestPackage === null && fs.existsSync(path.join(dir, 'package.json'))) nearestPackage = dir;
+    // .git may be a directory or a worktree's pointer file.
+    if (fs.existsSync(path.join(dir, '.git'))) break;
     dir = path.dirname(dir);
   }
 
-  projectRootCache.set(startDir, startDir);
-  return startDir;
+  const fallback = nearestPackage || startDir;
+  projectRootCache.set(startDir, fallback);
+  return fallback;
 }
 
 /**

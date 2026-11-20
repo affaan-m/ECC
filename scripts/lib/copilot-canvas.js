@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
-const { sessionKeyFor } = require('./plan-canvas/sessions');
+const { sessionKeyFor } = require('./plan-canvas/session-key');
 const { findPotentialSecrets, hasUnsafeControlCharacters } = require('./memory-vault-format');
 const MAX_BYTES = 64 * 1024;
 const BUDGET_MS = 1000;
@@ -113,7 +113,7 @@ function serverInfo(stateDir) {
 function canvasSession(receipt) {
   const state = object(JSON.parse(readBounded(path.join(receipt.stateDir, 'sessions.json'), 4 * 1024 * 1024)));
   const selected = object(object(state.sessions)[receipt.key]);
-  if (selected.key !== receipt.key || selected.file !== receipt.artifact || !iso(selected.createdAt)
+  if (selected.key !== receipt.key || selected.file !== receipt.artifact || (selected.mode ?? 'plan') !== 'plan' || !iso(selected.createdAt)
     || (receipt.canvasCreatedAt && selected.createdAt !== receipt.canvasCreatedAt)) throw new Error('Canvas session identity is unavailable.');
   return selected;
 }

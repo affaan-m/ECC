@@ -78,7 +78,7 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
       'scripts/copilot-canvas.js',
       'scripts/lib/copilot-canvas.js',
       'scripts/lib/memory-vault-format.js',
-      'scripts/lib/plan-canvas/sessions.js',
+      'scripts/lib/plan-canvas/session-key.js',
     ];
     return [
       createManagedOperation({

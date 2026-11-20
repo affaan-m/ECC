@@ -159,6 +159,33 @@ async function runTests() {
     assert.strictEqual((await hook.run(input)).stdout, input);
   })) passed++; else failed++;
 
+  if (await test('an ended UI session still hands over an undelivered Save and Finish', async () => {
+    const stateDir = freshStateDir();
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-canvas-project-'));
+    const state = {
+      eeeeeeeeeeee: sessionRecord(
+        'eeeeeeeeeeee',
+        path.join(projectDir, 'card.html'),
+        [{ id: 'fb-1', kind: 'finish', editCount: 2, exportPath: path.join(projectDir, 'card.edited.html'), at: '2026-01-01T00:00:00.000Z' }],
+        { status: 'ended', endedBy: 'user', mode: 'ui' }
+      ),
+      ffffffffffff: sessionRecord(
+        'ffffffffffff',
+        path.join(projectDir, 'stale.html'),
+        [{ id: 'fb-1', kind: 'chat', text: 'stale', at: '2026-01-01T00:00:00.000Z' }],
+        { status: 'ended', endedBy: 'user', mode: 'ui' }
+      )
+    };
+    writeState(stateDir, state);
+    const hook = loadHook(stateDir);
+    assert.deepStrictEqual(hook.pendingSessions({ sessions: state }, projectDir, {}).map(s => s.key), ['eeeeeeeeeeee']);
+    const result = await hook.run(JSON.stringify({ cwd: projectDir }));
+    const reason = JSON.parse(result.stdout).reason;
+    assert.ok(reason.includes('SAVED AND FINISHED (2 edits)'), reason);
+    assert.ok(reason.includes('saved and finished (or ended) this preview'), 'ended UI guidance, no reopen');
+    assert.strictEqual(readPending(stateDir, 'eeeeeeeeeeee').length, 0, 'drained once');
+  })) passed++; else failed++;
+
   if (await test('renders annotations and verdicts readably', async () => {
     const hook = loadHook(freshStateDir());
     assert.strictEqual(

@@ -24,3 +24,4 @@ execFileSync(process.execPath, [tscEntrypoint, "-p", path.join(opencodeDir, "tsc
   cwd: rootDir,
   stdio: "inherit",
 })
+require("./build-opencode-agents").buildOpencodeAgents()

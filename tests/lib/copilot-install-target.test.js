@@ -405,7 +405,7 @@ test('installed Copilot TDD command runs in an ESM project with a complete manag
   const { spawnSync } = require('child_process');
   const { createManifestInstallPlan, applyInstallPlan } = require('../../scripts/lib/install-executor');
   const { repairInstalledStates, uninstallInstalledStates } = require('../../scripts/lib/install-lifecycle');
-  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-copilot-workflow-'));
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc copilot workflow '));
   try {
     const env = { ...process.env, ECC_AGENT_DATA_HOME: path.join(project, 'data') };
     const homeDir = path.join(project, 'home');
@@ -490,6 +490,20 @@ test('installed Copilot TDD command runs in an ESM project with a complete manag
   } finally {
     fs.rmSync(project, { recursive: true, force: true });
   }
+});
+
+test('Copilot rewrites the TDD detector for Windows source paths and CRLF', () => {
+  const fs = require('fs');
+  const { transformInstallContent } = require('../../scripts/lib/install/content-transform');
+  const source = fs.readFileSync(path.join(REPO_ROOT, 'skills', 'tdd-workflow', 'SKILL.md'), 'utf8')
+    .replace(/\r?\n/g, '\r\n');
+  const actual = transformInstallContent({
+    contentTransform: 'copilot-workflow-paths',
+    sourceRelativePath: path.win32.join('skills', 'tdd-workflow', 'SKILL.md'),
+  }, source);
+  assert.match(actual, /```bash\r\n[ \t]*node \.github\/ecc\/scripts\/setup-package-manager\.js --detect\r\n/);
+  assert.doesNotMatch(actual, /ECC_ROOT|CLAUDE_PLUGIN_ROOT/);
+  assert.doesNotMatch(actual, /(?<!\r)\n/);
 });
 
 test('Copilot preserves unrelated workflow shell steps around a detector call', () => {

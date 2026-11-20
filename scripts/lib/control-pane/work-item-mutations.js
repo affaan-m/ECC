@@ -116,6 +116,9 @@ function moveWorkItem(store, { id, lane } = {}) {
     status: LANE_TO_STATUS[laneKey],
     updatedAt: new Date().toISOString()
   });
+  if (item.status !== LANE_TO_STATUS[laneKey]) {
+    return { moved: false, reason: 'verification-failed', item };
+  }
   return { moved: true, item };
 }
 

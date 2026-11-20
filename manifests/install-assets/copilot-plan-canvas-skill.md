@@ -6,7 +6,8 @@ description: Tie a local Plan Canvas browser review to an explicit GitHub Copilo
 # Plan Canvas for Copilot CLI
 
 Use this skill for a user-requested review of a local plan or visual artifact
-in the current project. The canonical browser server requires a trusted ECC
+in the current project. Open the artifact in Plan Canvas review mode. The
+canonical browser server requires a trusted ECC
 checkout or npm installation with the bounded feedback batch endpoint.
 
 Set `ECC_PLAN_CANVAS_STATE_DIR` to an absolute, private directory and run

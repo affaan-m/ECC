@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * PostToolUse Hook: TypeScript check after editing .ts/.tsx files
+ * PostToolUse Hook: TypeScript check after editing .ts/.tsx/.mts/.cts files
  *
  * Cross-platform (Windows, macOS, Linux)
  *
@@ -56,7 +56,7 @@ if (require.main === module) {
       const input = JSON.parse(data);
       const filePath = input.tool_input?.file_path;
 
-      if (filePath && /\.(ts|tsx)$/.test(filePath)) {
+      if (filePath && /\.(?:[cm]?ts|tsx)$/.test(filePath)) {
         const resolvedPath = path.resolve(filePath);
         if (!fs.existsSync(resolvedPath)) {
           process.stdout.write(data, () => process.exit(0));

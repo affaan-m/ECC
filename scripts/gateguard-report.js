@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { METRICS_FILE_NAME, isMetricsEvent } = require('./lib/gateguard-metrics');
 
-const DENIAL_DECISIONS = new Set(['deny', 'routine-deny', 'destructive-deny']);
+const DENIAL_DECISIONS = new Set(['deny', 'routine-deny', 'destructive-deny', 'batch-deny']);
 const FIRST_TOUCH_DECISIONS = ['deny', 'credit', 'sibling', 'cap', 'trivial'];
 const NEAR_MISS_PREFIX = 'near-miss:';
 const TOP_QUESTIONS = 10;
