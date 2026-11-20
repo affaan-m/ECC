@@ -6,7 +6,7 @@
  *
  * Reads the accumulator written by post-edit-accumulator.js and processes all
  * edited files in one pass: groups files by project root for a single formatter
- * invocation per root, and groups .ts/.tsx files by tsconfig dir for a single
+ * invocation per root, and groups .ts/.tsx/.mts/.cts files by tsconfig dir for a single
  * tsc --noEmit per tsconfig. The accumulator is cleared on read so repeated
  * Stop calls do not double-process files.
  *
@@ -204,7 +204,7 @@ function main(sessionId) {
 
   const byProjectRoot = new Map();
   for (const filePath of files) {
-    if (!/\.(ts|tsx|js|jsx)$/.test(filePath)) continue;
+    if (!/\.(?:[cm]?[jt]s|[jt]sx)$/.test(filePath)) continue;
     if (isPluginClonePath(filePath)) continue;
     const resolved = path.resolve(filePath);
     if (!fs.existsSync(resolved)) continue;
@@ -215,7 +215,7 @@ function main(sessionId) {
 
   const byTsConfigDir = new Map();
   for (const filePath of files) {
-    if (!/\.(ts|tsx)$/.test(filePath)) continue;
+    if (!/\.(?:[cm]?ts|tsx)$/.test(filePath)) continue;
     if (isPluginClonePath(filePath)) continue;
     const resolved = path.resolve(filePath);
     if (!fs.existsSync(resolved)) continue;

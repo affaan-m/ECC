@@ -1,6 +1,6 @@
 # Curation
 
-pi/core includes 138 of 327 skills and 24 of 98 commands from the root of ECC.
+pi/core includes 138 of 328 skills and 24 of 99 commands from the root of ECC.
 Everything excluded is listed here with its reason.
 
 ## Rules
@@ -137,6 +137,7 @@ Exclude anything that:
 | `orch-pipeline` | Claude-Code-only orch-* orchestration |
 | `orch-refine-code` | Claude-Code-only orch-* orchestration |
 | `plan-canvas` | Claude-Code-only plan canvas server |
+| `ui-canvas` | requires the local UI Canvas server outside the offline core profile |
 | `plan-orchestrate` | ECC orchestration prompt generator over the full catalog |
 | `plankton-code-quality` | Claude-Code-only write-time hooks |
 | `prediction-market-oracle-research` | venture-specific prediction-market-* |
@@ -262,6 +263,7 @@ Exclude anything that:
 | `orch-refine-code` | Claude-Code-only orch-* orchestration |
 | `orch-review` | Claude-Code-only orch-* orchestration |
 | `plan-canvas` | Claude-Code-only plan canvas server |
+| `ui-canvas` | requires the local UI Canvas server outside the offline core profile |
 | `pm2` | PM2 runtime process manager ops |
 | `project-init` | ECC install-manifest onboarding plan |
 | `projects` | instincts (continuous-learning) |

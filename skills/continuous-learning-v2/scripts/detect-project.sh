@@ -19,8 +19,22 @@
 #   3. git repo root path (fallback, machine-specific)
 #   4. "global" (no project context detected)
 
+# This file is sourced on every tool call. Each external command is a process
+# launch, which costs a few milliseconds on Linux/macOS but 80-280 ms under Git
+# Bash on Windows, so the hot path uses parameter expansion and shell builtins
+# wherever an external command is not required.
+# Git Bash may be handed a Windows path (C:\...\detect-project.sh); dirname
+# accepted both separators there, so normalize before splitting.
+_CLV2_DETECT_PROJECT_SELF="${BASH_SOURCE[0]}"
+case "${OSTYPE:-}" in
+  msys*|cygwin*|win32*) _CLV2_DETECT_PROJECT_SELF="${_CLV2_DETECT_PROJECT_SELF//\\//}" ;;
+esac
+case "$_CLV2_DETECT_PROJECT_SELF" in
+  */*) _CLV2_DETECT_PROJECT_SCRIPT_DIR="${_CLV2_DETECT_PROJECT_SELF%/*}" ;;
+  *) _CLV2_DETECT_PROJECT_SCRIPT_DIR="." ;;
+esac
 # shellcheck disable=SC1091
-. "$(dirname "${BASH_SOURCE[0]}")/lib/homunculus-dir.sh"
+. "${_CLV2_DETECT_PROJECT_SCRIPT_DIR}/lib/homunculus-dir.sh"
 _CLV2_HOMUNCULUS_DIR="$(_clv2_resolve_homunculus_dir)"
 _CLV2_PROJECTS_DIR="${_CLV2_HOMUNCULUS_DIR}/projects"
 _CLV2_REGISTRY_FILE="${_CLV2_HOMUNCULUS_DIR}/projects.json"
@@ -44,7 +58,13 @@ _clv2_resolve_python_cmd() {
   return 1
 }
 
-_CLV2_PYTHON_CMD="$(_clv2_resolve_python_cmd 2>/dev/null || true)"
+if [ -n "${CLV2_PYTHON_CMD:-}" ] && command -v "$CLV2_PYTHON_CMD" >/dev/null 2>&1; then
+  # Already resolved by the caller (observe.sh exports it): reuse it without
+  # paying for a command-substitution subshell.
+  _CLV2_PYTHON_CMD="$CLV2_PYTHON_CMD"
+else
+  _CLV2_PYTHON_CMD="$(_clv2_resolve_python_cmd 2>/dev/null || true)"
+fi
 CLV2_PYTHON_CMD="$_CLV2_PYTHON_CMD"
 export CLV2_PYTHON_CMD
 
@@ -160,6 +180,8 @@ _clv2_detect_project() {
   fi
 
   local raw_remote_url="$remote_url"
+  # Remembered for the detection cache: the origin this id was derived from.
+  _CLV2_PROJECT_REMOTE_SEEN="$raw_remote_url"
 
   # Strip embedded credentials from remote URL (e.g., https://ghp_xxxx@github.com/...)
   if [ -n "$remote_url" ]; then
@@ -317,8 +339,213 @@ atomic_write_json(registry_path, registry)
 ' 2>/dev/null || true
 }
 
+# ─────────────────────────────────────────────
+# Per-directory detection cache
+# ─────────────────────────────────────────────
+#
+# Full detection launches git twice, python twice, sed six times and mkdir
+# seven times, and rewrites projects.json. The answer rarely changes, so it is
+# cached per (CLV2_NO_PROJECT, CLAUDE_PROJECT_DIR, PWD) for the rest of the day;
+# a hit costs one git launch (none for a cached "global").
+#
+# A cached entry is rejected, and full detection reruns, when:
+#   - it was written on another day (so the registry last_seen still refreshes
+#     at least daily)
+#   - the repository's .git/config is not older than the entry (a setting that
+#     decides the root or the id, such as core.worktree, was changed)
+#   - git no longer reports the origin the entry was derived from (remote
+#     added, changed or removed, which changes the project id)
+#   - a nearer .git marker changes discovery from the explicit project or cwd
+#   - the project storage directory or the project root no longer exists
+#   - the stored id is not a shape detection can produce
+#
+# The origin is asked from git on every hit (one `git remote get-url`), in
+# addition to the timestamp check, because the effective origin can come from
+# the repository config, a file it includes, the global or system config, or
+# GIT_CONFIG_* variables, and only git resolves all of those. The entry stores
+# the origin that detection itself read, so an entry written while the config
+# was being changed fails this comparison too.
+#
+# Only a repository with its own .git/config file is cached. Linked worktrees,
+# submodules and non-git CLAUDE_PROJECT_DIR roots are detected on every call,
+# as is a "global" result reached because no repository was found.
+#
+# Set CLV2_PROJECT_CACHE=0 to disable. The day stamp needs printf '%(...)T'
+# (bash >= 4.2); older shells such as the macOS system bash 3.2 skip the cache
+# and detect on every call, exactly as before.
+_CLV2_PROJECT_CACHE_HIT=0
+_CLV2_PROJECT_CACHE_FILE=""
+_CLV2_PROJECT_CACHE_KEY=""
+_CLV2_PROJECT_CACHE_DAY=""
+_CLV2_PROJECT_CACHE_VERSION="clv2-project-cache-2"
+_CLV2_PROJECT_REMOTE_SEEN=""
+_CLV2_PROJECT_CACHE_REMOTE=""
+
+# Drop embedded credentials (https://token@host/...) so they never reach the
+# cache file. Same rule as the sed in _clv2_detect_project, without a launch:
+# the leftmost "://<non-@ characters>@" becomes "://".
+_clv2_project_cache_remote() {
+  _CLV2_PROJECT_CACHE_REMOTE="$1"
+  if [[ "$1" =~ ://[^@]+@ ]]; then
+    _CLV2_PROJECT_CACHE_REMOTE="${1/"${BASH_REMATCH[0]}"/://}"
+  fi
+}
+
+_clv2_project_cache_prepare() {
+  [ "${CLV2_PROJECT_CACHE:-1}" = "0" ] && return 1
+  if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] ||
+     { [ "${BASH_VERSINFO[0]:-0}" -eq 4 ] && [ "${BASH_VERSINFO[1]:-0}" -lt 2 ]; }; then
+    return 1
+  fi
+
+  local key="${CLV2_NO_PROJECT:-0}|${CLAUDE_PROJECT_DIR:-}|${PWD}"
+  # The entry is line-based, so a key that spans lines cannot be stored.
+  case "$key" in *$'\n'*|*$'\r'*) return 1 ;; esac
+
+  local name="${key//[^A-Za-z0-9._-]/_}"
+  [ "${#name}" -gt 200 ] && return 1
+
+  printf -v _CLV2_PROJECT_CACHE_DAY '%(%Y%m%d)T' -1
+  _CLV2_PROJECT_CACHE_KEY="$key"
+  _CLV2_PROJECT_CACHE_FILE="${_CLV2_HOMUNCULUS_DIR}/.project-cache/${name}"
+  return 0
+}
+
+# Confirm that discovery still selects the cached root without another Git
+# launch. A newly initialized repo, worktree marker, or even broken .git link
+# between the selected starting directory and that root requires fresh Git.
+_clv2_project_cache_same_root() {
+  local expected="$1"
+  local start="${CLAUDE_PROJECT_DIR:-}"
+  [ -n "$start" ] && [ -d "$start" ] || start="."
+  local probe="$start" depth=0
+  while [ "$depth" -lt 512 ]; do
+    [ "$probe" -ef "$expected" ] && return 0
+    if [ -e "$probe/.git" ] || [ -L "$probe/.git" ]; then return 1; fi
+    [ "$probe" -ef "$probe/.." ] && return 1
+    # Let the filesystem resolve aliases and .. without a cd/pwd subprocess.
+    probe="$probe/.."
+    depth=$((depth + 1))
+  done
+  return 1
+}
+
+_clv2_project_cache_load() {
+  local file="$_CLV2_PROJECT_CACHE_FILE"
+  [ -n "$file" ] && [ -f "$file" ] || return 1
+
+  local version day key id name root remote
+  {
+    IFS= read -r version && IFS= read -r day && IFS= read -r key &&
+      IFS= read -r id && IFS= read -r name && IFS= read -r root &&
+      IFS= read -r remote
+  } < "$file" 2>/dev/null || return 1
+
+  [ "$version" = "$_CLV2_PROJECT_CACHE_VERSION" ] || return 1
+  [ "$day" = "$_CLV2_PROJECT_CACHE_DAY" ] || return 1
+  # Sanitized file names can collide; the stored key is the real identity.
+  [ "$key" = "$_CLV2_PROJECT_CACHE_KEY" ] || return 1
+
+  # The id becomes a path segment, so accept only what detection can emit:
+  # "global", the "fallback" literal, or 12 lowercase hex characters.
+  local dir
+  case "$id" in
+    global)
+      [ -z "$root" ] || return 1
+      dir="$_CLV2_HOMUNCULUS_DIR"
+      ;;
+    fallback) dir="${_CLV2_PROJECTS_DIR}/${id}" ;;
+    ''|*[!0-9a-f]*) return 1 ;;
+    *)
+      [ "${#id}" -eq 12 ] || return 1
+      dir="${_CLV2_PROJECTS_DIR}/${id}"
+      ;;
+  esac
+  [ -d "$dir" ] || return 1
+
+  if [ "$id" != "global" ]; then
+    # The root feeds CLV2_OBSERVER_SENTINEL_FILE; it must still be a directory,
+    # and still a repository with its own .git/config file (see the store side).
+    [ -n "$root" ] && [ -d "$root" ] || return 1
+    [ -f "${root}/.git/config" ] || return 1
+    _clv2_project_cache_same_root "$root" || return 1
+    # Settings in the repository's own config (core.worktree moves the root,
+    # a remote changes the id) are trusted only while the entry is strictly
+    # newer than that file. Equal timestamps count as stale so a change in the
+    # same clock tick is not missed on filesystems with coarse mtimes.
+    [ "$file" -nt "${root}/.git/config" ] || return 1
+    # The id is derived from the origin, so the entry is trusted only while
+    # git reports the same origin that detection read when it wrote the entry.
+    # A repository without an origin stores an empty line and must still have
+    # none. Without git the origin cannot be confirmed, so nothing is trusted.
+    command -v git >/dev/null 2>&1 || return 1
+    local live
+    live=$(git -C "$root" remote get-url origin 2>/dev/null || true)
+    _clv2_project_cache_remote "$live"
+    [ "$_CLV2_PROJECT_CACHE_REMOTE" = "$remote" ] || return 1
+  fi
+
+  _CLV2_PROJECT_ID="$id"
+  _CLV2_PROJECT_NAME="$name"
+  _CLV2_PROJECT_ROOT="$root"
+  _CLV2_PROJECT_DIR="$dir"
+  _CLV2_PROJECT_CACHE_HIT=1
+  return 0
+}
+
+_clv2_project_cache_store() {
+  local file="$_CLV2_PROJECT_CACHE_FILE"
+  [ -n "$file" ] || return 0
+
+  # "global" reached by fallthrough (no repository found) is not cached, so a
+  # directory that becomes a repository later is picked up on the next call.
+  # An explicit CLV2_NO_PROJECT=1 is part of the key and is safe to cache.
+  if [ "$_CLV2_PROJECT_ID" = "global" ] && [ "${CLV2_NO_PROJECT:-0}" != "1" ]; then
+    return 0
+  fi
+
+  case "${_CLV2_PROJECT_NAME}${_CLV2_PROJECT_ROOT}" in *$'\n'*|*$'\r'*) return 0 ;; esac
+
+  local remote=""
+  if [ "$_CLV2_PROJECT_ID" != "global" ]; then
+    # A project is cached only when it is a repository with its own .git
+    # directory. Linked worktrees and submodules (.git is a file; their id can
+    # also depend on the main worktree) and non-git CLAUDE_PROJECT_DIR roots
+    # are detected on every call, as before.
+    [ -n "$_CLV2_PROJECT_ROOT" ] && [ -f "${_CLV2_PROJECT_ROOT}/.git/config" ] || return 0
+    _clv2_project_cache_remote "$_CLV2_PROJECT_REMOTE_SEEN"
+    remote="$_CLV2_PROJECT_CACHE_REMOTE"
+    # The entry is line-based; an origin that spans lines cannot be stored.
+    case "$remote" in *$'\n'*|*$'\r'*) return 0 ;; esac
+  fi
+
+  local dir="${file%/*}"
+  local tmp="${file}.$$"
+  if [ ! -d "$dir" ]; then
+    mkdir -p "$dir" 2>/dev/null || return 0
+  fi
+
+  # Write then rename so a concurrent reader never sees a partial entry.
+  if printf '%s\n' \
+    "$_CLV2_PROJECT_CACHE_VERSION" \
+    "$_CLV2_PROJECT_CACHE_DAY" \
+    "$_CLV2_PROJECT_CACHE_KEY" \
+    "$_CLV2_PROJECT_ID" \
+    "$_CLV2_PROJECT_NAME" \
+    "$_CLV2_PROJECT_ROOT" \
+    "$remote" > "$tmp" 2>/dev/null; then
+    mv -f "$tmp" "$file" 2>/dev/null || rm -f "$tmp" 2>/dev/null || true
+  fi
+  return 0
+}
+
 # Auto-detect on source
-_clv2_detect_project
+if _clv2_project_cache_prepare && _clv2_project_cache_load; then
+  :
+else
+  _clv2_detect_project
+  _clv2_project_cache_store
+fi
 
 # Convenience aliases for callers (short names pointing to prefixed vars)
 PROJECT_ID="$_CLV2_PROJECT_ID"

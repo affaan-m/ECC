@@ -1,0 +1,12 @@
+{
+  "name": "ecc",
+  "version": "2.2.3",
+  "description": "Experimental ECC adapter metadata for Antigravity 2.0 and agy CLI; native acceptance pending",
+  "author": {
+    "name": "Affaan Mustafa",
+    "url": "https://x.com/affaanmustafa"
+  },
+  "homepage": "https://ecc.tools",
+  "repository": "https://github.com/affaan-m/ECC",
+  "license": "MIT"
+}

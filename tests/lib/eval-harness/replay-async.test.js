@@ -161,6 +161,48 @@ async function main() {
     } finally { cleanup(dir); }
   });
 
+  await asyncTest('async key-sensitive requests and responses replay their single JSON snapshots', async () => {
+    const dir = tempDir('async-json-snapshot');
+    try {
+      const store = new replay.FixtureStore(dir);
+      const requestKeys = [];
+      const responseKeys = [];
+      const args = { toJSON(key) { requestKeys.push(key); return { holder: key }; } };
+      const response = { toJSON(key) { responseKeys.push(key); return { holder: key, count: 7 }; } };
+      let liveCalls = 0;
+      const declared = { custom: {
+        effect_class: 'SE0', determinism: 'deterministic',
+        async impl(input) { assert.strictEqual(input, args); liveCalls += 1; return response; }
+      } };
+      const recorder = replay.createReplayer(declared, { mode: 'record', store });
+      assert.strictEqual(await recorder.call('custom', args), response);
+      assert.deepStrictEqual(requestKeys, ['']);
+      assert.deepStrictEqual(responseKeys, ['']);
+      const replayer = replay.createReplayer(declared, { store });
+      assert.deepStrictEqual(replayer.call('custom', { toJSON: key => ({ holder: key }) }), { holder: '', count: 7 });
+      assert.strictEqual(liveCalls, 1);
+    } finally { cleanup(dir); }
+  });
+
+  await asyncTest('async response serializer failures preserve prior fixtures without a success trace', async () => {
+    const dir = tempDir('async-json-failure');
+    try {
+      const store = new replay.FixtureStore(dir);
+      const record = store.put('custom', {}, { count: 7 });
+      const file = store.pathFor(record.key);
+      const before = fs.readFileSync(file);
+      const failure = new Error('async response serializer failed');
+      const recorder = replay.createReplayer({ custom: {
+        effect_class: 'SE0', determinism: 'deterministic',
+        async impl() { return { toJSON() { throw failure; } }; }
+      } }, { mode: 'record', store });
+      await assert.rejects(recorder.call('custom', {}), error => error === failure);
+      assert.deepStrictEqual(recorder.calls, []);
+      assert.deepStrictEqual(fs.readFileSync(file), before);
+      assert.deepStrictEqual(fs.readdirSync(dir), [record.key + '.json']);
+    } finally { cleanup(dir); }
+  });
+
   finish('replay async');
 }
 

@@ -17,14 +17,15 @@ const repoRoot = path.resolve(__dirname, '../..');
 // eslint-disable-next-line no-control-regex -- Statusline ANSI output is the fixture boundary.
 const stripAnsi = value => value.replace(/\x1b\[[0-9;]*m/g, '');
 
-function registeredDisplay(t, payload, options = {}, bridge) {
+function registeredDisplay(t, payload, options = {}, bridge, inspect) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-statusline-late-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const configDir = path.join(home, 'selected profile');
   fs.mkdirSync(configDir);
   const temporaryDir = path.join(home, 'tmp');
   fs.mkdirSync(temporaryDir);
-  if (bridge) fs.writeFileSync(path.join(temporaryDir, `ecc-metrics-${payload.session_id}.json`), JSON.stringify(bridge));
+  const bridgePath = path.join(temporaryDir, `ecc-metrics-${payload.session_id}.json`);
+  if (bridge) fs.writeFileSync(bridgePath, JSON.stringify(bridge));
   const example = JSON.parse(fs.readFileSync(path.join(repoRoot, 'examples/statusline.json'), 'utf8'));
   const command = example.statusLine.command.replace(/^node /, `${shellQuote(process.execPath)} `)
     .replace('"<plugin-root>/scripts/hooks/ecc-statusline.js"',
@@ -43,6 +44,7 @@ function registeredDisplay(t, payload, options = {}, bridge) {
   });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(fs.readFileSync(settingsPath), before, 'display must not rewrite its registration');
+  if (inspect) inspect({ bridgePath, env });
   return stripAnsi(result.stdout);
 }
 
@@ -72,6 +74,34 @@ test('registered default display keeps its original exact output despite optiona
   const expected = `Fixture \u2502 project ${'\u2588'.repeat(2)}${'\u2591'.repeat(8)} 24%`;
   assert.equal(registeredDisplay(t, payload, { ECC_STATUSLINE_USAGE: undefined, ECC_STATUSLINE_COMPACT: '1' }), expected);
   assert.equal(registeredDisplay(t, payload, { ECC_STATUSLINE_USAGE: '0' }), expected);
+});
+
+test('statusline context reaches the monitor without republishing tool metrics', t => {
+  const session = 'statusline-context-isolation';
+  const bridge = { tool_count: 12, files_modified_count: 3, last_timestamp: new Date().toISOString() };
+  const contextPayload = { session_id: session, context_window: { remaining_percentage: 8 } };
+  registeredDisplay(t, contextPayload, {}, bridge, ({ bridgePath, env }) => {
+    assert.equal(fs.readFileSync(bridgePath, 'utf8'), JSON.stringify(bridge),
+      'statusline must not republish the tool metrics it read');
+    const input = JSON.stringify({ session_id: session, tool_name: 'Bash' });
+    const monitor = () => {
+      const output = spawnSync(process.execPath, [path.join(repoRoot, 'scripts/hooks/ecc-context-monitor.js')], {
+        input, env, encoding: 'utf8', timeout: 5000,
+      });
+      assert.equal(output.status, 0, output.stderr);
+      return output.stdout;
+    };
+    assert.match(JSON.parse(monitor()).hookSpecificOutput.additionalContext, /CONTEXT CRITICAL/);
+
+    const observationPath = bridgePath.replace(/\.json$/, '.context.json');
+    if (process.platform !== 'win32') {
+      assert.equal(fs.statSync(observationPath).mode & 0o077, 0, 'observation is owner-only');
+    }
+    // Use a different warning tier to avoid masking a stale-reading regression through dedupe.
+    fs.writeFileSync(observationPath, JSON.stringify({ remaining: 30, observedAt: Date.now() - 120000 }));
+    fs.writeFileSync(bridgePath, JSON.stringify({ ...bridge, tool_count: 13, last_timestamp: new Date().toISOString() }));
+    assert.equal(monitor(), input, 'a new tool call must not refresh an old context reading');
+  });
 });
 
 test('registered opt-in display uses stdin session duration without bridge metrics', t => {

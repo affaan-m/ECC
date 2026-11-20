@@ -86,7 +86,10 @@ const {
   dirGateKey,
   getDirGates,
   mergeDirGates,
-  capDirGates
+  capDirGates,
+  getBatchLocks,
+  mergeBatchLocks,
+  capBatchLocks
 } = require('../lib/gateguard-state');
 
 // Session state — scoped per session to avoid cross-session races.
@@ -1710,6 +1713,7 @@ function saveState(state) {
     let mergedDenials = getDenialCount(state);
     let mergedCredited = getCreditedCount(state);
     let mergedDirGates = getDirGates(state);
+    let mergedBatchLocks = getBatchLocks(state);
     let mergedDenialsByClass = getClassCounts(state, 'denials_by_class');
     let mergedCreditedByClass = getClassCounts(state, 'credited_by_class');
     let mergedSiblingAllows = getSiblingAllowCount(state);
@@ -1729,6 +1733,7 @@ function saveState(state) {
         mergedDenials = Math.max(mergedDenials, getDenialCount(diskState));
         mergedCredited = Math.max(mergedCredited, getCreditedCount(diskState));
         mergedDirGates = mergeDirGates(getDirGates(diskState), mergedDirGates);
+        mergedBatchLocks = mergeBatchLocks(getBatchLocks(diskState), mergedBatchLocks);
         mergedDenialsByClass = mergeClassCounts(getClassCounts(diskState, 'denials_by_class'), mergedDenialsByClass);
         mergedCreditedByClass = mergeClassCounts(getClassCounts(diskState, 'credited_by_class'), mergedCreditedByClass);
         mergedSiblingAllows = Math.max(mergedSiblingAllows, getSiblingAllowCount(diskState));
@@ -1746,6 +1751,7 @@ function saveState(state) {
       fact_force_denials: mergedDenials,
       fact_force_credited: mergedCredited,
       dir_gates: capDirGates(mergedDirGates),
+      batch_locks: capBatchLocks(mergedBatchLocks),
       denials_by_class: mergedDenialsByClass,
       credited_by_class: mergedCreditedByClass,
       sibling_allows: mergedSiblingAllows,
@@ -1857,7 +1863,7 @@ function markCheckedWith(key, update) {
   return { ok: saveState(state), value };
 }
 
-function markCheckedAndCountDenial(key, { cls, dirGate, cap = Number.POSITIVE_INFINITY } = {}) {
+function markCheckedAndCountDenial(key, { cls, dirGate, batchId = null, cap = Number.POSITIVE_INFINITY } = {}) {
   const { ok, value: denials } = markCheckedWith(key, state => {
     if (getDenialCount(state) >= cap) {
       return { state: { ...state, cap_allows: getCapAllowCount(state) + 1 }, value: null };
@@ -1869,7 +1875,8 @@ function markCheckedAndCountDenial(key, { cls, dirGate, cap = Number.POSITIVE_IN
       ...(cls ? { denials_by_class: incrementClassCount(getClassCounts(state, 'denials_by_class'), cls) } : {}),
       ...(dirGate
         ? { dir_gates: withEntry(getDirGates(state), dirGate.key, { turn: dirGate.turn || null, at: Date.now(), first: dirGate.first, ordinal }) }
-        : {})
+        : {}),
+      ...(batchId ? { batch_locks: withEntry(getBatchLocks(state), key, { batch: batchId, at: Date.now() }) } : {})
     };
     return { state: next, value: ordinal };
   });
@@ -2095,17 +2102,34 @@ const READ_ONLY_GIT_SUBCOMMANDS = new Map([
 // --- Gate messages ---
 
 /**
- * Batch-consistency warning (#3136). A first-touch denial marks the file
- * checked so the retry passes; a parallel batch of edits to one
- * not-yet-touched file therefore partially applies (first call denied,
- * siblings allowed). Hooks see calls one at a time and cannot lock a
- * batch, so the denial must say this out loud: name the file and tell
- * the agent that siblings may already have been applied.
+ * Batch-consistency note (#3136, #3936). A first-touch denial marks the
+ * file checked so the retry passes. When the pending call's batch is found
+ * in the transcript, the denial also locks the file for that batch, so the
+ * later siblings are denied too (`locked`), but earlier allowed edits are
+ * never rolled back. Otherwise
+ * the hook cannot tell siblings from the retry, so the denial says out
+ * loud that siblings may already have been applied.
+ * see docs/gateguard/design-notes.md#same-batch-siblings
  */
-function batchSiblingWarning(safePath) {
+function batchSiblingWarning(safePath, locked = false) {
+  if (locked) {
+    return (
+      `Other edits to ${safePath} from this batch are denied too. Earlier edits may already have been applied. ` +
+      'Re-read the file and resend every denied edit with the retry.'
+    );
+  }
   return (
     `If this call was sent in a parallel batch, other edits to ${safePath} from that batch ` +
     'may already have been applied. Re-read the file before building on them.'
+  );
+}
+
+function sameBatchGateMsg(filePath) {
+  const safe = sanitizePath(filePath);
+  return (
+    `[Fact-Forcing Gate] An earlier edit to ${safe} in this same batch was denied at first touch, ` +
+    `so this one is denied too. Earlier edits may already have been applied. ` +
+    'Re-read the file, present the facts that denial asked for, then resend every denied edit to this file from this batch.'
   );
 }
 
@@ -2114,7 +2138,7 @@ function questionOptions() {
   return { externalContract: ECC_ENABLE_VALUES.has(normalizeEnvValue(process.env.GATEGUARD_EXTERNAL_CONTRACT_QUESTION)) };
 }
 
-function firstTouchGateMsg(filePath, isWrite, cls, profile) {
+function firstTouchGateMsg(filePath, isWrite, cls, profile, locked = false) {
   const safe = sanitizePath(filePath);
   const questions = questionIdsFor(cls, isWrite, profile, questionOptions()).map(questionText);
   return [
@@ -2124,7 +2148,7 @@ function firstTouchGateMsg(filePath, isWrite, cls, profile) {
     '',
     ...questions.map((question, index) => `${index + 1}. ${question}`),
     '',
-    batchSiblingWarning(safe),
+    batchSiblingWarning(safe, locked),
     '',
     'Present the facts, then retry the same operation.'
   ].join('\n');
@@ -2135,13 +2159,13 @@ function firstTouchGateMsg(filePath, isWrite, cls, profile) {
  * (#2142). Carries the denial ordinal so consecutive denials differ
  * textually, and a one-line recovery hint instead of the multi-line block.
  */
-function condensedGateMsg(action, filePath, ordinal, { cls = 'code', targetNote = '', profile = null, missNote = '' } = {}) {
+function condensedGateMsg(action, filePath, ordinal, { cls = 'code', targetNote = '', profile = null, missNote = '', locked = false } = {}) {
   const safe = sanitizePath(filePath);
   const hint = condensedHintFor(cls, action === 'creation', profile, questionOptions());
   return (
     `[Fact-Forcing Gate] (denial #${ordinal} this session) First ${action} of ${safe}: ` +
     `${hint} ` +
-    `${batchSiblingWarning(safe)} ` +
+    `${batchSiblingWarning(safe, locked)} ` +
     (missNote ? `${missNote} ` : '') +
     (targetNote ? `${targetNote} ` : '') +
     (showRecoveryHints()
@@ -2172,7 +2196,7 @@ function denialReason(sensitive, linked, missNote, miss) {
   return missNote ? `near-miss:${miss.reason}` : 'first-touch';
 }
 
-function firstTouchDenial(filePath, { isWrite, denials, cls, sensitive, linked = false, profile, miss, reason }) {
+function firstTouchDenial(filePath, { isWrite, denials, cls, sensitive, linked = false, profile, miss, reason, locked = false }) {
   const targetNote = restrictedTargetNote(sensitive, linked);
   const missNote = targetNote ? '' : closestMissNote(miss);
   recordDecision('deny', reason || denialReason(sensitive, linked, missNote, miss), {
@@ -2184,9 +2208,9 @@ function firstTouchDenial(filePath, { isWrite, denials, cls, sensitive, linked =
   });
   if (denials > getFullDenialBudget()) {
     const action = isWrite ? 'creation' : 'edit';
-    return denyResult(condensedGateMsg(action, filePath, denials, { cls, targetNote, profile, missNote }), { includeRecoveryHint: false });
+    return denyResult(condensedGateMsg(action, filePath, denials, { cls, targetNote, profile, missNote, locked }), { includeRecoveryHint: false });
   }
-  const message = withNoteBeforeRetry(firstTouchGateMsg(filePath, isWrite, cls, profile), missNote);
+  const message = withNoteBeforeRetry(firstTouchGateMsg(filePath, isWrite, cls, profile, locked), missNote);
   return denyResult(targetNote ? withNoteBeforeRetry(message, targetNote) : message, {
     narrowRecoveryHint: EDIT_WRITE_NARROW_RECOVERY_HINT
   });
@@ -2561,8 +2585,37 @@ function gateSingleEdit(ctx) {
   const fileKey = canonicalPathKey(filePath, data);
   if (!isChecked([fileKey, filePath])) return firstTouchSingleEdit(ctx, filePath, fileKey);
 
+  const sameBatch = sameBatchDenial(ctx, filePath, fileKey);
+  if (sameBatch) return sameBatch;
+
   recordDecision('pass-checked', 'checked', { target: filePath });
   return rawInput; // allow
+}
+
+// --- Same-batch siblings ---
+// see docs/gateguard/design-notes.md#same-batch-siblings
+
+/**
+ * Message id of the pending call's batch, only when the pending
+ * `tool_use_id` is found in the transcript. No newest-message fallback:
+ * a guessed batch could match the retry and deny it forever.
+ */
+function pendingBatchId(ctx) {
+  const pendingId = turnScan().pendingToolUseId(ctx.data);
+  if (!pendingId) return null;
+  const scan = ctx.getTurnScan();
+  if (!scan || !(scan.batchIds instanceof Map)) return null;
+  const batch = scan.batchIds.get(pendingId);
+  return typeof batch === 'string' && batch ? batch : null;
+}
+
+/** Deny a checked file's edit when it comes from the batch whose first touch was denied. */
+function sameBatchDenial(ctx, filePath, fileKey) {
+  const locks = getBatchLocks(loadState());
+  if (!Object.hasOwn(locks, fileKey)) return null;
+  if (pendingBatchId(ctx) !== locks[fileKey].batch) return null;
+  recordDecision('batch-deny', 'same-batch', { target: filePath, key: fileKey });
+  return denyResult(sameBatchGateMsg(filePath), { includeRecoveryHint: false });
 }
 
 function singleEditProfile(ctx, filePath, cls, restricted) {
@@ -2613,7 +2666,8 @@ function firstTouchSingleEdit(ctx, filePath, fileKey) {
     return { additionalContext: siblingNote(sibling), exitCode: 0 };
   }
   const cap = restricted ? Number.POSITIVE_INFINITY : getMaxDenialBudget();
-  const { ok, denials } = markCheckedAndCountDenial(fileKey, { cls, dirGate, cap });
+  const batchId = pendingBatchId(ctx);
+  const { ok, denials } = markCheckedAndCountDenial(fileKey, { cls, dirGate, batchId, cap });
   if (!ok) {
     return allowWithStateWarning();
   }
@@ -2623,7 +2677,7 @@ function firstTouchSingleEdit(ctx, filePath, fileKey) {
     return rawInput;
   }
   const miss = restricted ? null : findClosestMiss(getTurnScan(), filePath, isNewFile, data);
-  return firstTouchDenial(filePath, { isWrite: toolName === 'Write', denials, cls, sensitive, linked, profile, miss });
+  return firstTouchDenial(filePath, { isWrite: toolName === 'Write', denials, cls, sensitive, linked, profile, miss, locked: batchId !== null });
 }
 
 // --- MultiEdit ---
@@ -2644,6 +2698,8 @@ function gateMultiEdit(ctx) {
     const fileKey = canonicalPathKey(filePath, data);
     if (batch.trivialKeys.has(fileKey)) continue;
     if (isChecked([fileKey, filePath])) {
+      const sameBatch = sameBatchDenial(ctx, filePath, fileKey);
+      if (sameBatch) return sameBatch;
       recordDecision('pass-checked', 'checked', { target: filePath, key: fileKey });
       continue;
     }
@@ -2695,7 +2751,8 @@ function firstTouchMultiEdit(ctx, edits, filePath, fileKey, batch) {
     return null;
   }
   const cap = restricted ? Number.POSITIVE_INFINITY : getMaxDenialBudget();
-  const { ok, denials } = markCheckedAndCountDenial(fileKey, { cls, cap });
+  const batchId = pendingBatchId(ctx);
+  const { ok, denials } = markCheckedAndCountDenial(fileKey, { cls, batchId, cap });
   if (!ok) {
     return allowWithStateWarning();
   }
@@ -2705,7 +2762,7 @@ function firstTouchMultiEdit(ctx, edits, filePath, fileKey, batch) {
     return null;
   }
   const miss = restricted ? null : findClosestMiss(getTurnScan(), filePath, false, data);
-  return firstTouchDenial(filePath, { isWrite: false, denials, cls, sensitive, linked, profile, miss });
+  return firstTouchDenial(filePath, { isWrite: false, denials, cls, sensitive, linked, profile, miss, locked: batchId !== null });
 }
 
 // --- Bash / PowerShell ---
