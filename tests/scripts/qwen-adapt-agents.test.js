@@ -553,6 +553,46 @@ function runTests() {
     } finally { cleanupTempDir(tempDir); }
   })) passed++; else failed++;
 
+  if (test('preserves comments after tools:, inline comments, and mixed body EOLs (#4066)', () => {
+    const { adaptFrontmatter } = require('../../scripts/qwen-adapt-agents');
+    const compatible = [
+      '---',
+      'name: security-reviewer',
+      'tools: read_file, grep_search',
+      '',
+      '# Keep red for security warnings',
+      'color: red # security palette',
+      '---',
+      '',
+      'Body',
+    ].join('\n');
+    const res1 = adaptFrontmatter(compatible);
+    assert.strictEqual(res1.changed, false);
+    assert.strictEqual(res1.text, compatible);
+
+    const mixed = [
+      '---',
+      'name: test-agent',
+      'model : sonnet # tier note',
+      'color: teal # tuning',
+      'tools: [',
+      '  Read,',
+      '  Grep',
+      '  ]',
+      '',
+      '# Next key comment',
+      'description: Test',
+      '---',
+      'LF line\nCRLF line\r\nEnd',
+    ].join('\n');
+    const res2 = adaptFrontmatter(mixed);
+    assert.strictEqual(res2.changed, true);
+    assert.ok(res2.text.includes('model: inherit # tier note'));
+    assert.ok(res2.text.includes('color: cyan # tuning'));
+    assert.ok(res2.text.includes('# Next key comment'));
+    assert.ok(res2.text.endsWith('LF line\nCRLF line\r\nEnd'));
+  })) passed++; else failed++;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }
