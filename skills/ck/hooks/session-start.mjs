@@ -14,12 +14,12 @@
  * - Mini portfolio for unregistered directories
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { homedir } from 'os';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
-import { findProject } from '../commands/shared.mjs';
+import { findProject, writeJson } from '../commands/shared.mjs';
 
 const CK_HOME         = resolve(homedir(), '.claude', 'ck');
 const PROJECTS_FILE   = resolve(CK_HOME, 'projects.json');
@@ -105,12 +105,12 @@ function main() {
 
   // Write current-session.json
   try {
-    writeFileSync(CURRENT_SESSION, JSON.stringify({
+    writeJson(CURRENT_SESSION, {
       sessionId,
       projectPath: cwd,
       projectName: entry?.name || null,
       startedAt: new Date().toISOString(),
-    }, null, 2), 'utf8');
+    });
   } catch { /* non-fatal */ }
 
   const parts = [];

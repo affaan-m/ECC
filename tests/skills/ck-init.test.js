@@ -44,6 +44,22 @@ function runOk(home, project, script, args, payload) {
 
 console.log('\nck init tests:');
 
+test('a second save in the first session updates the original entry', home => {
+  const project = path.join(home, 'app');
+  fs.mkdirSync(project);
+  const sessionId = 'first-session';
+  runOk(home, project, '../hooks/session-start.mjs', [], { session_id: sessionId });
+  runOk(home, project, 'save.mjs', ['--init'], { name: 'app', path: project });
+  runOk(home, project, 'save.mjs', [], { summary: 'draft' });
+  runOk(home, project, 'save.mjs', [], { summary: 'final' });
+
+  const contextFile = path.join(home, '.claude', 'ck', 'contexts', 'app', 'context.json');
+  const { sessions } = JSON.parse(fs.readFileSync(contextFile, 'utf8'));
+  assert.strictEqual(sessions.length, 1);
+  assert.strictEqual(sessions[0].id, sessionId);
+  assert.strictEqual(sessions[0].summary, 'final');
+});
+
 test('saving a summary with YAML punctuation preserves the native memory name', home => {
   const project = path.join(home, 'app');
   fs.mkdirSync(project);
