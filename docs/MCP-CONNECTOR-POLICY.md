@@ -41,3 +41,7 @@ export ECC_DISABLED_MCPS="chrome-devtools"
 ## Adding a connector
 
 Open a PR that argues both prongs of the rule explicitly. "Popular" is not an argument; "the job is stateful and universal" is.
+
+## Shared MCP Config Inspection
+
+When inspecting or reporting on an MCP configuration file that holds multiple servers, project only the non-secret fields required for the task (server name, transport type, command, enabled state) and redact all `headers`, `env` tokens, and URL credentials for unrelated servers **before** printing or serializing output.

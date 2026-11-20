@@ -115,3 +115,7 @@ For detailed vulnerability patterns, code examples, report templates, and PR rev
 ---
 
 **Remember**: Security is not optional. One vulnerability can cost users real financial losses. Be thorough, be paranoid, be proactive.
+
+## Shared MCP Config Output Redaction
+
+Flag tool output or inspection scripts that serialize raw shared MCP configs without projecting safe fields and redacting sibling servers' `headers` and `env` credentials before display.
