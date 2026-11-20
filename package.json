@@ -167,6 +167,7 @@
     "scripts/list-installed.js",
     "scripts/loop-status.js",
     "scripts/plan-canvas.js",
+    "scripts/copilot-canvas.js",
     "scripts/ui-canvas.js",
     "scripts/orchestration-status.js",
     "scripts/orchestrate-codex-worker.sh",

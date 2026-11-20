@@ -478,6 +478,23 @@ function createPlanCanvasServer({
       return sendJson(res, 200, { sessions: store.list() });
     }
 
+    // Copilot's bounded reader uses a separate route so older servers cannot
+    // silently drain an oversized queue through the legacy await endpoint.
+    if (req.method === 'POST' && pathname === '/api/feedback-batch') {
+      const key = url.searchParams.get('key');
+      if (!/^[a-f0-9]{12}$/.test(key || '')) return sendJson(res, 400, { error: 'invalid session key' });
+      const createdAt = url.searchParams.get('createdAt');
+      if (!createdAt) return sendJson(res, 400, { error: 'session creation timestamp required' });
+      let result;
+      try { result = store.takeFeedback(key, { createdAt, mode: 'plan', items: 20, bytes: 64 * 1024 }); }
+      catch { return sendJson(res, 500, { error: 'could not persist feedback delivery; retry feedback' }); }
+      if (result.status === 'feedback') {
+        markThinking(key);
+        broadcastPresence(key);
+      }
+      return sendJson(res, 200, result);
+    }
+
     if (req.method === 'GET' && pathname === '/api/await') {
       const keyParam = url.searchParams.get('key');
       const file = url.searchParams.get('file');
