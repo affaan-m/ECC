@@ -61,6 +61,21 @@
       "stability": "stable"
     },
     {
+      "id": "copilot-pm2",
+      "kind": "skills",
+      "description": "Project-scoped PM2 configuration planning for GitHub Copilot CLI.",
+      "paths": [
+        "scripts/copilot-pm2.cjs"
+      ],
+      "targets": [
+        "copilot"
+      ],
+      "dependencies": [],
+      "defaultInstall": false,
+      "cost": "light",
+      "stability": "beta"
+    },
+    {
       "id": "commands-core",
       "kind": "commands",
       "description": "Core slash-command library and command docs.",

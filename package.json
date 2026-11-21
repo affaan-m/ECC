@@ -177,6 +177,7 @@
     "scripts/session-inspect.js",
     "scripts/sessions-cli.js",
     "scripts/setup-package-manager.js",
+    "scripts/copilot-pm2.cjs",
     "scripts/skill-create-output.js",
     "scripts/status.js",
     "scripts/sync-ecc-to-codex.sh",
