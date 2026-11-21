@@ -1,0 +1,23 @@
+{
+  "name": "ecc",
+  "version": "2.2.3",
+  "description": "Harness-native engineering workflows for Devin: canonical ECC skills, specialist subagents, and the shared AGENTS.md guidance.",
+  "author": {
+    "name": "Affaan Mustafa"
+  },
+  "homepage": "https://ecc.tools",
+  "repository": "https://github.com/affaan-m/ECC",
+  "license": "MIT",
+  "keywords": [
+    "devin",
+    "agents",
+    "skills",
+    "tdd",
+    "code-review",
+    "security",
+    "workflow",
+    "automation"
+  ],
+  "platforms": ["cloud", "local"],
+  "skills": "./skills/"
+}

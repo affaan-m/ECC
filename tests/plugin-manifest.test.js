@@ -490,6 +490,32 @@ test('qoder native surface ships in npm package', () => {
   assert.ok(packageFiles.has('scripts/hooks/'));
 });
 
+// ── Devin plugin manifest ─────────────────────────────────────────────────────
+console.log('\n=== .devin-plugin/plugin.json ===\n');
+
+const devinPluginPath = path.join(repoRoot, '.devin-plugin', 'plugin.json');
+const devinPlugin = loadJsonObject(devinPluginPath, '.devin-plugin/plugin.json');
+
+test('devin plugin.json name and version match package.json', () => {
+  assert.strictEqual(devinPlugin.name, 'ecc');
+  assert.match(devinPlugin.name, /^[a-z0-9]+(?:[-.][a-z0-9]+)*$/, 'Devin plugin names are lowercase with single - or . separators');
+  assert.strictEqual(devinPlugin.version, expectedVersion);
+});
+
+test('devin plugin skills path stays inside the bundle', () => {
+  assert.strictEqual(typeof devinPlugin.skills, 'string', 'Expected Devin manifest skills path');
+  const target = path.resolve(repoRoot, devinPlugin.skills);
+  assert.ok(target.startsWith(repoRoot + path.sep), 'skills escapes the Devin bundle');
+  assert.ok(fs.existsSync(target), `skills target is missing: ${devinPlugin.skills}`);
+});
+
+test('devin plugin only declares supported platforms', () => {
+  assert.ok(Array.isArray(devinPlugin.platforms) && devinPlugin.platforms.length > 0, 'Expected Devin platforms array');
+  for (const platform of devinPlugin.platforms) {
+    assert.ok(['cloud', 'local', 'security'].includes(platform), `Unsupported Devin platform: ${platform}`);
+  }
+});
+
 // ── Antigravity plugin manifest ───────────────────────────────────────────────
 console.log('\n=== .antigravity-plugin/plugin.json ===\n');
 
