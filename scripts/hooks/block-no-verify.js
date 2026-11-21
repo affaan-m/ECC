@@ -37,14 +37,14 @@ let raw = '';
 // See https://git-scm.com/docs/git-config — "The variable names are
 // case-insensitive."
 function isHookRedirectConfigKey(key) {
-  const normalized = key.toLowerCase();
+  const normalized = key.trim().toLowerCase();
   return normalized === 'core.hookspath' || normalized === 'include.path'
     || /^includeif\..*\.path$/.test(normalized);
 }
 
 /** Return the key from a Git configuration operand, ignoring its value. */
 function configKey(setting) {
-  return setting.split('=', 1)[0];
+  return setting.split('=', 1)[0].trim();
 }
 
 const COMMIT_OPTIONS_WITH_VALUE = new Set([
@@ -269,34 +269,58 @@ function gitEnvironmentMatchesConfig(environment, budget, matches) {
   return false;
 }
 
+function isDynamicConfigKey(setting, dynamic) {
+  if (!dynamic) return false;
+  const equals = setting.indexOf('=');
+  const key = equals >= 0 ? setting.slice(0, equals) : setting;
+  return key.includes('$') || key.includes('\u0000') || equals < 0;
+}
+
+function extractConfigOption(token, nextToken, budget) {
+  const value = token.value;
+  if (value === '-c' || value === '--config-env') {
+    const setting = nextToken?.value || '';
+    budget.spend(setting.length + 1);
+    return { key: configKey(setting), dynamic: isDynamicConfigKey(setting, Boolean(nextToken?.dynamic)) };
+  }
+  if (value.startsWith('-c')) {
+    const setting = value.slice(2);
+    return { key: configKey(setting), dynamic: isDynamicConfigKey(setting, Boolean(token.dynamic)) };
+  }
+  if (value.startsWith('--config-env=')) {
+    const setting = value.slice('--config-env='.length);
+    return { key: configKey(setting), dynamic: isDynamicConfigKey(setting, Boolean(token.dynamic)) };
+  }
+  return null;
+}
+
 /** Return the subcommand index and literal config keys from Git global options. */
 function scanGitGlobalOptions(words, budget, start) {
   const keys = [];
   let index = start + 1;
+  let dynamicKey = false;
   for (; index < words.length; index++) {
-    const value = words[index].value;
+    const token = words[index];
+    const value = token.value;
     budget.spend(value.length + 1);
     if (!value.startsWith('-')) break;
     if (value === '--') { index++; break; }
-    if (value === '-c' || value === '--config-env') {
-      const setting = words[index + 1]?.value || '';
-      budget.spend(setting.length + 1);
-      keys.push(configKey(setting));
-    } else if (value.startsWith('-c')) {
-      keys.push(configKey(value.slice(2)));
-    } else if (value.startsWith('--config-env=')) {
-      keys.push(configKey(value.slice('--config-env='.length)));
+    const option = extractConfigOption(token, words[index + 1], budget);
+    if (option) {
+      keys.push(option.key);
+      dynamicKey ||= option.dynamic;
     }
     if (GIT_GLOBAL_VALUES.has(value)) index++;
   }
-  return { index, keys };
+  return { index, keys, dynamicKey };
 }
 
 // Scan a protected subcommand's own arguments for a hook-bypass flag.
 function findGitBypassFlag(words, budget, start, command) {
   let skipNext = false;
   for (let index = start; index < words.length; index++) {
-    const value = words[index].value;
+    const token = words[index];
+    const value = token.value;
     budget.spend(value.length + 1);
     if (skipNext) { skipNext = false; continue; }
     if (value === '--') break;
@@ -306,36 +330,67 @@ function findGitBypassFlag(words, budget, start, command) {
     }
     if (command === 'push' && optionConsumesNextValue(value, PUSH_OPTIONS_WITH_VALUE)) { skipNext = true; continue; }
     if (isNoVerifyLongFlag(value) || (command === 'commit' && isCommitNoVerifyShortFlag(value))) return true;
+    if (token.dynamic && (/^--(?:no-?v|\$)/i.test(value) || (command === 'commit' && /^-(?:[a-zA-Z]*n|\$)/.test(value)))) return true;
+  }
+  return false;
+}
+
+// Scan arguments for hook-bypass flags when the Git subcommand is dynamically expanded.
+function findDynamicGitBypassFlag(words, budget, start) {
+  for (let index = start; index < words.length; index++) {
+    const value = words[index].value;
+    budget.spend(value.length + 1);
+    if (value === '--') break;
+    if (commitOptionContainsInlineValue(value)) continue;
+    if (isNoVerifyLongFlag(value)) return true;
+    if (isCommitNoVerifyShortFlag(value)) return true;
   }
   return false;
 }
 
 /** Check a Git invocation for hook-bypass options or a command-supplied alias. */
 function checkGitWords(words, budget, start, environment) {
-  const { index, keys } = scanGitGlobalOptions(words, budget, start);
-  const command = words[index]?.value;
+  const { index, keys, dynamicKey } = scanGitGlobalOptions(words, budget, start);
+  const commandWord = words[index];
+  const command = commandWord?.value;
   budget.spend((command?.length || 0) + 1);
   if (!command) return null;
-  if (!PROTECTED_GIT_COMMANDS.has(command)) {
-    if (GIT_BUILTINS_THAT_IGNORE_ALIASES.has(command)) return null;
-    // Alias bodies can chain to other aliases or execute shell commands.
-    // Reject the invocation without evaluating the supplied definition.
-    const aliasKey = `alias.${command.toLowerCase()}`;
-    const aliasCommandKey = `${aliasKey}.command`;
-    const matches = key => {
-      const normalized = key.toLowerCase();
-      return normalized === aliasKey || normalized === aliasCommandKey;
-    };
-    if (keys.some(matches) || gitEnvironmentMatchesConfig(environment, budget, matches)) {
-      return 'BLOCKED: Invoking a command-supplied Git alias is not allowed. Run the underlying Git command directly so its flags can be checked.';
+
+  const isProtected = PROTECTED_GIT_COMMANDS.has(command);
+  const isDynamic = Boolean(commandWord.dynamic);
+  const hasRedirect = dynamicKey || keys.some(isHookRedirectConfigKey) || gitEnvironmentMatchesConfig(environment, budget, isHookRedirectConfigKey);
+
+  if (isProtected) {
+    if (hasRedirect) {
+      return `BLOCKED: Overriding core.hooksPath is not allowed with git ${command}. Git hooks must not be bypassed.`;
+    }
+    if (findGitBypassFlag(words, budget, index + 1, command)) {
+      return `BLOCKED: --no-verify flag is not allowed with git ${command}. Git hooks must not be bypassed.`;
     }
     return null;
   }
-  if (keys.some(isHookRedirectConfigKey) || gitEnvironmentMatchesConfig(environment, budget, isHookRedirectConfigKey)) {
-    return `BLOCKED: Overriding core.hooksPath is not allowed with git ${command}. Git hooks must not be bypassed.`;
+
+  if (isDynamic) {
+    if (hasRedirect) {
+      return `BLOCKED: Overriding core.hooksPath is not allowed with git ${command}. Git hooks must not be bypassed.`;
+    }
+    if (findDynamicGitBypassFlag(words, budget, index + 1)) {
+      return `BLOCKED: --no-verify flag is not allowed with git ${command}. Git hooks must not be bypassed.`;
+    }
+    return null;
   }
-  if (findGitBypassFlag(words, budget, index + 1, command)) {
-    return `BLOCKED: --no-verify flag is not allowed with git ${command}. Git hooks must not be bypassed.`;
+
+  if (GIT_BUILTINS_THAT_IGNORE_ALIASES.has(command)) return null;
+  // Alias bodies can chain to other aliases or execute shell commands.
+  // Reject the invocation without evaluating the supplied definition.
+  const aliasKey = `alias.${command.toLowerCase()}`;
+  const aliasCommandKey = `${aliasKey}.command`;
+  const matches = key => {
+    const normalized = key.toLowerCase();
+    return normalized === aliasKey || normalized === aliasCommandKey;
+  };
+  if (keys.some(matches) || gitEnvironmentMatchesConfig(environment, budget, matches)) {
+    return 'BLOCKED: Invoking a command-supplied Git alias is not allowed. Run the underlying Git command directly so its flags can be checked.';
   }
   return null;
 }
@@ -351,6 +406,98 @@ function assignmentValues(prior, operand, append, dynamic, budget) {
     values.add(append ? base : '');
   }
   return [...values];
+}
+
+const PARAMETER_EXPANSION = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([-+=?])|([-+=?]))?([^}]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/;
+
+function escapeRegex(string) {
+  return string.replace(/[/\-\\^$*+?.()|[\]{}]/g, '\\$&');
+}
+
+function applyParameterOperator(colonOp, rawOp, isSetAndNonEmpty, isSet, val, arg) {
+  const op = colonOp || rawOp;
+  if (!op) return null;
+  const active = colonOp ? isSetAndNonEmpty : isSet;
+  if (op === '-') return active ? val : (arg ?? '');
+  if (op === '+') return active ? (arg ?? '') : '';
+  if (op === '=') return active ? val : (arg ?? '');
+  if (op === '?') return active ? val : null;
+  return null;
+}
+
+function evaluateParameter(match, state, budget) {
+  const fullMatch = match[0];
+  const braced = match[1];
+  const colonOp = match[2];
+  const rawOp = match[3];
+  const arg = match[4];
+  const bare = match[5];
+
+  const name = braced || bare;
+  budget.spend(name.length + 1);
+  const val = state?.variables?.get(name);
+  const isSet = val !== undefined;
+  const isSetAndNonEmpty = isSet && val !== '';
+
+  let expanded = applyParameterOperator(colonOp, rawOp, isSetAndNonEmpty, isSet, val, arg);
+  if (expanded !== null) {
+    if ((colonOp === '=' || rawOp === '=') && !isSetAndNonEmpty && state?.variables) {
+      state.variables.set(name, expanded);
+    }
+  } else if (braced && arg) {
+    expanded = fullMatch;
+  } else {
+    expanded = isSet ? val : fullMatch;
+  }
+
+  budget.spend(expanded.length);
+  return { expanded, length: fullMatch.length };
+}
+
+function resolveShellSource(code, state, budget) {
+  if (!code || typeof code !== 'string') return code;
+  let result = '';
+  let i = 0;
+  const len = code.length;
+
+  while (i < len) {
+    const ch = code[i];
+
+    // Single quotes: literal in shell, do not expand parameters inside single quotes
+    if (ch === "'") {
+      const close = code.indexOf("'", i + 1);
+      if (close === -1) {
+        result += code.slice(i);
+        break;
+      }
+      result += code.slice(i, close + 1);
+      i = close + 1;
+      continue;
+    }
+
+    // Escaped character: \c
+    if (ch === '\\' && i + 1 < len) {
+      result += code.slice(i, i + 2);
+      i += 2;
+      continue;
+    }
+
+    // Parameter expansion: ${...} or $NAME
+    if (ch === '$') {
+      const match = PARAMETER_EXPANSION.exec(code.slice(i));
+      if (match && match.index === 0) {
+        const evaluated = evaluateParameter(match, state, budget);
+        result += evaluated.expanded;
+        i += evaluated.length;
+        continue;
+      }
+    }
+
+    result += ch;
+    i++;
+  }
+
+  return result;
 }
 
 class UnsupportedEnvSplitEscape extends Error {}
@@ -377,6 +524,7 @@ const SUDO_VALUE_OPTIONS = new Set(['-u', '--user', '-g', '--group', '-h', '--ho
 const SUDO_FLAG_OPTIONS = new Set(['-n', '-E', '-H', '-S', '-k', '-K', '-b']);
 const SHELL_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*\+?=/;
 const GIT_ENV_NAME = /^GIT_CONFIG_(?:COUNT|PARAMETERS|(?:KEY|VALUE)_[0-9]+)$/;
+const SHELL_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 function isEnvSplitFlag(flag) {
   return flag === '-S' || flag === '--split-string'
@@ -421,29 +569,34 @@ function executableWords(words, budget, inherited = new Map(), callerValues = in
     const equals = value.indexOf('=');
     const append = !environmentAssignments && value[equals - 1] === '+';
     const key = value.slice(0, append ? equals - 1 : equals);
-    if (GIT_ENV_NAME.test(key)) {
+    if (SHELL_IDENTIFIER.test(key)) {
       const operand = value.slice(equals + 1);
       const count = environments.length;
       budget.spend(count + 1);
+      const resolvedOperand = dynamic ? resolveShellSource(operand, { variables: callerValues }, budget) : operand;
+      const isStillDynamic = dynamic && (resolvedOperand.includes('\u0000') || /\$(?:[A-Za-z_]|\{)/.test(resolvedOperand));
       for (let n = 0; n < count; n++) {
         const environment = environments[n];
         // Shell prefix appends can see local values, even when not exported.
         // Repeated operands use the prior outcome in this same prefix.
         const prior = prefixAssignments.has(key) && environment.has(key)
           ? environment.get(key) : callerValues.get(key);
-        const values = assignmentValues(prior, operand, append, dynamic, budget);
-        for (const alternative of values.slice(1)) {
-          budget.spend(environment.size + 1);
-          const variant = new Map(environment);
-          variant.set(key, alternative);
-          environments.push(variant);
+        const values = assignmentValues(prior, resolvedOperand, append, isStillDynamic, budget);
+        if (GIT_ENV_NAME.test(key) && environments.length < 8) {
+          for (const alternative of values.slice(1)) {
+            if (environments.length >= 8) break;
+            budget.spend(environment.size + 1);
+            const variant = new Map(environment);
+            variant.set(key, alternative);
+            environments.push(variant);
+          }
         }
         environment.set(key, values[0]);
       }
       // Retain ordered operations so same-shell states apply each append once.
       if (!prefixAssignments.has(key)) prefixAssignments.set(key, []);
       prefixAssignments.get(key).push({ value: operand, append, dynamic });
-      if (dynamic) dynamicAssignments.add(key);
+      if (dynamic && GIT_ENV_NAME.test(key)) dynamicAssignments.add(key);
     }
   }
   function resetEnvironment(name) {
@@ -606,7 +759,11 @@ function shellRole(words, budget, shell) {
     stdin ||= cluster.stdin;
     i = cluster.next;
   }
-  if (code) return { kind: 'shell', code: words[i]?.value, stdin: false };
+  if (code) {
+    const codeWord = words[i];
+    const dynamic = Boolean(codeWord?.dynamic);
+    return { kind: 'shell', code: codeWord?.value, dynamic, stdin: false };
+  }
   // A script filename and its positional arguments are not shell source text.
   return { kind: 'shell', stdin: stdin || i === words.length };
 }
@@ -867,7 +1024,10 @@ function commandRole(words, budget) {
   if (SHELLS.has(name)) return shellRole(words, budget, name);
   if (name === 'eval') {
     for (const word of words) budget.spend(word.value.length + 3);
-    return { kind: 'shell', code: words.slice(words[1]?.value === '--' ? 2 : 1).map(word => word.value).join(' '), stdin: false };
+    const codeWords = words.slice(words[1]?.value === '--' ? 2 : 1);
+    const code = codeWords.map(word => word.value).join(' ');
+    const dynamic = codeWords.some(word => word.dynamic);
+    return { kind: 'shell', code, codeWords, dynamic, stdin: false };
   }
   if (name === 'sed') {
     const scripts = sedScriptParts(words, budget);
@@ -1142,17 +1302,26 @@ function updateShellState(state, normalized, budget) {
   const states = [state];
   const result = (handled, changed, uncertain = false) => ({ handled, changed, uncertain, states });
   if (!local) return result(false, false);
+  const MAX_STATES = 8;
   function assign(name, value, dynamic = false, append = false) {
     const count = states.length;
     budget.spend(count + 1);
+    const isGitEnv = GIT_ENV_NAME.test(name);
     for (let n = 0; n < count; n++) {
       const current = states[n];
       if (current.readonly.has(name)) continue;
-      const values = assignmentValues(current.variables.get(name), value, append, dynamic, budget);
-      for (const alternative of values.slice(1)) {
-        const variant = copyShellState(current, budget);
-        variant.variables.set(name, alternative);
-        states.push(variant);
+      const resolvedValue = dynamic ? resolveShellSource(value, current, budget) : value;
+      const isStillDynamic = dynamic && (resolvedValue.includes('\u0000') || /\$(?:[A-Za-z_]|\{)/.test(resolvedValue));
+      const values = isGitEnv
+        ? assignmentValues(current.variables.get(name), resolvedValue, append, isStillDynamic, budget)
+        : [append ? (current.variables.get(name) || '') + resolvedValue : resolvedValue];
+      if (isGitEnv && states.length < MAX_STATES) {
+        for (const alternative of values.slice(1)) {
+          if (states.length >= MAX_STATES) break;
+          const variant = copyShellState(current, budget);
+          variant.variables.set(name, alternative);
+          states.push(variant);
+        }
       }
       current.variables.set(name, values[0]);
     }
@@ -1181,7 +1350,7 @@ function updateShellState(state, normalized, budget) {
     const equals = value.indexOf('=');
     const append = equals > 0 && value[equals - 1] === '+';
     const key = equals < 0 ? value : value.slice(0, append ? equals - 1 : equals);
-    if (!GIT_ENV_NAME.test(key)) continue;
+    if (!SHELL_IDENTIFIER.test(key)) continue;
     changed = true;
     if (name !== 'unset' && equals >= 0) assign(key, value.slice(equals + 1), words[i].dynamic, append);
     budget.spend(states.length + 1);
@@ -1246,6 +1415,169 @@ function applyDeclaration(current, key, equals, declaration) {
   if (readonly || uncertain) current.readonly.add(key);
 }
 
+function getShellIfs(state) {
+  if (!state?.variables?.has('IFS')) {
+    return { regex: /\s+/, isDefault: true };
+  }
+  const ifs = state.variables.get('IFS');
+  if (ifs === '') return null;
+  const isDefault = ifs === ' \t\n' || ifs === ' ';
+  return { regex: isDefault ? /\s+/ : new RegExp(`[${escapeRegex(ifs)}]+`), isDefault };
+}
+
+function markIfsDelimiters(val, ifsInfo) {
+  if (!ifsInfo || !ifsInfo.regex.test(val)) return val;
+  if (ifsInfo.isDefault) {
+    const hasLeading = /^\s/.test(val);
+    const hasTrailing = /\s$/.test(val);
+    let marked = val.trim().replace(/\s+/g, '\u001F');
+    if (hasLeading) marked = '\u001F' + marked;
+    if (hasTrailing) marked = marked + '\u001F';
+    return marked;
+  }
+  return val.replace(new RegExp(ifsInfo.regex.source, 'g'), '\u001F');
+}
+
+function scanSingleQuote(raw, start) {
+  const close = raw.indexOf("'", start + 1);
+  const end = close === -1 ? raw.length : close;
+  return { text: raw.slice(start + 1, end), end: close === -1 ? raw.length : close + 1 };
+}
+
+function scanAnsiQuote(raw, start) {
+  let j = start + 2;
+  let text = '';
+  const len = raw.length;
+  while (j < len) {
+    if (raw[j] === '\\' && j + 1 < len) {
+      text += raw[j + 1]; j += 2;
+    } else if (raw[j] === "'") {
+      j++; break;
+    } else {
+      text += raw[j]; j++;
+    }
+  }
+  return { text, end: j };
+}
+
+function scanDoubleQuote(raw, start) {
+  let j = start + 1;
+  let inner = '';
+  const len = raw.length;
+  while (j < len) {
+    if (raw[j] === '\\' && j + 1 < len) {
+      inner += raw[j + 1]; j += 2;
+    } else if (raw[j] === '"') {
+      j++; break;
+    } else {
+      inner += raw[j]; j++;
+    }
+  }
+  return { inner, end: j };
+}
+
+function scanUnquotedParam(raw, start) {
+  let j = start + 1;
+  const len = raw.length;
+  if (raw[j] === '{') {
+    const close = raw.indexOf('}', j + 1);
+    const end = close === -1 ? len : close + 1;
+    return { param: raw.slice(start, end), end };
+  }
+  while (j < len && /[A-Za-z0-9_]/.test(raw[j])) j++;
+  return { param: raw.slice(start, j), end: j };
+}
+
+function resolveWordRaw(raw, state, ifsInfo, budget) {
+  let resolvedWord = '';
+  let hadQuotes = false;
+  let i = 0;
+  const len = raw.length;
+
+  while (i < len) {
+    const ch = raw[i];
+    if (ch === "'") {
+      hadQuotes = true;
+      const res = scanSingleQuote(raw, i);
+      resolvedWord += res.text;
+      i = res.end;
+    } else if (ch === '$' && raw[i + 1] === "'") {
+      hadQuotes = true;
+      const res = scanAnsiQuote(raw, i);
+      resolvedWord += res.text;
+      i = res.end;
+    } else if (ch === '"') {
+      hadQuotes = true;
+      const res = scanDoubleQuote(raw, i);
+      resolvedWord += resolveShellSource(res.inner, state, budget);
+      i = res.end;
+    } else if (ch === '$' && (/[A-Za-z0-9_@{]/.test(raw[i + 1] || ''))) {
+      const unquoted = scanUnquotedParam(raw, i);
+      const expanded = resolveShellSource(unquoted.param, state, budget);
+      resolvedWord += markIfsDelimiters(expanded, ifsInfo);
+      i = unquoted.end;
+    } else {
+      if (ch === '\\' && i + 1 < len) {
+        resolvedWord += raw[i + 1];
+        i += 2;
+      } else {
+        resolvedWord += ch;
+        i++;
+      }
+    }
+  }
+  return { resolvedWord, hadQuotes };
+}
+
+function resolveWordTokens(word, state, ifsInfo, budget) {
+  if (!word.raw) {
+    const resolved = resolveShellSource(word.value, state, budget);
+    const stillDynamic = resolved.includes('\u0000') || /\$(?:[A-Za-z_]|\{)/.test(resolved);
+    return [{ value: resolved, dynamic: Boolean(word.dynamic && stillDynamic), quoted: word.quoted }];
+  }
+
+  const { resolvedWord, hadQuotes } = resolveWordRaw(word.raw, state, ifsInfo, budget);
+  if (!hadQuotes && resolvedWord === '') return [];
+
+  const hasCmdSub = !word.literal || word.value.includes('\u0000') || /\$\(|`/.test(resolvedWord);
+  const stillDynamic = hasCmdSub || resolvedWord.includes('\u0000') || /\$(?:[A-Za-z0-9_@{]|\()/.test(resolvedWord);
+  if (resolvedWord.includes('\u001F')) {
+    const parts = resolvedWord.split('\u001F').filter(p => p.length > 0 || hadQuotes);
+    return parts.map(part => {
+      const partDynamic = hasCmdSub || part.includes('\u0000') || /\$(?:[A-Za-z0-9_@{]|\()/.test(part);
+      return {
+        value: part,
+        dynamic: Boolean(word.dynamic && partDynamic),
+        quoted: false
+      };
+    });
+  }
+
+  return [{
+    value: resolvedWord,
+    dynamic: Boolean(word.dynamic && stillDynamic),
+    quoted: Boolean(hadQuotes || word.quoted)
+  }];
+}
+
+function resolveGitWords(words, state, normalized, budget) {
+  if (!state && !normalized) return words;
+  const result = [];
+  const ifsInfo = getShellIfs(state);
+
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    budget.spend(word.value.length + 1);
+    if (!word.dynamic) {
+      result.push(word);
+      continue;
+    }
+    const tokens = resolveWordTokens(word, state, ifsInfo, budget);
+    result.push(...tokens);
+  }
+  return result;
+}
+
 function checkCommand(input) {
   const budget = createBudget(input.length);
   const pending = [{ text: input, opaque: false, context: { states: [shellState(new Map(), budget)] } }];
@@ -1254,12 +1586,13 @@ function checkCommand(input) {
     budget.spend(text.length + 1);
     pending.push({ text, opaque, context });
   }
-  function inspectOpaque(words, text, environment) {
-    for (let index = 0; index < words.length; index++) {
-      const word = words[index];
+  function inspectOpaque(words, text, environment, state, normalized) {
+    const resolved = resolveGitWords(words, state, normalized, budget);
+    for (let index = 0; index < resolved.length; index++) {
+      const word = resolved[index];
       budget.spend(word.value.length + 1);
       if (isGitExecutable(word.value)) {
-        const reason = checkGitWords(words, budget, index, environment);
+        const reason = checkGitWords(resolved, budget, index, environment);
         if (reason) return reason;
       }
       if (word.value !== text && /git/i.test(word.value) && /[\s'"()]/.test(word.value)) enqueue(word.value, true, { states: [shellState(environment, budget)] });
@@ -1315,16 +1648,32 @@ function checkCommand(input) {
   }
   // Inspect one command under one literal environment. Returns a block reason
   // or null, and records any child source text the command would execute.
-  function inspectEnvironment(frame, role, normalized, environment) {
+  function inspectEnvironment(frame, role, normalized, environment, state) {
     const { task, command } = frame;
     const { words } = normalized;
+    const gitWords = resolveGitWords(words, state, normalized, budget);
     const reason = task.opaque || role.kind === 'opaque'
-      ? inspectOpaque(command.words, task.text, environment)
-      : role.kind === 'git' ? checkGitWords(words, budget, 0, environment) : null;
+      ? inspectOpaque(command.words, task.text, environment, state, normalized)
+      : role.kind === 'git' ? checkGitWords(gitWords, budget, 0, environment) : null;
     if (reason) return reason;
     if (role.code) {
-      if (normalized.local && words[0]?.value === 'eval') frame.sameShellCode = role.code;
-      else frame.childEnvironments.push({ code: role.code, opaque: false, environment });
+      if (normalized.local && words[0]?.value === 'eval') {
+        const parts = [];
+        for (const w of (role.codeWords || [])) {
+          if (w.dynamic) {
+            parts.push(resolveShellSource(w.value, state, budget));
+          } else {
+            parts.push(w.value);
+          }
+        }
+        const code = parts.length ? parts.join(' ') : role.code;
+        frame.sameShellPrograms.push({ code, state });
+      } else {
+        const code = role.dynamic
+          ? resolveShellSource(role.code, state, budget)
+          : role.code;
+        frame.childEnvironments.push({ code, opaque: false, environment });
+      }
     }
     if (role.kind === 'sedExec') {
       // Fragments sed will hand to the shell are scanned as real shell
@@ -1360,26 +1709,27 @@ function checkCommand(input) {
     const role = commandRole(words, budget);
     budget.spend(environments.length + 1);
     for (const environment of environments) {
-      const reason = inspectEnvironment(frame, role, normalized, environment);
+      const reason = inspectEnvironment(frame, role, normalized, environment, state);
       if (reason) return reason;
     }
     return null;
   }
   // Commit the command's resulting states and queue whatever it would run.
   function finishCommand(frame) {
-    const { command, context, parent, conditional, sameShellCode, changed } = frame;
+    const { command, context, parent, conditional, sameShellPrograms, changed } = frame;
     context.states = frame.alternatives;
     // Bash lastpipe and zsh can execute a final pipeline builtin in the
     // parent shell. Preserve that possible state as well as isolation; this
     // is deliberately conservative when the host shell/options are unknown.
-    if (command.pipeFrom && !command.pipeTo && !command.background && (changed || sameShellCode)) pending.push({ mergeInto: parent, context });
+    if (command.pipeFrom && !command.pipeTo && !command.background && (changed || sameShellPrograms.length > 0)) pending.push({ mergeInto: parent, context });
     for (const child of frame.childEnvironments) enqueue(child.code, child.opaque, { states: [shellState(child.environment, budget)] });
-    if (sameShellCode) {
+    for (const prog of sameShellPrograms) {
+      if (!prog.code) continue;
       // A conditional eval may not run. Its nested scans have fresh lexical
       // roots, so preserve the skipped branch across all delayed updates.
       const evaluated = conditional ? copyShellContext(context, budget) : context;
       if (conditional) pending.push({ mergeInto: context, context: evaluated });
-      enqueue(sameShellCode, false, evaluated);
+      enqueue(prog.code, false, evaluated);
     }
   }
   // Process one scanned command task. Returns a block reason or null.
@@ -1398,7 +1748,7 @@ function checkCommand(input) {
     const frame = {
       task, command, context, parent,
       conditional: isConditional(command.scope),
-      alternatives: [], childEnvironments: [], sameShellCode: null, changed: false
+      alternatives: [], childEnvironments: [], sameShellPrograms: [], changed: false
     };
     budget.spend(context.states.length + 1);
     for (const state of context.states) {
