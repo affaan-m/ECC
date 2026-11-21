@@ -32,8 +32,9 @@ function hasPrefix(normalizedPath, prefix) {
 
 function supportsCopilotSourcePath(sourceRelativePath) {
   const normalizedPath = normalizeRelativePath(sourceRelativePath);
+  if (normalizedPath === 'scripts/copilot-pm2.cjs') return true;
   if (normalizedPath.split('/').includes('..')) return false;
-  return normalizedPath === 'scripts/copilot-pm2.cjs' || COPILOT_HELPER_PATHS.has(normalizedPath)
+  return COPILOT_HELPER_PATHS.has(normalizedPath)
     || SUPPORTED_SOURCE_PREFIXES.some(prefix => hasPrefix(normalizedPath, prefix));
 }
 
@@ -104,6 +105,14 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
     return planCopilotRuleOperations(module, normalizedSourcePath, targetRoot, repoRoot);
   }
 
+  if (COPILOT_HELPER_PATHS.has(normalizedSourcePath)) {
+    return [createManagedOperation({
+      moduleId: module.id,
+      sourceRelativePath: normalizedSourcePath,
+      destinationPath: path.join(targetRoot, 'ecc', normalizedSourcePath),
+    })];
+  }
+
   if (normalizedSourcePath === 'scripts/copilot-pm2.cjs') {
     return [
       createManagedOperation({
@@ -117,14 +126,6 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
         destinationPath: path.join(targetRoot, 'ecc', 'scripts', 'pm2', 'copilot-pm2.cjs'),
       }),
     ];
-  }
-
-  if (COPILOT_HELPER_PATHS.has(normalizedSourcePath)) {
-    return [createManagedOperation({
-      moduleId: module.id,
-      sourceRelativePath: normalizedSourcePath,
-      destinationPath: path.join(targetRoot, 'ecc', normalizedSourcePath),
-    })];
   }
 
   return [];
