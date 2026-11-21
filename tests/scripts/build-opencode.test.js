@@ -163,6 +163,15 @@ function main() {
         default: "./.opencode/dist/index.js",
       })
     }],
+    [".opencode/package.json declares @opencode-ai/plugin as a runtime dependency", () => {
+      const opencodePkg = JSON.parse(
+        fs.readFileSync(path.join(repoRoot, ".opencode", "package.json"), "utf8")
+      );
+      assert.ok(
+        opencodePkg.dependencies && opencodePkg.dependencies["@opencode-ai/plugin"],
+        ".opencode/package.json must declare @opencode-ai/plugin under dependencies for isolated OpenCode installs (#4077)"
+      );
+    }],
     ["installed package resolves and imports its root module by name", () => {
       const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-opencode-entry-"))
       try {
