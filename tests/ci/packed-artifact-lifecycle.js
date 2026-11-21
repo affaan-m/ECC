@@ -351,6 +351,36 @@ function getManagedOperationSnapshot(state, cursorRoot) {
     .sort((left, right) => left.path.localeCompare(right.path));
 }
 
+function verifyCopilotStocktakeSkill(runCli, projectDir) {
+  const skillsRoot = path.join(projectDir, '.github', 'skills');
+  const stocktakeRoot = path.join(skillsRoot, 'skill-stocktake');
+  const userSkill = path.join(skillsRoot, 'user-skill', 'SKILL.md');
+  const userContents = '# User-owned skill\n';
+  fs.mkdirSync(path.dirname(userSkill), { recursive: true });
+  fs.writeFileSync(userSkill, userContents, 'utf8');
+
+  for (const selection of [['--skills', 'skill-stocktake'], ['--modules', 'workflow-quality']]) {
+    const install = parseJsonOutput(runCli([
+      'install', '--target', 'copilot', ...selection, '--no-hooks', '--json',
+    ], { cwd: projectDir }), 'Copilot packed stocktake install');
+    assert.strictEqual(install.dryRun, false);
+    assert.strictEqual(install.result.target, 'copilot');
+    const stocktakeText = fs.readFileSync(path.join(stocktakeRoot, 'SKILL.md'), 'utf8');
+    assert.match(stocktakeText, /\.github\/skills\//);
+    assert.match(stocktakeText, /outcome evidence/i);
+    assert.doesNotMatch(stocktakeText, /\.claude\/skills|scan\.sh|quick-diff\.sh|save-results\.sh/);
+    assert.deepEqual(fs.readdirSync(stocktakeRoot), ['SKILL.md']);
+    assert.ok(!fs.existsSync(path.join(projectDir, '.github', 'hooks')));
+
+    const uninstall = parseJsonOutput(runCli(
+      ['uninstall', '--target', 'copilot', '--json'], { cwd: projectDir }
+    ), 'Copilot packed stocktake uninstall');
+    assert.strictEqual(uninstall.summary.errorCount, 0);
+    assert.ok(!fs.existsSync(path.join(stocktakeRoot, 'SKILL.md')));
+    assert.strictEqual(fs.readFileSync(userSkill, 'utf8'), userContents);
+  }
+}
+
 function getOperationLedger(state) {
   return state.operations.map(operation => ({
     kind: operation.kind,
@@ -455,6 +485,11 @@ function runLifecycle(options) {
       ['ecc', ...args],
       commandOptions
     );
+
+    const stocktakeProject = path.join(projectDir, 'stocktake project');
+    fs.mkdirSync(stocktakeProject);
+    fs.writeFileSync(path.join(stocktakeProject, 'package.json'), '{"type":"module"}\n', 'utf8');
+    verifyCopilotStocktakeSkill(runCli, stocktakeProject);
 
     const setupHelp = runPublicCli(['ecc-universal', 'setup', '--help']);
     assert.match(setupHelp.stdout, /ECC guided setup/);
@@ -874,6 +909,7 @@ function runLifecycle(options) {
       node: process.version,
       lifecycle: [
         'npm-install',
+        'copilot-skill-stocktake-project-inventory',
         'public-ecc-universal-setup',
         'claude-setup-dry-run-isolated',
         'claude-setup-git-preflight',

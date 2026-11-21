@@ -93,9 +93,16 @@ function planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRo
     return [
       createManagedOperation({
         moduleId: module.id,
-        sourceRelativePath: normalizedSourcePath,
-        destinationPath: path.join(targetRoot, 'skills', stripPrefix(normalizedSourcePath, 'skills')),
-        contentTransform: 'copilot-workflow-paths',
+        ...(['skills/skill-stocktake', 'skills/skill-stocktake/SKILL.md'].includes(normalizedSourcePath)
+          ? {
+            sourceRelativePath: 'manifests/install-assets/copilot-skill-stocktake-skill.md',
+            destinationPath: path.join(targetRoot, 'skills', 'skill-stocktake', 'SKILL.md'),
+          }
+          : {
+            sourceRelativePath: normalizedSourcePath,
+            destinationPath: path.join(targetRoot, 'skills', stripPrefix(normalizedSourcePath, 'skills')),
+            contentTransform: 'copilot-workflow-paths',
+          }),
       }),
     ];
   }
