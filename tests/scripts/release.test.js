@@ -93,6 +93,15 @@ function runTests() {
     assert.ok(source.includes('update_version "$QODER_PLUGIN_JSON"'));
   })) passed++; else failed++;
 
+  if (test('release preserves Devin manifest checks, updates, and staging', () => {
+    const existenceCheck = source.match(/^for FILE in (.+); do$/m);
+    const staging = source.match(/^git add (.+)$/m);
+    assert.ok(existenceCheck && existenceCheck[1].includes('"$DEVIN_PLUGIN_JSON"'), 'DEVIN_PLUGIN_JSON must exist before release');
+    assert.ok(staging && staging[1].includes('"$DEVIN_PLUGIN_JSON"'), 'DEVIN_PLUGIN_JSON must be in the release commit');
+    assert.ok(source.includes('DEVIN_PLUGIN_JSON=".devin-plugin/plugin.json"'));
+    assert.ok(source.includes('update_version "$DEVIN_PLUGIN_JSON"'));
+  })) passed++; else failed++;
+
   if (test('release script updates and commits the Grok pin before tagging', () => {
     const releaseCommitIndex = source.indexOf('git commit -m "chore: bump plugin version to $VERSION"');
     const sourceShaIndex = source.indexOf('GROK_SOURCE_SHA=$(git rev-parse HEAD)');

@@ -410,6 +410,16 @@ hook profile into Qoder: blocking tool hooks, async stop jobs, and
 Claude-specific matchers remain outside this initial native integration. See
 the [.qoder-plugin notes](.qoder-plugin/README.md) for the exact boundary.
 
+### Devin
+
+ECC ships an experimental native Devin plugin manifest (`.devin-plugin/plugin.json`) that reuses the canonical `skills/`, `agents/`, root `AGENTS.md`, and root `.mcp.json`. Install it from the repository:
+
+```bash
+devin plugins install affaan-m/ECC
+```
+
+Or in the Devin web app: **Customize > Plugins > Add plugin > From repository**, then enter `affaan-m/ECC`. ECC hooks, legacy command shims, and `rules/` are not wired into Devin. See the [Devin guide](docs/DEVIN-GUIDE.md) for the exact boundary and known limitations.
+
 ### Other agents and editors
 
 <details>
@@ -1335,6 +1345,7 @@ Treat `stable`, `beta`, `experimental`, and `instruction-only` below as capabili
 | Codex | Supported native plugin | Codex marketplace plugin or repo config | Native hooks require an explicit trust decision and do not use Claude's hook profiles. The legacy sync is compatibility-only. |
 | Antigravity | Experimental native plugin adapter | Antigravity 2.0/IDE plugin (`~/.gemini/config/plugins/ecc`) or project `.agents/` | Profile-gated lifecycle hooks, rules, workflows, skills, and memory MCP. CLI 1.3.5 validates local import; authenticated native tool and Stop execution remain unverified. |
 | Qoder | Supported native plugin | Local plugin directory in Qoder CLI or ZIP upload in Qoder IDE | Loads the canonical skills, agents, commands, and MCP config; only the reviewed SessionStart hook is enabled, and Node.js 18+ must be on the non-interactive PATH. |
+| Devin | Experimental native plugin | `devin plugins install affaan-m/ECC` or Customize > Plugins > From repository | Loads canonical skills, agents (local Devin only), root `AGENTS.md`, and `.mcp.json`; hooks, command shims, and `rules/` are not wired. Agent `tools:` allowlists use Claude tool names and are unverified in Devin. |
 | Cursor | Beta project adapter | Selective installer into `.cursor/` | Agent discovery varies by Cursor build; hook events use profile-gated dispatchers, but full Claude feature parity is not claimed. |
 | OpenCode | Beta built plugin | Build plugin, then selective installer | ECC ships a subset of the catalog; connect a provider and select a model in OpenCode ([#2617](https://github.com/affaan-m/ECC/issues/2617)). |
 | GitHub Copilot Chat | Instruction-only | Checked-in instructions and prompt files | ECC hooks are not adapted. |
