@@ -120,6 +120,31 @@ function main() {
       assert.deepStrictEqual(bad, [], `missing frontmatter:\n  ${bad.join('\n  ')}`);
     }],
 
+    ['frontmatter contains only valid key-value pairs with no dangling unindented lines', () => {
+      const malformed = [];
+      for (const { filePath } of localeFiles) {
+        const text = fs.readFileSync(filePath, 'utf8');
+        const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+        if (!match) continue;
+        const lines = match[1].split(/\r?\n/);
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (!line.trim() || line.trim().startsWith('#') || /^[ \t]/.test(line)) {
+            continue;
+          }
+          const kv = /^([A-Za-z_-]+):[ \t]*(.*)$/.exec(line);
+          if (!kv) {
+            malformed.push(`${rel(filePath)}:${i + 1}: ${line}`);
+          }
+        }
+      }
+      assert.deepStrictEqual(
+        malformed,
+        [],
+        `malformed frontmatter lines (unindented text or split scalars):\n  ${malformed.join('\n  ')}`
+      );
+    }],
+
     ['locale agent docs name the same agent as canonical', () => {
       const drift = [];
       for (const { file, filePath } of localeFiles) {
