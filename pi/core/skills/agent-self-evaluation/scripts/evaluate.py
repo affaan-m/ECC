@@ -367,7 +367,7 @@ def _read_file_or_text(path: Optional[str], *, required: bool = False) -> Option
     if path is None:
         return None
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return f.read()
     except OSError as error:
         windows_inline_task = error.errno == errno.EINVAL and sys.platform == "win32" and not required
@@ -409,6 +409,9 @@ def main() -> None:
         sys.exit(1)
 
     scores = evaluate(task, output)
+    # The report uses block characters; piped stdout defaults to cp1252 on Windows.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors=sys.stdout.errors)
     print(format_report(scores))
 
 
