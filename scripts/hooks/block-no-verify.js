@@ -410,29 +410,18 @@ function assignmentValues(prior, operand, append, dynamic, budget) {
 
 const PARAMETER_EXPANSION = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([-+=?])|([-+=?]))?([^}]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/;
 
-function hasUnquotedExpansion(raw) {
-  if (!raw || !raw.includes('$')) return false;
-  let inSingle = false;
-  let inDouble = false;
-  for (let i = 0; i < raw.length; i++) {
-    const ch = raw[i];
-    if (ch === '\\' && !inSingle) { i++; continue; }
-    if (ch === "'" && !inDouble) { inSingle = !inSingle; continue; }
-    if (ch === '"' && !inSingle) { inDouble = !inDouble; continue; }
-    if (ch === '$' && !inSingle && !inDouble) return true;
-  }
-  return false;
-}
-
 function escapeRegex(string) {
   return string.replace(/[/\-\\^$*+?.()|[\]{}]/g, '\\$&');
 }
 
 function applyParameterOperator(colonOp, rawOp, isSetAndNonEmpty, isSet, val, arg) {
-  if (colonOp === '-') return isSetAndNonEmpty ? val : (arg ?? '');
-  if (rawOp === '-') return isSet ? val : (arg ?? '');
-  if (colonOp === '+') return isSetAndNonEmpty ? (arg ?? '') : '';
-  if (rawOp === '+') return isSet ? (arg ?? '') : '';
+  const op = colonOp || rawOp;
+  if (!op) return null;
+  const active = colonOp ? isSetAndNonEmpty : isSet;
+  if (op === '-') return active ? val : (arg ?? '');
+  if (op === '+') return active ? (arg ?? '') : '';
+  if (op === '=') return active ? val : (arg ?? '');
+  if (op === '?') return active ? val : null;
   return null;
 }
 
@@ -446,19 +435,19 @@ function evaluateParameter(match, state, budget) {
 
   const name = braced || bare;
   budget.spend(name.length + 1);
-  const hasVar = Boolean(state?.variables?.has(name));
-  const val = hasVar ? state.variables.get(name) : undefined;
-  const isSetAndNonEmpty = hasVar && val !== '' && val !== undefined;
-  const isSet = hasVar && val !== undefined;
+  const val = state?.variables?.get(name);
+  const isSet = val !== undefined;
+  const isSetAndNonEmpty = isSet && val !== '';
 
   let expanded = applyParameterOperator(colonOp, rawOp, isSetAndNonEmpty, isSet, val, arg);
-  if (expanded === null) {
-    if (colonOp === '=' || rawOp === '=') {
-      expanded = isSetAndNonEmpty ? val : (arg ?? '');
-      if (!isSetAndNonEmpty && state?.variables) state.variables.set(name, expanded);
-    } else {
-      expanded = hasVar ? val : fullMatch;
+  if (expanded !== null) {
+    if ((colonOp === '=' || rawOp === '=') && !isSetAndNonEmpty && state?.variables) {
+      state.variables.set(name, expanded);
     }
+  } else if (braced && arg) {
+    expanded = fullMatch;
+  } else {
+    expanded = isSet ? val : fullMatch;
   }
 
   budget.spend(expanded.length);
@@ -1426,35 +1415,155 @@ function applyDeclaration(current, key, equals, declaration) {
   if (readonly || uncertain) current.readonly.add(key);
 }
 
-function splitResolvedWord(word, resolved, isUnquoted, ifsRegex) {
-  const stillDynamic = resolved.includes('\u0000') || /\$(?:[A-Za-z_]|\{)/.test(resolved);
-  if (isUnquoted && ifsRegex.test(resolved.trim())) {
-    const parts = resolved.trim().split(ifsRegex);
-    const tokens = [];
-    for (const part of parts) {
-      if (!part) continue;
-      const partStillDynamic = part.includes('\u0000') || /\$(?:[A-Za-z_]|\{)/.test(part);
-      tokens.push({
-        value: part,
-        dynamic: Boolean(word.dynamic && partStillDynamic),
-        quoted: false
-      });
-    }
-    return tokens;
+function getShellIfs(state) {
+  if (!state?.variables?.has('IFS')) {
+    return { regex: /\s+/, isDefault: true };
   }
+  const ifs = state.variables.get('IFS');
+  if (ifs === '') return null;
+  const isDefault = ifs === ' \t\n' || ifs === ' ';
+  return { regex: isDefault ? /\s+/ : new RegExp(`[${escapeRegex(ifs)}]+`), isDefault };
+}
+
+function markIfsDelimiters(val, ifsInfo) {
+  if (!ifsInfo || !ifsInfo.regex.test(val)) return val;
+  if (ifsInfo.isDefault) {
+    const hasLeading = /^\s/.test(val);
+    const hasTrailing = /\s$/.test(val);
+    let marked = val.trim().replace(/\s+/g, '\u001F');
+    if (hasLeading) marked = '\u001F' + marked;
+    if (hasTrailing) marked = marked + '\u001F';
+    return marked;
+  }
+  return val.replace(new RegExp(ifsInfo.regex.source, 'g'), '\u001F');
+}
+
+function scanSingleQuote(raw, start) {
+  const close = raw.indexOf("'", start + 1);
+  const end = close === -1 ? raw.length : close;
+  return { text: raw.slice(start + 1, end), end: close === -1 ? raw.length : close + 1 };
+}
+
+function scanAnsiQuote(raw, start) {
+  let j = start + 2;
+  let text = '';
+  const len = raw.length;
+  while (j < len) {
+    if (raw[j] === '\\' && j + 1 < len) {
+      text += raw[j + 1]; j += 2;
+    } else if (raw[j] === "'") {
+      j++; break;
+    } else {
+      text += raw[j]; j++;
+    }
+  }
+  return { text, end: j };
+}
+
+function scanDoubleQuote(raw, start) {
+  let j = start + 1;
+  let inner = '';
+  const len = raw.length;
+  while (j < len) {
+    if (raw[j] === '\\' && j + 1 < len) {
+      inner += raw[j + 1]; j += 2;
+    } else if (raw[j] === '"') {
+      j++; break;
+    } else {
+      inner += raw[j]; j++;
+    }
+  }
+  return { inner, end: j };
+}
+
+function scanUnquotedParam(raw, start) {
+  let j = start + 1;
+  const len = raw.length;
+  if (raw[j] === '{') {
+    const close = raw.indexOf('}', j + 1);
+    const end = close === -1 ? len : close + 1;
+    return { param: raw.slice(start, end), end };
+  }
+  while (j < len && /[A-Za-z0-9_]/.test(raw[j])) j++;
+  return { param: raw.slice(start, j), end: j };
+}
+
+function resolveWordRaw(raw, state, ifsInfo, budget) {
+  let resolvedWord = '';
+  let hadQuotes = false;
+  let i = 0;
+  const len = raw.length;
+
+  while (i < len) {
+    const ch = raw[i];
+    if (ch === "'") {
+      hadQuotes = true;
+      const res = scanSingleQuote(raw, i);
+      resolvedWord += res.text;
+      i = res.end;
+    } else if (ch === '$' && raw[i + 1] === "'") {
+      hadQuotes = true;
+      const res = scanAnsiQuote(raw, i);
+      resolvedWord += res.text;
+      i = res.end;
+    } else if (ch === '"') {
+      hadQuotes = true;
+      const res = scanDoubleQuote(raw, i);
+      resolvedWord += resolveShellSource(res.inner, state, budget);
+      i = res.end;
+    } else if (ch === '$' && (/[A-Za-z0-9_@{]/.test(raw[i + 1] || ''))) {
+      const unquoted = scanUnquotedParam(raw, i);
+      const expanded = resolveShellSource(unquoted.param, state, budget);
+      resolvedWord += markIfsDelimiters(expanded, ifsInfo);
+      i = unquoted.end;
+    } else {
+      if (ch === '\\' && i + 1 < len) {
+        resolvedWord += raw[i + 1];
+        i += 2;
+      } else {
+        resolvedWord += ch;
+        i++;
+      }
+    }
+  }
+  return { resolvedWord, hadQuotes };
+}
+
+function resolveWordTokens(word, state, ifsInfo, budget) {
+  if (!word.raw) {
+    const resolved = resolveShellSource(word.value, state, budget);
+    const stillDynamic = resolved.includes('\u0000') || /\$(?:[A-Za-z_]|\{)/.test(resolved);
+    return [{ value: resolved, dynamic: Boolean(word.dynamic && stillDynamic), quoted: word.quoted }];
+  }
+
+  const { resolvedWord, hadQuotes } = resolveWordRaw(word.raw, state, ifsInfo, budget);
+  if (!hadQuotes && resolvedWord === '') return [];
+
+  const hasCmdSub = !word.literal || word.value.includes('\u0000') || /\$\(|`/.test(resolvedWord);
+  const stillDynamic = hasCmdSub || resolvedWord.includes('\u0000') || /\$(?:[A-Za-z0-9_@{]|\()/.test(resolvedWord);
+  if (resolvedWord.includes('\u001F')) {
+    const parts = resolvedWord.split('\u001F').filter(p => p.length > 0 || hadQuotes);
+    return parts.map(part => {
+      const partDynamic = hasCmdSub || part.includes('\u0000') || /\$(?:[A-Za-z0-9_@{]|\()/.test(part);
+      return {
+        value: part,
+        dynamic: Boolean(word.dynamic && partDynamic),
+        quoted: false
+      };
+    });
+  }
+
   return [{
-    value: resolved,
+    value: resolvedWord,
     dynamic: Boolean(word.dynamic && stillDynamic),
-    quoted: word.quoted
+    quoted: Boolean(hadQuotes || word.quoted)
   }];
 }
 
 function resolveGitWords(words, state, normalized, budget) {
   if (!state && !normalized) return words;
   const result = [];
-  const ifs = state?.variables?.get('IFS') ?? ' \t\n';
-  const isDefaultIfs = ifs === ' \t\n' || ifs === ' ' || ifs === '';
-  const ifsRegex = isDefaultIfs ? /\s+/ : new RegExp(`[${escapeRegex(ifs)}]+`);
+  const ifsInfo = getShellIfs(state);
 
   for (let i = 0; i < words.length; i++) {
     const word = words[i];
@@ -1463,16 +1572,8 @@ function resolveGitWords(words, state, normalized, budget) {
       result.push(word);
       continue;
     }
-    const resolved = resolveShellSource(word.value, state, budget);
-    if (resolved === word.value) {
-      result.push(word);
-      continue;
-    }
-    const isUnquoted = !word.quoted || hasUnquotedExpansion(word.raw);
-    if (isUnquoted && resolved === '') {
-      continue;
-    }
-    result.push(...splitResolvedWord(word, resolved, isUnquoted, ifsRegex));
+    const tokens = resolveWordTokens(word, state, ifsInfo, budget);
+    result.push(...tokens);
   }
   return result;
 }

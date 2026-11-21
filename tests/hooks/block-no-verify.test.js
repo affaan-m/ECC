@@ -2722,6 +2722,36 @@ if (test('allows harmless quoted parameter expansion as commit message (OPTS="ha
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}`);
 })) passed++; else failed++;
 
+if (test('blocks bypass when parameter replacement operator is used (X=--; git commit "${X/--/file}" --no-verify -m x)', () => {
+  const r = runHook({ tool_input: { command: 'X=--; git commit "${X/--/file}" --no-verify -m x' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks bypass when parameter prefix strip operator is used (X=--; git commit "${X#--}" --no-verify -m x)', () => {
+  const r = runHook({ tool_input: { command: 'X=--; git commit "${X#--}" --no-verify -m x' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks bypass when empty IFS disables field splitting (IFS=; FLAGS="a -- b"; git commit $FLAGS --no-verify -m x)', () => {
+  const r = runHook({ tool_input: { command: 'IFS=; FLAGS="a -- b"; git commit $FLAGS --no-verify -m x' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks bypass with mixed quotes without splitting quoted path (X=x; git commit "a -- b"$X --no-verify -m x)', () => {
+  const r = runHook({ tool_input: { command: 'X=x; git commit "a -- b"$X --no-verify -m x' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks bypass when unquoted expansion in mixed quotes introduces flag (X=" --no-verify"; git commit "a -- b"$X -m x)', () => {
+  const r = runHook({ tool_input: { command: 'X=" --no-verify"; git commit "a -- b"$X -m x' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 
