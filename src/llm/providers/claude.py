@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 from anthropic import Anthropic
@@ -15,12 +16,30 @@ from llm.core.interface import (
 )
 from llm.core.types import LLMInput, LLMOutput, ModelInfo, ProviderType, Role, ToolCall
 
-_DEFAULT_MODEL = "claude-sonnet-4-6"
-_OPUS_ADAPTIVE_ONLY_PREFIXES = ("claude-opus-4-7", "claude-opus-4-8")
+_DEFAULT_MODEL = "claude-sonnet-5-5"
+# Family and version of a model ID: "claude-opus-4-8" -> ("opus", 4, 8). A date
+# suffix is not a minor version: "claude-sonnet-4-20250514" -> ("sonnet", 4, 0).
+_MODEL_VERSION = re.compile(r"claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?!\d)")
 
 
-def _uses_adaptive_thinking_only(model: str) -> bool:
-    return any(model.startswith(prefix) for prefix in _OPUS_ADAPTIVE_ONLY_PREFIXES)
+def _model_version(model: str) -> tuple[str, int, int] | None:
+    match = _MODEL_VERSION.search(model)
+    if match is None:
+        return None
+    family, major, minor = match.groups()
+    return family, int(major), int(minor or 0)
+
+
+def _needs_explicit_adaptive_thinking(model: str) -> bool:
+    """Opus 4.7/4.8 skip thinking unless asked; Claude 5 models think by default.
+
+    Both accept ``{"type": "adaptive"}``, and neither accepts a thinking budget.
+    """
+    version = _model_version(model)
+    if version is None:
+        return False
+    family, major, minor = version
+    return major >= 5 or (family == "opus" and (major, minor) >= (4, 7))
 
 
 class ClaudeProvider(LLMProvider):
@@ -36,28 +55,28 @@ class ClaudeProvider(LLMProvider):
         self.default_model = default_model or _DEFAULT_MODEL
         self._models = [
             ModelInfo(
-                name="claude-opus-4-8",
+                name="claude-opus-5-5",
                 provider=ProviderType.CLAUDE,
                 supports_tools=True,
                 supports_vision=True,
-                max_tokens=64000,
+                max_tokens=128_000,
                 context_window=1_000_000,
             ),
             ModelInfo(
-                name="claude-sonnet-4-6",
+                name="claude-sonnet-5-5",
                 provider=ProviderType.CLAUDE,
                 supports_tools=True,
                 supports_vision=True,
-                max_tokens=64000,
+                max_tokens=128_000,
                 context_window=1_000_000,
             ),
             ModelInfo(
-                name="claude-haiku-4-5",
+                name="claude-haiku-5-5",
                 provider=ProviderType.CLAUDE,
                 supports_tools=True,
                 supports_vision=True,
-                max_tokens=16000,
-                context_window=200_000,
+                max_tokens=128_000,
+                context_window=1_000_000,
             ),
         ]
 
@@ -90,9 +109,10 @@ class ClaudeProvider(LLMProvider):
                 ]
             if input.tools:
                 params["tools"] = [tool.to_anthropic_tool() for tool in input.tools]
-            if not _uses_adaptive_thinking_only(model):
-                params["temperature"] = input.temperature
-            if _uses_adaptive_thinking_only(model):
+            # No temperature: anthropic 2.x sends API version 2026-10-21, which
+            # rejects sampling parameters on every model, and its
+            # messages.create() no longer accepts them.
+            if _needs_explicit_adaptive_thinking(model):
                 params["thinking"] = {"type": "adaptive"}
 
             response = self.client.messages.create(**params)

@@ -111,7 +111,7 @@ def test_real_cli_creates_loads_and_replaces_project_selection(
     else:
         args = ["-m", "llm"]
 
-    assert operator.selection() == ["claude", "claude-sonnet-4-6"]
+    assert operator.selection() == ["claude", "claude-sonnet-5-5"]
     origin = operator.run(["-c", "import llm; print(llm.__file__)"])
     assert Path(origin.stdout.strip()).resolve() == SOURCE / "llm" / "__init__.py"
     first = operator.run(args, "4\n2\n")
@@ -140,7 +140,7 @@ def test_real_cli_creates_loads_and_replaces_project_selection(
 @pytest.mark.parametrize(
     "provider_number,provider,model,description",
     [
-        (1, "claude", "claude-sonnet-4-6", "Claude Sonnet 4.6 - Balanced"),
+        (1, "claude", "claude-sonnet-5-5", "Claude Sonnet 5.5 - Balanced"),
         (2, "minimax", "MiniMax-M3", "MiniMax M3 - Flexible reasoning model"),
         (3, "openai", "gpt-4o-mini", "GPT-4o-mini - Fast & affordable"),
         (4, "ollama", "mistral", "Mistral - Fast & efficient"),
