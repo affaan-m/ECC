@@ -146,32 +146,32 @@ function runTests() {
             'post:ecc-metrics-bridge',
             'post:ecc-context-monitor'
           ],
-          async: ['post:quality-gate', 'post:observe:continuous-learning']
+          async: ['post:quality-gate', 'post:observe:continuous-learning', 'post:capsule-recorder']
         },
         {
           tool: 'Write',
           sync: ['post:hookify-runtime', 'post:edit:design-quality-check', 'post:edit:accumulator', 'post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
-          async: ['post:quality-gate', 'post:observe:continuous-learning']
+          async: ['post:quality-gate', 'post:observe:continuous-learning', 'post:capsule-recorder']
         },
         {
           tool: 'Bash',
           sync: ['post:hookify-runtime', 'post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
-          async: ['post:bash:dispatcher', 'post:observe:continuous-learning']
+          async: ['post:bash:dispatcher', 'post:observe:continuous-learning', 'post:capsule-recorder']
         },
         {
           tool: 'PowerShell',
           sync: ['post:hookify-runtime', 'post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
-          async: ['post:observe:continuous-learning']
+          async: ['post:observe:continuous-learning', 'post:capsule-recorder']
         },
         {
           tool: 'powershell',
           sync: ['post:hookify-runtime', 'post:governance-capture', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
-          async: ['post:observe:continuous-learning']
+          async: ['post:observe:continuous-learning', 'post:capsule-recorder']
         },
         {
           tool: 'Read',
           sync: ['post:hookify-runtime', 'post:session-activity-tracker', 'post:ecc-metrics-bridge', 'post:ecc-context-monitor'],
-          async: ['post:observe:continuous-learning']
+          async: ['post:observe:continuous-learning', 'post:capsule-recorder']
         }
       ];
 
@@ -216,7 +216,8 @@ function runTests() {
         'post:ecc-metrics-bridge',
         'post:ecc-context-monitor',
         'post:quality-gate',
-        'post:observe:continuous-learning'
+        'post:observe:continuous-learning',
+        'post:capsule-recorder'
       ]);
     })
   )
@@ -351,7 +352,7 @@ function runTests() {
         ECC_HOOK_PROFILE: 'minimal'
       });
       assert.strictEqual(minimalAsync.status, 0, minimalAsync.stderr);
-      assert.deepStrictEqual(previewedIds(minimalAsync.stderr), ['post:bash:dispatcher'], 'bash dispatcher phase must stay reachable in minimal profile like main; its sub-hooks gate themselves');
+      assert.deepStrictEqual(previewedIds(minimalAsync.stderr), ['post:bash:dispatcher', 'post:capsule-recorder'], 'bash dispatcher phase must stay reachable in minimal profile like main; its sub-hooks gate themselves');
 
       const disabled = runDispatcher('sync', 'Edit', {
         ECC_DRY_RUN: '1',

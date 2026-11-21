@@ -82,6 +82,11 @@
         "id": "session-start:plan-canvas-sessions",
         "description": "Surface open Plan Canvas review sessions so a fresh session can resume the loop",
         "fingerprint": "728d48b97fdb"
+      },
+      {
+        "id": "session:start:capsule-recorder",
+        "description": "Opt-in (ECC_CAPSULE_RECORDING=1): journal the session start into the per-session eval capsule",
+        "fingerprint": "6c425de29ff6"
       }
     ],
     "PostToolUse": [
@@ -155,6 +160,11 @@
         "id": "session:end:marker",
         "description": "Session end lifecycle marker (non-blocking)",
         "fingerprint": "a991d34f4d89"
+      },
+      {
+        "id": "session:end:capsule-recorder",
+        "description": "Opt-in (ECC_CAPSULE_RECORDING=1): journal the session end into the per-session eval capsule",
+        "fingerprint": "f2389eb172d9"
       }
     ]
   }
