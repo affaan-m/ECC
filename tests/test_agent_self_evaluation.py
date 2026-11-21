@@ -4,6 +4,7 @@ import argparse
 import errno
 import importlib.util
 import io
+import os
 import re
 import subprocess
 import sys
@@ -103,6 +104,29 @@ def test_cli_uses_piped_task_for_conciseness_score(evaluator: ModuleType, tmp_pa
     assert re.search(r"Conciseness[^\n]*3/5", result.stdout)
 
 
+def test_cli_runs_with_legacy_locale_encodings(evaluator: ModuleType, tmp_path: Path) -> None:
+    output = tmp_path / "response.txt"
+    task = tmp_path / "task.txt"
+    output.write_text("Verified with tests. Álvaro: résumé done. " * 25, encoding="utf-8")
+    task.write_text("Corriger le bug d'Álvaro", encoding="utf-8")
+    env = {
+        **os.environ,
+        "PYTHONUTF8": "0",
+        "PYTHONCOERCECLOCALE": "0",
+        "PYTHONIOENCODING": "cp1252",
+        "LC_ALL": "C",
+    }
+    result = subprocess.run(
+        [sys.executable, str(evaluator.__file__), "--task", str(task), "--output", str(output)],
+        capture_output=True,
+        env=env,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
+    assert re.search(r"Conciseness", result.stdout.decode("utf-8"))
+
+
 def test_long_inline_task_remains_text(evaluator: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output = tmp_path / "response.txt"
     output.write_text("Answer", encoding="utf-8")
@@ -113,7 +137,7 @@ def test_long_inline_task_remains_text(evaluator: ModuleType, tmp_path: Path, mo
 
 @pytest.mark.parametrize("error_code", [errno.EACCES, errno.EISDIR])
 def test_task_read_does_not_hide_other_file_errors(evaluator: ModuleType, monkeypatch: pytest.MonkeyPatch, error_code: int) -> None:
-    def fail_open(_path: str) -> NoReturn:
+    def fail_open(_path: str, *_args: object, **_kwargs: object) -> NoReturn:
         raise OSError(error_code, "Cannot read task")
 
     monkeypatch.setattr("builtins.open", fail_open)
@@ -148,7 +172,7 @@ def test_file_error_fallback_is_platform_and_mode_scoped(
     task = "Long inline task. " * 60
     error = OSError(error_code, "Cannot read file")
 
-    def fail_open(_path: str) -> NoReturn:
+    def fail_open(_path: str, *_args: object, **_kwargs: object) -> NoReturn:
         raise error
 
     monkeypatch.setattr(evaluator.sys, "platform", platform)
