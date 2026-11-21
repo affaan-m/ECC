@@ -136,6 +136,11 @@ function runTests() {
       const h2 = hashToolCall('Read', { file_path: '/repo/big.log', offset: 2001, limit: 2000 });
       assert.notStrictEqual(h1, h2);
       assert.strictEqual(h1, hashToolCall('Read', { file_path: '/repo/big.log', offset: 1, limit: 2000 }));
+      const longPath = '/repo/' + 'd/'.repeat(1100) + 'big.log';
+      assert.notStrictEqual(
+        hashToolCall('Read', { file_path: longPath, offset: 1, limit: 2000 }),
+        hashToolCall('Read', { file_path: longPath, offset: 2001, limit: 2000 })
+      );
     })
   )
     passed++;
