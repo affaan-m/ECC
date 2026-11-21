@@ -50,8 +50,8 @@ Usage:
   ecc memory save --title <text> (--stdin | --body-file <path>) [options]
   ecc memory handoff --from <harness> --target <harness> --title <text> (--stdin | --body-file <path>) [options]
   ecc memory search [query] [--scope <scope>] [--target-harness <harness>] [--kind <kind>] [--limit <n>] [--json]
-  ecc memory read <memory-id> [--scope <scope>] [--json]
-  ecc memory doctor [--scope <scope>] [--json]
+  ecc memory read <memory-id> [--scope <scope>] [--target-harness <harness>] [--json]
+  ecc memory doctor [--scope <scope>] [--target-harness <harness>] [--json]
 
 Recall:
   Default recall scopes: project and team; user scope must be requested explicitly
@@ -442,15 +442,19 @@ function runReadCommand({ options, positionals, roots }) {
   return printRead(readMemoryById(positionals[0], {
     roots,
     scopes: options.scopes,
+    targetHarness: options.targetHarness,
   }), options.json);
 }
 
 function runDoctorCommand({ command, options, positionals, roots }) {
   requireNoPositionals(positionals, command);
-  return printDoctor(doctorMemoryVault({
+  const report = doctorMemoryVault({
     roots,
     scopes: options.scopes,
-  }), options.json);
+    targetHarness: options.targetHarness,
+  });
+  const response = options.targetHarness ? { ...report, targetHarness: options.targetHarness } : report;
+  return printDoctor(response, options.json);
 }
 
 const COMMAND_HANDLERS = Object.freeze({

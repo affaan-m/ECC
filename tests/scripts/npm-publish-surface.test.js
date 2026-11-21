@@ -92,6 +92,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/list-installed.js",
     "scripts/loop-status.js",
     "scripts/memory.js",
+    "scripts/copilot-memory.cjs",
     "scripts/memory-mcp.mjs",
     "scripts/nasiko.js",
     "scripts/observability-readiness.js",

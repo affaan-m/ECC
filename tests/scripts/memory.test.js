@@ -234,6 +234,36 @@ test('saves and reads a targeted handoff without a harness-specific inbox', () =
   }
 });
 
+test('read and doctor honor the recipient without changing unfiltered calls', () => {
+  const fixture = createFixture();
+  try {
+    const save = (title, target, links = []) => json(run(MEMORY_SCRIPT, [
+      'save', '--title', title, '--target', target, ...links, '--stdin', '--json',
+    ], fixture, { input: 'Synthetic memory fixture.' })).memory.id;
+    const shared = save('Shared memory', 'all');
+    const copilot = save('Copilot backlink', 'copilot', ['--link', shared]);
+    const codex = save('Codex backlink', 'codex', ['--link', shared]);
+
+    const direct = json(run(MEMORY_SCRIPT, ['read', shared, '--json'], fixture));
+    assert.deepStrictEqual(direct.backlinks.map(entry => entry.id).sort(), [copilot, codex].sort());
+
+    const recipient = ['--target-harness', 'copilot', '--json'];
+    const visible = json(run(MEMORY_SCRIPT, ['read', shared, ...recipient], fixture));
+    assert.deepStrictEqual(visible.backlinks.map(entry => entry.id), [copilot]);
+    const hidden = run(MEMORY_SCRIPT, ['read', codex, ...recipient], fixture);
+    assert.notStrictEqual(hidden.status, 0);
+    assert.match(hidden.stderr, /was not found/);
+    assert.strictEqual(hidden.stdout, '');
+
+    const unfiltered = json(run(MEMORY_SCRIPT, ['doctor', '--json'], fixture));
+    assert.strictEqual(unfiltered.memoryCount, 3);
+    const filtered = json(run(MEMORY_SCRIPT, ['doctor', ...recipient], fixture));
+    assert.strictEqual(filtered.memoryCount, 2);
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
 test('read uses default recall scopes and honors an explicit user scope', () => {
   const fixture = createFixture();
   try {
