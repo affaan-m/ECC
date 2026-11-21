@@ -23,7 +23,6 @@ const { getClaudeDir } = require('../lib/utils');
 const MAX_STDIN = 1024 * 1024;
 const MAX_FILES_TRACKED = 200;
 const RECENT_TOOLS_SIZE = 5;
-const HASH_INPUT_LIMIT = 2048;
 const WARNING_CACHE_PREFIX = 'ecc-metrics-cost-warnings-';
 
 function stableStringify(value, depth = 0) {
@@ -57,7 +56,7 @@ function hashToolCall(toolName, toolInput) {
     // edits to one file looked like a stuck loop. Include the edit content so
     // different edits to the same file hash differently.
     // Hash the FULL serialized payload (truncate the digest, not the input):
-    // slicing the serialized string to HASH_INPUT_LIMIT first would collapse
+    // slicing the serialized string to a fixed length first would collapse
     // large edits that share their first N chars, reviving the same false-loop
     // collision for big Write/edit payloads.
     key = crypto
@@ -78,10 +77,12 @@ function hashToolCall(toolName, toolInput) {
         })
       )
       .digest('hex');
-  } else if (toolInput?.file_path) {
-    key = String(toolInput.file_path);
   } else {
-    key = stableStringify(toolInput || {}).slice(0, HASH_INPUT_LIMIT);
+    // Hash every parameter: Read pages one file through offset/limit, so the
+    // path alone made consecutive pages of the same file look like a loop.
+    // No length cap: keys sort file_path before limit/offset, so slicing would
+    // drop the paging parameters of a long path.
+    key = stableStringify(toolInput || {});
   }
   return crypto.createHash('sha256').update(`${name}:${key}`).digest('hex').slice(0, 8);
 }
