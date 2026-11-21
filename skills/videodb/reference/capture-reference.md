@@ -4,11 +4,22 @@ Code-level details for VideoDB capture sessions. For workflow guide, see [captur
 
 ---
 
+## Contents
+
+- WebSocket Events (channels, lifecycle events, event structures)
+- Event Persistence (event listener code, JSONL format, reading events)
+- WebSocket Connection
+- CaptureSession
+- CaptureClient
+- Channels (mics, displays, system audio)
+- RTStreams and AI Pipelines
+- Session Lifecycle
+
 ## WebSocket Events
 
 Real-time events from capture sessions and AI pipelines. No webhooks or polling required.
 
-Use [scripts/ws_listener.py](../scripts/ws_listener.py) to connect and dump events to `${VIDEODB_EVENTS_DIR:-$HOME/.local/state/videodb}/videodb_events.jsonl`.
+Use the event listener in [Event Persistence](#event-persistence) to connect and dump events to `/tmp/videodb_events.jsonl`.
 
 ### Event Channels
 
@@ -107,42 +118,97 @@ Use [scripts/ws_listener.py](../scripts/ws_listener.py) to connect and dump even
 }
 ```
 
-> For latest details, see [VideoDB Realtime Context docs](https://docs.videodb.io/pages/ingest/capture-sdks/realtime-context.md).
+> For latest details, see https://docs.videodb.io/pages/ingest/capture-sdks/realtime-context.md
 
 ---
 
 ## Event Persistence
 
-Use `ws_listener.py` to dump all WebSocket events to a JSONL file for later analysis.
+Save this listener as `videodb_ws_listener.py` in the user's project. It dumps every WebSocket event to a JSONL file for later analysis.
+
+```python
+# videodb_ws_listener.py: run from the project root so load_dotenv() finds .env
+import asyncio, json, os, signal, sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv()
+import videodb
+
+args = sys.argv[1:]
+clear = "--clear" in args
+out = Path(next((a for a in args if not a.startswith("-")), os.environ.get("VIDEODB_EVENTS_DIR", "/tmp")))
+out.mkdir(parents=True, exist_ok=True)
+events, ws_id_file, pid_file = out / "videodb_events.jsonl", out / "videodb_ws_id", out / "videodb_ws_pid"
+
+
+async def listen():
+    first, backoff, failures = True, 1, 0
+    while failures < 10:
+        try:
+            ws = await videodb.connect().connect_websocket().connect()
+            if first:
+                if clear:
+                    events.unlink(missing_ok=True)
+                print(f"WS_ID={ws.connection_id}", flush=True)
+            first, backoff, failures = False, 1, 0
+            ws_id_file.write_text(ws.connection_id)
+            async for msg in ws.receive():
+                now = datetime.now(timezone.utc)
+                msg["ts"], msg["unix_ts"] = now.isoformat(), now.timestamp()
+                with open(events, "a") as f:
+                    f.write(json.dumps(msg) + "\n")
+        except Exception as e:
+            failures += 1
+            print(f"Connection error: {e}; retrying in {backoff}s", flush=True)
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 60)
+
+
+async def main():
+    stop = asyncio.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        asyncio.get_running_loop().add_signal_handler(sig, stop.set)
+    task = asyncio.create_task(listen())
+    await asyncio.wait([task, asyncio.create_task(stop.wait())], return_when=asyncio.FIRST_COMPLETED)
+    task.cancel()
+
+
+pid_file.write_text(str(os.getpid()))
+try:
+    asyncio.run(main())
+finally:
+    pid_file.unlink(missing_ok=True)
+```
 
 ### Start Listener and Get WebSocket ID
 
+Run it from the project root, so `.env` and its `VIDEO_DB_API_KEY` are found:
+
 ```bash
 # Start with --clear to clear old events (recommended for new sessions)
-python scripts/ws_listener.py --clear &
+python videodb_ws_listener.py --clear &
 
 # Append to existing events (for reconnects)
-python scripts/ws_listener.py &
+python videodb_ws_listener.py &
+
+# Custom output directory, as an argument or via environment variable
+python videodb_ws_listener.py --clear /path/to/output &
+VIDEODB_EVENTS_DIR=/path/to/output python videodb_ws_listener.py --clear &
 ```
 
-Or specify a custom output directory:
-
-```bash
-python scripts/ws_listener.py --clear /path/to/output &
-# Or via environment variable:
-VIDEODB_EVENTS_DIR=/path/to/output python scripts/ws_listener.py --clear &
-```
-
-The script outputs `WS_ID=<connection_id>` on the first line, then listens indefinitely.
+The listener prints `WS_ID=<connection_id>` on the first line, then listens until stopped.
 
 **Get the ws_id:**
 ```bash
-cat "${VIDEODB_EVENTS_DIR:-$HOME/.local/state/videodb}/videodb_ws_id"
+cat /tmp/videodb_ws_id
 ```
 
 **Stop the listener:**
 ```bash
-kill "$(cat "${VIDEODB_EVENTS_DIR:-$HOME/.local/state/videodb}/videodb_ws_pid")"
+kill $(cat /tmp/videodb_ws_pid)
 ```
 
 **Functions that accept `ws_connection_id`:**
@@ -152,51 +218,43 @@ kill "$(cat "${VIDEODB_EVENTS_DIR:-$HOME/.local/state/videodb}/videodb_ws_pid")"
 | `conn.create_capture_session()` | Session lifecycle events |
 | RTStream methods | See [rtstream-reference.md](rtstream-reference.md) |
 
-**Output files** (in output directory, default `${XDG_STATE_HOME:-$HOME/.local/state}/videodb`):
+**Output files** (in output directory, default `/tmp`):
 - `videodb_ws_id` - WebSocket connection ID
 - `videodb_events.jsonl` - All events
 - `videodb_ws_pid` - Process ID for easy termination
 
-**Features:**
-- `--clear` flag to clear events file on start (use for new sessions)
-- Auto-reconnect with exponential backoff on connection drops
-- Graceful shutdown on SIGINT/SIGTERM
-- Connection status logging
+**Behaviour:**
+- `--clear` clears the events file on start (use for new sessions)
+- Reconnects with exponential backoff when the connection drops, up to 10 failures in a row
+- Shuts down cleanly on SIGINT/SIGTERM and removes the PID file
 
 ### JSONL Format
 
 Each line is a JSON object with added timestamps:
 
 ```json
-{"ts": "2026-03-02T10:15:30.123Z", "unix_ts": 1772446530.123, "channel": "visual_index", "data": {"text": "..."}}
-{"ts": "2026-03-02T10:15:31.456Z", "unix_ts": 1772446531.456, "event": "capture_session.active", "capture_session_id": "cap-xxx"}
+{"ts": "2026-03-02T10:15:30.123Z", "unix_ts": 1709374530.12, "channel": "visual_index", "data": {"text": "..."}}
+{"ts": "2026-03-02T10:15:31.456Z", "unix_ts": 1709374531.45, "event": "capture_session.active", "capture_session_id": "cap-xxx"}
 ```
 
 ### Reading Events
 
 ```python
 import json
+events = [json.loads(l) for l in open("/tmp/videodb_events.jsonl")]
+
+# Filter by channel
+transcripts = [e for e in events if e.get("channel") == "transcript"]
+
+# Filter by time (last 10 minutes)
 import time
-from pathlib import Path
-
-events_path = Path.home() / ".local" / "state" / "videodb" / "videodb_events.jsonl"
-transcripts = []
-recent = []
-visual = []
-
 cutoff = time.time() - 600
-with events_path.open(encoding="utf-8") as handle:
-    for line in handle:
-        event = json.loads(line)
-        if event.get("channel") == "transcript":
-            transcripts.append(event)
-        if event.get("unix_ts", 0) > cutoff:
-            recent.append(event)
-        if (
-            event.get("channel") == "visual_index"
-            and "code" in event.get("data", {}).get("text", "").lower()
-        ):
-            visual.append(event)
+recent = [e for e in events if e["unix_ts"] > cutoff]
+
+# Filter visual events containing keyword
+visual = [e for e in events 
+          if e.get("channel") == "visual_index" 
+          and "code" in e.get("data", {}).get("text", "").lower()]
 ```
 
 ---
@@ -231,9 +289,7 @@ ws_id = ws.connection_id
 ### Create a Capture Session
 
 ```python
-from pathlib import Path
-
-ws_id = (Path.home() / ".local" / "state" / "videodb" / "videodb_ws_id").read_text().strip()
+ws_id = open("/tmp/videodb_ws_id").read().strip()
 
 session = conn.create_capture_session(
     end_user_id="user-123",  # required
@@ -374,21 +430,9 @@ For RTStream methods (indexing, transcription, alerts, batch config), see [rtstr
   └───────┬───────┘
           │  client.start_capture_session()
           v
-  ┌───────────────┐     WebSocket: capture_session.starting
-  │   starting     │ ──> Capture channels connect
-  └───────┬───────┘
-          │
-          v
   ┌───────────────┐     WebSocket: capture_session.active
   │    active      │ ──> Start AI pipelines
-  └───────┬──────────────┐
-          │              │
-          │              v
-          │      ┌───────────────┐     WebSocket: capture_session.failed
-          │      │    failed      │ ──> Inspect error payload and retry setup
-          │      └───────────────┘
-          │      unrecoverable capture error
-          │
+  └───────┬───────┘
           │  client.stop_capture()
           v
   ┌───────────────┐     WebSocket: capture_session.stopping

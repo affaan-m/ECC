@@ -1,8 +1,18 @@
 # Use Cases
 
-Common workflows and what VideoDB enables. For code details, see [api-reference.md](api-reference.md), [capture.md](capture.md), [editor.md](editor.md), and [search.md](search.md).
+Common workflows and what VideoDB enables. For code details, see [api-reference.md](api-reference.md), [indexing.md](indexing.md), [search.md](search.md), [capture.md](capture.md), and [editor.md](editor.md).
 
 ---
+
+## Contents
+
+- Video Search & Highlights (highlight reels, searchable libraries, analytics)
+- Video Enhancement
+- Real-Time Capture (Desktop/Meeting)
+- Live Stream Intelligence (RTSP/RTMP)
+- Content Moderation & Safety
+- Platform Integration
+- Workflow Summary
 
 ## Video Search & Highlights
 
@@ -14,6 +24,12 @@ Batch upload videos to a collection, index them for spoken word search, then que
 
 ### Extract Specific Clips
 Search for moments matching a query ("budget discussion", "action items") and extract each matching segment as an individual clip with its own stream URL.
+
+### Structured Video Analytics
+Run `object_detection`, `brand_detection`, or `activity_recognition` analyzers, index the artifacts with `use_for=["query", "aggregate"]`, then answer questions no search engine can: "how many shots contain a logo", "which activities dominate this footage", "what is the distribution of detected objects". `aggregate(group_by=...)` computes it server-side without reading a single frame back. This has no v1 equivalent.
+
+### Ask Questions About a Video
+`video.ask(question, include_sources=True)` returns a written answer grounded in indexed content, plus the timestamped moments it drew from — instead of you searching, reading, and summarising yourself.
 
 ---
 
@@ -82,7 +98,7 @@ Search across recorded live stream content. Find specific moments and generate c
 ## Content Moderation & Safety
 
 ### Automated Content Review
-Index video scenes with AI and search for problematic content. Flag videos containing violence, inappropriate content, or policy violations.
+Run a `vlm` analyzer with a schema that emits explicit moderation fields, index with `use_for=["query", "aggregate"]`, then filter and count policy violations exactly rather than searching prose descriptions for them.
 
 ### Profanity Detection
 Detect and locate profanity in audio. Optionally overlay beep sounds at detected timestamps.
@@ -109,10 +125,14 @@ Every operation produces playable stream URLs. Embed in web players, share direc
 
 | Goal | VideoDB Approach |
 |------|------------------|
-| Find moments in video | Index spoken words/scenes → Search → Compile clips |
+| Make a video searchable | `understand(analyzers=[...])` → `index(source=analyzer)` |
+| Find moments in video | Understand → index → `search()` → `compile()` |
+| Answer a question about a video | Understand → index → `ask(question, include_sources=True)` |
+| Count or group what appears | Index with `use_for=["query","aggregate"]` → `aggregate(group_by=...)` |
+| Filter moments on exact values | Index with a schema → `query(index_name=..., filter={...})` |
 | Create highlights | Search multiple topics → Build timeline → Generate stream |
-| Add subtitles | Index spoken words → Add subtitle overlay |
+| Add subtitles | `generate_transcript()` → `add_subtitle()` |
 | Record screen + AI | Start capture → Run AI pipelines → Export video |
-| Monitor live streams | Connect RTSP → Index scenes → Create alerts |
+| Monitor live streams | Connect RTSP → `rtstream.understand()` → `rtstream.index()` → Create alerts |
 | Reformat for social | Reframe to target aspect ratio |
 | Combine clips | Build timeline with multiple assets → Generate stream |

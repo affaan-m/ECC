@@ -1,6 +1,23 @@
 # Complete API Reference
 
-Reference material for the VideoDB skill. For usage guidance and workflow selection, start with [../SKILL.md](../SKILL.md).
+Requires `videodb>=0.5.0`.
+
+## Contents
+
+- Connection (methods, transcode, VideoConfig, AudioConfig)
+- Collections (methods, upload parameters)
+- Video Object (properties, methods, reframe)
+- Audio Object
+- Image Object
+- Understanding & Index Objects (v2)
+- Scene Objects
+- Timeline & Editor (assets and styles)
+- Video Search Parameters
+- Search Response Objects
+- Meeting Object
+- RTStream & Capture
+- Enums & Constants (SearchType, IndexCapability, FieldGroup, SceneExtractionType)
+- Exceptions
 
 ## Connection
 
@@ -104,6 +121,8 @@ config = AudioConfig(mute=False)
 coll = conn.get_collection()
 ```
 
+> **Collection has no `understand()` or `index()`.** Creating artifacts and indexes is video-scoped (and rtstream-scoped). A collection is the fan-out **read** scope: it exposes `search`, `ask`, `semantic_search`, `query`, and `aggregate` over every indexed video it contains. Fan-out works by index name — give the same `name` to the same artifact type on each video. See [indexing.md](indexing.md).
+
 ### Collection Methods
 
 | Method | Returns | Description |
@@ -115,7 +134,12 @@ coll = conn.get_collection()
 | `coll.get_images()` | `list[Image]` | List all images |
 | `coll.get_image(image_id)` | `Image` | Get specific image |
 | `coll.upload(url=None, file_path=None, media_type=None, name=None)` | `Video\|Audio\|Image` | Upload media |
-| `coll.search(query, search_type, index_type, score_threshold, namespace, scene_index_id, ...)` | `SearchResult` | Search across collection (semantic only; keyword and scene search raise `NotImplementedError`) |
+| `coll.search(query, *args, config=None, **kwargs)` | `SearchResponse\|SearchResult` | Search across the collection. `SearchResponse` on the v2 path |
+| `coll.ask(question, top_k, mode, include_sources)` | `AskResponse` | **(v2)** Synthesised answer across the collection |
+| `coll.semantic_search(query, index_names, top_k, score_threshold, filter, return_fields, index_ids)` | `SearchResult` | **(v2)** Vector search across the collection |
+| `coll.query(index_name, filter, limit, return_fields, sort, index_id)` | `SearchResult` | **(v2)** Exact structured filtering |
+| `coll.aggregate(index_name, filter, group_by, metric, limit, sort, index_id)` | `dict\|list[dict]` | **(v2)** Counts, grouping, facets |
+| `coll.legacy_search(query, search_type, index_type, namespace, scene_index_id, ...)` | `SearchResult` | **(v1)** Search v1 indexes (semantic only; keyword and scene raise `NotImplementedError`) |
 | `coll.generate_image(prompt, aspect_ratio="1:1")` | `Image` | Generate image with AI |
 | `coll.generate_video(prompt, duration=5)` | `Video` | Generate video with AI |
 | `coll.generate_music(prompt, duration=5)` | `Audio` | Generate music with AI |
@@ -172,19 +196,39 @@ video = coll.get_video(video_id)
 |--------|---------|-------------|
 | `video.generate_stream(timeline=None)` | `str` | Generate stream URL (optional timeline of `[(start, end)]` tuples) |
 | `video.play()` | `str` | Open stream in browser, returns player URL |
-| `video.index_spoken_words(language_code=None, force=False)` | `None` | Index speech for search. Use `force=True` to skip if already indexed. |
-| `video.index_scenes(extraction_type, prompt, extraction_config, metadata, model_name, name, scenes, callback_url)` | `str` | Index visual scenes (returns scene_index_id) |
-| `video.index_visuals(prompt, batch_config, ...)` | `str` | Index visuals (returns scene_index_id) |
-| `video.index_audio(prompt, model_name, ...)` | `str` | Index audio with LLM (returns scene_index_id) |
+| `video.understand(analyzers, segmentation, sampling, transform, audio_chunking, callback_url)` | `Understanding` | **(v2)** Run analyzers to produce artifacts |
+| `video.get_understanding(understanding_id)` | `Understanding` | **(v2)** Reopen a run |
+| `video.list_understandings()` | `list[Understanding]` | **(v2)** All runs for this video |
+| `video.delete_understanding(understanding_id)` | `None` | **(v2)** Delete a run and its artifacts |
+| `video.index(source, name, use_for, fields, callback_url)` | `Index` | **(v2)** Build a retrieval index from an artifact |
+| `video.get_index(index_id=None, name=None)` | `Index` | **(v2)** Fetch one index |
+| `video.list_indexes(use_for=None)` | `list[Index]` | **(v2)** List indexes; `use_for` is a single string |
+| `video.delete_index(index_id)` | `None` | **(v2)** Delete an index |
+| `video.ask(question, top_k, mode, include_sources)` | `AskResponse` | **(v2)** Synthesised answer grounded in indexed content |
+| `video.semantic_search(query, index_names, top_k, score_threshold, filter, return_fields, index_ids)` | `SearchResult` | **(v2)** Vector search against named indexes |
+| `video.query(index_name, filter, limit, return_fields, sort, index_id)` | `SearchResult` | **(v2)** Exact structured filtering |
+| `video.aggregate(index_name, filter, group_by, metric, limit, sort, index_id)` | `dict\|list[dict]` | **(v2)** Counts, grouping, facets |
+| `video.legacy_search(query, search_type, index_type, ...)` | `SearchResult` | **(v1)** Search v1 indexes explicitly |
+| `video.index_spoken_words(language_code=None, force=False)` | `None` | **(v1, legacy)** Index speech for `legacy_search()`. Not needed for `add_subtitle()` or `CaptionAsset(src="auto")`, which read the transcript from `generate_transcript()` |
+| `video.index_scenes(extraction_type, prompt, extraction_config, metadata, model_name, name, scenes, callback_url)` | `str` | **(v1)** Index visual scenes (returns scene_index_id) |
+| `video.index_visuals(prompt, batch_config, ...)` | `str` | **(v1)** Index visuals (returns scene_index_id) |
+| `video.index_audio(prompt, model_name, ...)` | `str` | **(v1)** Index audio with LLM (returns scene_index_id) |
 | `video.get_transcript(start=None, end=None)` | `list[dict]` | Get timestamped transcript |
 | `video.get_transcript_text(start=None, end=None)` | `str` | Get full transcript text |
 | `video.generate_transcript(force=None)` | `dict` | Generate transcript |
 | `video.translate_transcript(language, additional_notes)` | `list[dict]` | Translate transcript |
-| `video.search(query, search_type, index_type, filter, **kwargs)` | `SearchResult` | Search within video |
+| `video.search(query, *args, config=None, **kwargs)` | `SearchResponse\|SearchResult` | Search within video. Returns `SearchResponse` on the v2 path, `SearchResult` when legacy keywords route it to `legacy_search()` |
 | `video.add_subtitle(style=SubtitleStyle())` | `str` | Add subtitles (returns stream URL) |
 | `video.generate_thumbnail(time=None)` | `str\|Image` | Generate thumbnail |
 | `video.get_thumbnails()` | `list[Image]` | Get all thumbnails |
-| `video.extract_scenes(extraction_type, extraction_config)` | `SceneCollection` | Extract scenes |
+| `video.extract_scenes(extraction_type, extraction_config, force, callback_url)` | `SceneCollection` | Extract scenes with frame images |
+| `video.get_scene_index(scene_index_id)` | `list[dict]\|None` | **(v1)** Get scene index records (`start`, `end`, `description`) |
+| `video.list_scene_index()` | `list` | **(v1)** List all scene indexes |
+| `video.delete_scene_index(scene_index_id)` | `None` | **(v1)** Delete a scene index |
+| `video.list_scene_collection()` | `list` | List all scene collections |
+| `video.get_scene_collection(collection_id)` | `SceneCollection\|None` | Get scene collection with frames |
+| `video.delete_scene_collection(collection_id)` | `None` | Delete a scene collection |
+| `video.get_scenes()` | `list\|None` | **Deprecated.** Use `get_scene_index()` instead |
 | `video.reframe(start, end, target, mode, callback_url)` | `Video\|None` | Reframe video aspect ratio |
 | `video.clip(prompt, content_type, model_name)` | `str` | Generate clip from prompt (returns stream URL) |
 | `video.insert_video(video, timestamp)` | `str` | Insert video at timestamp |
@@ -268,6 +312,115 @@ image = coll.get_image(image_id)
 |--------|---------|-------------|
 | `image.generate_url()` | `str` | Generate signed URL |
 | `image.delete()` | `None` | Delete the image |
+
+## Understanding & Index Objects (v2)
+
+Created by `video.understand()` and `video.index()`. For full detail see [indexing-reference.md](indexing-reference.md).
+
+### Understanding
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `.id` | `str` | Run ID |
+| `.status` | `str` | `queued`, `running`, `done`, `partial`, `failed`. **`partial` is not terminal to the SDK** — see [indexing-reference.md](indexing-reference.md) |
+| `.analyzers` | `list[UnderstandingAnalyzer]` | Analyzers in the run |
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.is_complete` / `.is_successful` | `bool` | Terminal is `done`/`failed`; successful is `done` |
+| `.wait_until_complete(timeout=1800, poll_interval=10)` | `Understanding` | Poll to terminal; raises `TimeoutError` |
+| `.list_analyzers()` | `list` | Local cache — no network call |
+| `.get_analyzer(name_or_id, refresh=False)` | `UnderstandingAnalyzer` | Raises `ValueError` if absent |
+| `.get_analyzer_output(name_or_id)` | `Any` | One analyzer's output |
+| `.refresh()` / `.delete()` | — | Re-fetch / delete the run |
+
+### UnderstandingAnalyzer
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `.id` / `.name` / `.type` | `str` | Identity |
+| `.status` | `str` | `done`, `failed`, `skipped`, `cancelled`, or in progress |
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.is_complete` / `.is_successful` | `bool` | Terminal set is wider than `Understanding`'s |
+| `.get_output()` | `Any` | The analyzer's output |
+| `.to_index_source()` | `dict` | Reference form for `video.index(source=...)` |
+
+### Index
+
+```python
+from videodb.index import Index, IndexRecord, RecordPage, FieldSchema
+```
+
+Not exported at package level — import from `videodb.index`.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `.index_id` / `.name` | `str` | Identity |
+| `.status` | `str` | `building`, `ready`, `failed` |
+| `.use_for` | `list` | Effective capabilities |
+| `.record_count` | `int` | Records indexed |
+| `.fields` | `dict` | Group → field names |
+| `.field_schema` | `dict[str, FieldSchema]` | Per-field type, groups, operators |
+| `.error` | `str\|None` | Failure reason |
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.is_complete` / `.is_successful` | `bool` | Terminal is `ready`/`failed`; successful is `ready` |
+| `.wait_until_complete(timeout=1800, poll_interval=10)` | `Index` | Raises `TimeoutError` |
+| `.records(limit=20, cursor=None)` | `RecordPage` | Preview records, cursor-paginated |
+| `.refresh()` / `.delete()` | — | Re-fetch / delete the index |
+
+## Scene Objects
+
+Scene collections are v1 and have no v2 equivalent — they remain the only way to get viewable frame image URLs. For workflow guide, see [legacy/index.md](legacy/index.md). For full details, see [legacy/index-reference.md](legacy/index-reference.md).
+
+### SceneCollection
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `.id` | `str` | Unique collection ID |
+| `.video_id` | `str` | Parent video ID |
+| `.config` | `dict` | Extraction configuration |
+| `.scenes` | `list[Scene]` | List of Scene objects |
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.delete()` | `None` | Delete this collection |
+
+### Scene
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `.id` | `str` | Unique scene ID |
+| `.start` | `float` | Start time (seconds) |
+| `.end` | `float` | End time (seconds) |
+| `.description` | `str` | Text description |
+| `.frames` | `list[Frame]` | Frame objects with image URLs |
+| `.metadata` | `dict` | Scene metadata |
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.describe(prompt, model_name)` | `str` | Generate AI description |
+| `.to_json()` | `dict` | Serialize to dict |
+
+### Frame (extends Image)
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `.id` | `str` | Unique frame ID |
+| `.url` | `str` | Viewable image URL |
+| `.frame_time` | `float` | Timestamp in video (seconds) |
+| `.description` | `str` | Text description |
+| `.scene_id` | `str` | Parent scene ID |
+| `.video_id` | `str` | Parent video ID |
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.generate_url()` | `str` | Generate signed URL |
+| `.describe(prompt, model_name)` | `str` | Generate AI description |
+| `.to_json()` | `dict` | Serialize to dict |
 
 ## Timeline & Editor
 
@@ -366,30 +519,64 @@ See [editor.md](editor.md#caption-overlays) for full CaptionAsset usage with the
 
 ## Video Search Parameters
 
+`search()` defaults to v2 and picks its engine by inspecting the arguments you pass.
+
 ```python
-results = video.search(
+response = video.search(
     query="your query",
-    search_type=SearchType.semantic,       # semantic, keyword, or scene
-    index_type=IndexType.spoken_word,      # spoken_word or scene
-    result_threshold=None,                 # max number of results
-    score_threshold=None,                  # minimum relevance score
-    dynamic_score_percentage=None,         # percentage of dynamic score
-    scene_index_id=None,                   # target a specific scene index (pass via **kwargs)
-    filter=[],                             # metadata filters for scene search
+    top_k=10,               # number of results
+    mode="default",         # or "deepsearch"
+    return_fields=None,     # index rows to hydrate onto each shot
+    include_clip=False,     # include a playable clip per result
+    session_id=None,        # continue a deepsearch session
+    config=None,            # request configuration passthrough
 )
 ```
 
-> **Note:** `filter` is an explicit named parameter in `video.search()`. `scene_index_id` is passed through `**kwargs` to the API.
->
-> **Important:** `video.search()` raises `InvalidRequestError` with message `"No results found"` when there are no matches. Always wrap search calls in try/except. For scene search, use `score_threshold=0.3` or higher to filter low-relevance noise.
+> **Routing.** Legacy keywords (`search_type`, `index_type`, `result_threshold`, `dynamic_score_percentage`, `scene_index_id`, `index_id`, `algorithm`, `sort_docs_on`, `namespace`, `stitch`, `rerank`, `rerank_params`) or **any positional argument** route the call to `legacy_search()`. Mixing legacy and v2 keywords raises `ValueError`. Passing `index_name` / `index_names` / `index_ids` also raises — `search()` selects indexes automatically; use `semantic_search()` to target them.
 
-For scene search, use `search_type=SearchType.semantic` with `index_type=IndexType.scene`. Pass `scene_index_id` when targeting a specific scene index. See [search.md](search.md) for details.
+> **`score_threshold` and `filter` are in neither set.** They do *not* route to legacy; they are forwarded to v2. Use `semantic_search(score_threshold=...)` for v2, or call `legacy_search(...)` explicitly for v1 indexes.
 
-## SearchResult Object
+> v2 search returns an empty response when nothing matches. Only `legacy_search()` raises `InvalidRequestError: "No results found"`.
 
-```python
-results = video.search("query", search_type=SearchType.semantic)
-```
+For the full retrieval surface, see [search.md](search.md) and [search-reference.md](search-reference.md). For v1 search parameters, see [legacy/search.md](legacy/search.md).
+
+## Search Response Objects
+
+### SearchResponse
+
+Returned by v2 `search()`.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `.response_type` | `str` | `"shots"`, `"aggregate"`, or `"deepsearch"` |
+| `.results` | `SearchResult\|dict\|list` | Shots as a `SearchResult`; raw payload for aggregate |
+| `.shots` | `list[Shot]` | Convenience accessor |
+| `.session_id` | `str\|None` | Deepsearch session to continue |
+| `.waiting_for` | `str` | Deepsearch state |
+| `.clarification` | `str\|None` | Follow-up question from the planner |
+| `.trace` | `dict\|None` | Planner debugging info |
+| `.warnings` | `list[dict]` | Server notices |
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.get_shots()` | `list[Shot]` | Matching segments |
+| `.compile()` | `str` | Stream URL of all shots |
+| `.play()` | `str` | Open the compiled stream |
+
+Iterable, sized, and indexable. **Has no `.stream_url`, `.player_url`, or `.collection_id`** — use `.compile()`.
+
+### AskResponse
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `.answer` | `str` | Synthesised answer |
+| `.sources` | `list[Shot]` | Evidence shots when `include_sources=True` |
+| `.warnings` | `list[dict]` | Server notices |
+
+### SearchResult
+
+Returned by `semantic_search()`, `query()`, and `legacy_search()`.
 
 | Method | Returns | Description |
 |--------|---------|-------------|
@@ -518,7 +705,9 @@ style = TextStyle(
 
 ```python
 from videodb import (
-    IndexType,          # spoken_word, scene
+    IndexCapability,    # semantic, query, aggregate      (v2 use_for)
+    FieldGroup,         # semantic, filter, aggregate, sort (v2 fields)
+    IndexType,          # spoken_word, scene              (v1 only)
     MediaType,          # video, audio, image
     Segmenter,          # word, sentence, time
     SegmentationType,   # sentence, llm
@@ -528,6 +717,8 @@ from videodb import (
     RTStreamChannelType,
 )
 ```
+
+> `IndexType` was not extended for v2 — v2 indexes are addressed by `name` or `index_id`, not by type. The server also recognises the field groups `fts`, `hydrate`, and `return`, which `FieldGroup` does not name.
 
 ## Exceptions
 

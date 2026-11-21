@@ -1,14 +1,22 @@
 # Capture Guide
 
+## Contents
+
+- Overview
+- Quick Start
+- Complete Capture Workflow (13 steps, listener to export)
+- Shutdown Sequence
+- Event Listener
+
 ## Overview
 
-VideoDB Capture enables real-time screen and audio recording with AI processing. Desktop capture currently supports **macOS** only.
+VideoDB Capture enables real-time screen and audio recording with AI processing. Desktop capture runs on **macOS** and **Windows**.
 
 For code-level details (SDK methods, event structures, AI pipelines), see [capture-reference.md](capture-reference.md).
 
 ## Quick Start
 
-1. **Start WebSocket listener**: `python scripts/ws_listener.py --clear &`
+1. **Start WebSocket listener**: save the listener from [capture-reference.md](capture-reference.md#event-persistence) as `videodb_ws_listener.py` in the project, then run `python videodb_ws_listener.py --clear &` from the project root
 2. **Run capture code** (see Complete Capture Workflow below)
 3. **Events written to**: `/tmp/videodb_events.jsonl`
 
@@ -64,38 +72,22 @@ Do NOT kill the WebSocket listener before receiving the export event, or you wil
 
 ---
 
-## Scripts
+## Event Listener
 
-| Script | Description |
-|--------|-------------|
-| `scripts/ws_listener.py` | WebSocket event listener (dumps to JSONL) |
-
-### ws_listener.py Usage
+The listener code and its options are in [capture-reference.md](capture-reference.md#event-persistence). Save it as `videodb_ws_listener.py` in the project and run it from the project root:
 
 ```bash
-# Start listener in background (append to existing events)
-python scripts/ws_listener.py &
+# New session: clear old events
+python videodb_ws_listener.py --clear &
 
-# Start listener with clear (new session, clears old events)
-python scripts/ws_listener.py --clear &
-
-# Custom output directory
-python scripts/ws_listener.py --clear /path/to/events &
+# Reconnect: append to existing events
+python videodb_ws_listener.py &
 
 # Stop the listener
 kill $(cat /tmp/videodb_ws_pid)
 ```
 
-**Options:**
-- `--clear`: Clear the events file before starting. Use when starting a new capture session.
-
-**Output files:**
+**Output files** (default `/tmp`):
 - `videodb_events.jsonl` - All WebSocket events
 - `videodb_ws_id` - WebSocket connection ID (for `ws_connection_id` parameter)
 - `videodb_ws_pid` - Process ID (for stopping the listener)
-
-**Features:**
-- Auto-reconnect with exponential backoff on connection drops
-- Graceful shutdown on SIGINT/SIGTERM
-- PID file for easy process management
-- Connection status logging
