@@ -272,7 +272,7 @@ class TestSelectedModel:
     def test_unpaired_saved_model_does_not_override_default_provider(self, tmp_path: Path) -> None:
         tmp_path.joinpath(".llm.env").write_text("LLM_MODEL=orphan-model\n")
 
-        assert get_provider().get_default_model() == "claude-sonnet-4-6"
+        assert get_provider().get_default_model() == "claude-sonnet-5-5"
 
     @pytest.mark.parametrize("saved_provider", [None, "", "   ", '""', "'  '"])
     def test_missing_or_blank_saved_provider_ignores_unpaired_model(
@@ -284,7 +284,7 @@ class TestSelectedModel:
         provider = get_provider()
 
         assert provider.provider_type == ProviderType.CLAUDE
-        assert provider.get_default_model() == "claude-sonnet-4-6"
+        assert provider.get_default_model() == "claude-sonnet-5-5"
 
     @pytest.mark.parametrize("explicit", [False, True])
     def test_blank_saved_provider_preserves_provider_and_model_overrides(
