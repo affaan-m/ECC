@@ -120,6 +120,22 @@ function main() {
       assert.deepStrictEqual(bad, [], `missing frontmatter:\n  ${bad.join('\n  ')}`);
     }],
 
+    ['every locale agent doc frontmatter parses as valid YAML', () => {
+      const yaml = require('js-yaml');
+      const bad = [];
+      for (const { filePath } of localeFiles) {
+        const text = fs.readFileSync(filePath, 'utf8');
+        const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+        if (!match) continue;
+        try {
+          yaml.load(match[1]);
+        } catch (err) {
+          bad.push(`${rel(filePath)}: ${err.message}`);
+        }
+      }
+      assert.deepStrictEqual(bad, [], `malformed YAML frontmatter:\n  ${bad.join('\n  ')}`);
+    }],
+
     ['locale agent docs name the same agent as canonical', () => {
       const drift = [];
       for (const { file, filePath } of localeFiles) {
