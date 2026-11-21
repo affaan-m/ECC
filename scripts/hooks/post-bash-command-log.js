@@ -24,6 +24,15 @@ function sanitizeCommand(command) {
     .replace(/\n/g, ' ')
     .replace(/--token[= ][^ ]*/g, '--token=<REDACTED>')
     .replace(/Authorization:[: ]*[^ ]*[: ]*[^ ]*/gi, 'Authorization:<REDACTED>')
+    .replace(/(?:x-api-key|api[_-]?key|secret|password)[=:][ ]*[^ ]*/gi, (match) => {
+      const sep = match.includes(':') ? ':' : '=';
+      const key = match.split(/[=:]/)[0];
+      return `${key}${sep}<REDACTED>`;
+    })
+    .replace(/-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]*PRIVATE KEY-----|$)/g, '<REDACTED>')
+    .replace(/\bsk-ant-[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])/g, '<REDACTED>')
+    .replace(/\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])/g, '<REDACTED>')
+    .replace(/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(?![A-Za-z0-9_.-])/g, '<REDACTED>')
     .replace(/\bAKIA[A-Z0-9]{16}\b/g, '<REDACTED>')
     .replace(/\bASIA[A-Z0-9]{16}\b/g, '<REDACTED>')
     .replace(/password[= ][^ ]*/gi, 'password=<REDACTED>')
@@ -35,7 +44,12 @@ function sanitizeCommand(command) {
 
 function appendLine(filePath, line) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.appendFileSync(filePath, `${line}\n`, 'utf8');
+  fs.appendFileSync(filePath, `${line}\n`, { encoding: 'utf8', mode: 0o600 });
+  try {
+    if (process.platform !== 'win32') {
+      fs.chmodSync(filePath, 0o600);
+    }
+  } catch (_) {}
 }
 
 // Resolve the Claude profile directory the same way everywhere.

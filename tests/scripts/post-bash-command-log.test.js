@@ -51,6 +51,22 @@ if (
 else failed++;
 
 if (
+  test('sanitizeCommand redacts bare API keys, JWTs, and PEM blocks', () => {
+    const input = 'curl -H "x-api-key: secret123" sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789 sk-proj-abcdefghijklmnopqrstuvwxyz0123456789 eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnopqrstuvwxyz -----BEGIN RSA PRIVATE KEY-----\nMIIEfake\n-----END RSA PRIVATE KEY-----';
+    const sanitized = sanitizeCommand(input);
+    assert.ok(!sanitized.includes('secret123'));
+    assert.ok(!sanitized.includes('sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789'));
+    assert.ok(!sanitized.includes('sk-proj-abcdefghijklmnopqrstuvwxyz0123456789'));
+    assert.ok(!sanitized.includes('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'));
+    assert.ok(!sanitized.includes('MIIEfake'));
+    assert.ok(sanitized.includes('x-api-key:<REDACTED>'));
+    assert.ok(sanitized.includes('<REDACTED>'));
+  })
+)
+  passed++;
+else failed++;
+
+if (
   test('audit mode logs sanitized bash commands and preserves stdout', () => {
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-bash-log-'));
     const payload = {
@@ -68,6 +84,10 @@ if (
       const logContent = fs.readFileSync(logFile, 'utf8');
       assert.ok(logContent.includes('--token=<REDACTED>'));
       assert.ok(!logContent.includes('abc123'));
+      if (process.platform !== 'win32') {
+        const mode = fs.statSync(logFile).mode & 0o777;
+        assert.strictEqual(mode, 0o600, `expected 0600, got ${mode.toString(8)}`);
+      }
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }
@@ -92,6 +112,10 @@ if (
       const logFile = path.join(homeDir, '.claude', 'cost-tracker.log');
       const logContent = fs.readFileSync(logFile, 'utf8');
       assert.match(logContent, /tool=Bash command=npm publish/);
+      if (process.platform !== 'win32') {
+        const mode = fs.statSync(logFile).mode & 0o777;
+        assert.strictEqual(mode, 0o600, `expected 0600, got ${mode.toString(8)}`);
+      }
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }

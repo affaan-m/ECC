@@ -68,7 +68,10 @@ if (process.platform === 'win32') {
     ['truncated PEM private key block', `-----BEGIN OPENSSH ${'PRIVATE'} KEY-----\n${pemCanary}`, pemCanary],
     ['GitHub classic token', `GH_PAT=${'ghp_'}CANARY${'0'.repeat(30)}`, `CANARY${'0'.repeat(30)}`],
     ['GitHub fine-grained token', `use ${'github_pat_'}CANARY_${'1'.repeat(40)}`, `CANARY_${'1'.repeat(40)}`],
-    ['AWS access key id', `key id ${'AKIA'}CANARY0EXAMPLE00`, 'CANARY0EXAMPLE00']
+    ['AWS access key id', `key id ${'AKIA'}CANARY0EXAMPLE00`, 'CANARY0EXAMPLE00'],
+    ['bare Anthropic API key', `client = Anthropic(api_key="${'sk-ant-'}CANARY${'0'.repeat(30)}")`, `CANARY${'0'.repeat(30)}`],
+    ['bare OpenAI project API key', `key: ${'sk-proj-'}CANARY_${'1'.repeat(40)}`, `CANARY_${'1'.repeat(40)}`],
+    ['bare JWT token', `token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.${'CANARY_' + '2'.repeat(30)}`, `CANARY_${'2'.repeat(30)}`]
   ]) {
     test(`redacts ${label} before persisting tool input`, () => {
       const records = capture('pre', { tool_name: 'Write',
@@ -92,7 +95,9 @@ if (process.platform === 'win32') {
     ['GitHub fine-grained token after tab', `col\t${'github_pat_'}CANARY_${'1'.repeat(40)}`,
       `CANARY_${'1'.repeat(40)}`],
     ['AWS access key id after CRLF', `id:\r\n${'AKIA'}CANARY0EXAMPLE00`, 'CANARY0EXAMPLE00'],
-    ['AWS session key id after newline', `id:\n${'ASIA'}CANARY0EXAMPLE00`, 'CANARY0EXAMPLE00']
+    ['AWS session key id after newline', `id:\n${'ASIA'}CANARY0EXAMPLE00`, 'CANARY0EXAMPLE00'],
+    ['Anthropic key after newline', `auth:\n${'sk-ant-'}CANARY${'0'.repeat(30)}`, `CANARY${'0'.repeat(30)}`],
+    ['JWT token after tab', `bearer:\t${'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.'}CANARY_${'2'.repeat(30)}`, `CANARY_${'2'.repeat(30)}`]
   ]) {
     test(`redacts ${label} in structured tool output`, () => {
       const records = capture('post', { tool_name: 'Read',
