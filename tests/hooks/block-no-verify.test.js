@@ -2586,6 +2586,142 @@ if (test('blocks split variable resolution through bash -c (A="git"; B="commit -
   assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
 })) passed++; else failed++;
 
+if (test('blocks eval with expanded comment and git commit bypass (X="#"; Y=""; eval \'$X; git commit --no-verify\' "$Y")', () => {
+  const r = runHook({ tool_input: { command: 'X="#"; Y=""; eval \'$X; git commit --no-verify\' "$Y"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks prefix assignment concealing pre-command value in bash -c (X="git commit --no-verify"; X="echo safe" bash -c "$X")', () => {
+  const r = runHook({ tool_input: { command: 'X="git commit --no-verify"; X="echo safe" bash -c "$X"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks conditional assignment alternative evaluated in eval (X="echo safe"; true && X="git commit --no-verify"; eval "$X")', () => {
+  const r = runHook({ tool_input: { command: 'X="echo safe"; true && X="git commit --no-verify"; eval "$X"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks parameter expansion default operator in bash -c (X="git commit --no-verify"; bash -c "${X:-}")', () => {
+  const r = runHook({ tool_input: { command: 'X="git commit --no-verify"; bash -c "${X:-}"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks parameter expansion default fallback in bash -c (X="git commit --no-verify"; bash -c "${X:-true}")', () => {
+  const r = runHook({ tool_input: { command: 'X="git commit --no-verify"; bash -c "${X:-true}"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks parameter expansion unset default in bash -c (bash -c "${X:-git commit --no-verify}")', () => {
+  const r = runHook({ tool_input: { command: 'bash -c "${X:-git commit --no-verify}"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks ordinary environment variable passed to child shell (env X="git commit --no-verify" bash -c \'eval "$X"\')', () => {
+  const r = runHook({ tool_input: { command: 'env X="git commit --no-verify" bash -c \'eval "$X"\'' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('allows harmless chained dynamic assignments without budget exhaustion (A=$X; B=$X; ...; echo safe)', () => {
+  const r = runHook({ tool_input: { command: 'A=$X; B=$X; C=$X; D=$X; E=$X; F=$X; G=$X; H=$X; I=$X; J=$X; echo safe' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks single-quoted reference preserved in dynamic shell source (\'echo $X; git commit --no-verify\'"$EMPTY")', () => {
+  const r = runHook({ tool_input: { command: "EMPTY=; X='#'; bash -c \"'echo $X; git commit --no-verify'\\\"$EMPTY\\\"\"" } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks retrieved program text without recursive expansion (X="#"; CMD=\'echo $X; git commit --no-verify\'; bash -c "$CMD")', () => {
+  const r = runHook({ tool_input: { command: 'X="#"; CMD=\'echo $X; git commit --no-verify\'; bash -c "$CMD"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks assignment-time resolved variable before subsequent overwrite (A="git commit --no-verify"; X="$A"; A="echo safe"; bash -c "$X")', () => {
+  const r = runHook({ tool_input: { command: 'A="git commit --no-verify"; X="$A"; A="echo safe"; bash -c "$X"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks eval expanding variable with empty assignment alternative (EMPTY=; X="git commit --no-verify $EMPTY"; eval "$X")', () => {
+  const r = runHook({ tool_input: { command: 'EMPTY=; X="git commit --no-verify $EMPTY"; eval "$X"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks repeated expansion with literal parameter in argument (X=\'$Y\'; Y=--; git commit $X --no-verify)', () => {
+  const r = runHook({ tool_input: { command: 'X=\'$Y\'; Y=--; git commit $X --no-verify' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks config override assembled via prefix variable (P="-c core.hooksPath"; git "$P=/dev/null" commit -m x)', () => {
+  const r = runHook({ tool_input: { command: 'P="-c core.hooksPath"; git "$P=/dev/null" commit -m x' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: Overriding core.hooksPath is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks partially resolved dynamic config key (P=core; git -c "$P.$KEY=/dev/null" commit -m x)', () => {
+  const r = runHook({ tool_input: { command: 'P=core; git -c "$P.$KEY=/dev/null" commit -m x' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: Overriding core.hooksPath is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks partially resolved dynamic git subcommand (P=com; git "$P$TAIL" --no-verify)', () => {
+  const r = runHook({ tool_input: { command: 'P=com; git "$P$TAIL" --no-verify' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git/);
+})) passed++; else failed++;
+
+if (test('blocks unquoted dynamic argument with mixed quotes on git commit (OPTS=" test --no-verify"; git commit -m""$OPTS)', () => {
+  const r = runHook({ tool_input: { command: 'OPTS=" test --no-verify"; git commit -m""$OPTS' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks unquoted arguments split by active IFS (IFS=,; FLAGS="--no-verify,-m,x"; git commit $FLAGS)', () => {
+  const r = runHook({ tool_input: { command: 'IFS=,; FLAGS="--no-verify,-m,x"; git commit $FLAGS' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks git commit when unquoted variable expands to empty (EMPTY=; git $EMPTY commit --no-verify)', () => {
+  const r = runHook({ tool_input: { command: 'EMPTY=; git $EMPTY commit --no-verify' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git commit/);
+})) passed++; else failed++;
+
+if (test('blocks dynamic command substitution after empty prefix (PREFIX=; git "$PREFIX$(printf commit)" --no-verify)', () => {
+  const r = runHook({ tool_input: { command: 'PREFIX=; git "$PREFIX$(printf commit)" --no-verify' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git/);
+})) passed++; else failed++;
+
+if (test('blocks dynamic rebase with -m and --no-verify (SUB=rebase; git $SUB -m --no-verify main)', () => {
+  const r = runHook({ tool_input: { command: 'SUB=rebase; git $SUB -m --no-verify main' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git/);
+})) passed++; else failed++;
+
+if (test('blocks dynamic commit with -n and numeric file argument (SUB=commit; git $SUB -n 5 -m x)', () => {
+  const r = runHook({ tool_input: { command: 'SUB=commit; git $SUB -n 5 -m x' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.match(r.stderr, /BLOCKED: --no-verify flag is not allowed with git/);
+})) passed++; else failed++;
+
+if (test('allows harmless quoted parameter expansion as commit message (OPTS="harmless message"; git commit -m "$OPTS")', () => {
+  const r = runHook({ tool_input: { command: 'OPTS="harmless message"; git commit -m "$OPTS"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}`);
+})) passed++; else failed++;
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 

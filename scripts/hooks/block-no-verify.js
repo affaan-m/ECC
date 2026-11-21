@@ -37,14 +37,14 @@ let raw = '';
 // See https://git-scm.com/docs/git-config — "The variable names are
 // case-insensitive."
 function isHookRedirectConfigKey(key) {
-  const normalized = key.toLowerCase();
+  const normalized = key.trim().toLowerCase();
   return normalized === 'core.hookspath' || normalized === 'include.path'
     || /^includeif\..*\.path$/.test(normalized);
 }
 
 /** Return the key from a Git configuration operand, ignoring its value. */
 function configKey(setting) {
-  return setting.split('=', 1)[0];
+  return setting.split('=', 1)[0].trim();
 }
 
 const COMMIT_OPTIONS_WITH_VALUE = new Set([
@@ -337,15 +337,11 @@ function findGitBypassFlag(words, budget, start, command) {
 
 // Scan arguments for hook-bypass flags when the Git subcommand is dynamically expanded.
 function findDynamicGitBypassFlag(words, budget, start) {
-  let skipNext = false;
   for (let index = start; index < words.length; index++) {
     const value = words[index].value;
     budget.spend(value.length + 1);
-    if (skipNext) { skipNext = false; continue; }
     if (value === '--') break;
-    if (commitOptionConsumesNextValue(value)) { skipNext = true; continue; }
     if (commitOptionContainsInlineValue(value)) continue;
-    if (optionConsumesNextValue(value, PUSH_OPTIONS_WITH_VALUE)) { skipNext = true; continue; }
     if (isNoVerifyLongFlag(value)) return true;
     if (isCommitNoVerifyShortFlag(value)) return true;
   }
@@ -410,6 +406,109 @@ function assignmentValues(prior, operand, append, dynamic, budget) {
     values.add(append ? base : '');
   }
   return [...values];
+}
+
+const PARAMETER_EXPANSION = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([-+=?])|([-+=?]))?([^}]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/;
+
+function hasUnquotedExpansion(raw) {
+  if (!raw || !raw.includes('$')) return false;
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (ch === '\\' && !inSingle) { i++; continue; }
+    if (ch === "'" && !inDouble) { inSingle = !inSingle; continue; }
+    if (ch === '"' && !inSingle) { inDouble = !inDouble; continue; }
+    if (ch === '$' && !inSingle && !inDouble) return true;
+  }
+  return false;
+}
+
+function escapeRegex(string) {
+  return string.replace(/[/\-\\^$*+?.()|[\]{}]/g, '\\$&');
+}
+
+function applyParameterOperator(colonOp, rawOp, isSetAndNonEmpty, isSet, val, arg) {
+  if (colonOp === '-') return isSetAndNonEmpty ? val : (arg ?? '');
+  if (rawOp === '-') return isSet ? val : (arg ?? '');
+  if (colonOp === '+') return isSetAndNonEmpty ? (arg ?? '') : '';
+  if (rawOp === '+') return isSet ? (arg ?? '') : '';
+  return null;
+}
+
+function evaluateParameter(match, state, budget) {
+  const fullMatch = match[0];
+  const braced = match[1];
+  const colonOp = match[2];
+  const rawOp = match[3];
+  const arg = match[4];
+  const bare = match[5];
+
+  const name = braced || bare;
+  budget.spend(name.length + 1);
+  const hasVar = Boolean(state?.variables?.has(name));
+  const val = hasVar ? state.variables.get(name) : undefined;
+  const isSetAndNonEmpty = hasVar && val !== '' && val !== undefined;
+  const isSet = hasVar && val !== undefined;
+
+  let expanded = applyParameterOperator(colonOp, rawOp, isSetAndNonEmpty, isSet, val, arg);
+  if (expanded === null) {
+    if (colonOp === '=' || rawOp === '=') {
+      expanded = isSetAndNonEmpty ? val : (arg ?? '');
+      if (!isSetAndNonEmpty && state?.variables) state.variables.set(name, expanded);
+    } else {
+      expanded = hasVar ? val : fullMatch;
+    }
+  }
+
+  budget.spend(expanded.length);
+  return { expanded, length: fullMatch.length };
+}
+
+function resolveShellSource(code, state, budget) {
+  if (!code || typeof code !== 'string') return code;
+  let result = '';
+  let i = 0;
+  const len = code.length;
+
+  while (i < len) {
+    const ch = code[i];
+
+    // Single quotes: literal in shell, do not expand parameters inside single quotes
+    if (ch === "'") {
+      const close = code.indexOf("'", i + 1);
+      if (close === -1) {
+        result += code.slice(i);
+        break;
+      }
+      result += code.slice(i, close + 1);
+      i = close + 1;
+      continue;
+    }
+
+    // Escaped character: \c
+    if (ch === '\\' && i + 1 < len) {
+      result += code.slice(i, i + 2);
+      i += 2;
+      continue;
+    }
+
+    // Parameter expansion: ${...} or $NAME
+    if (ch === '$') {
+      const match = PARAMETER_EXPANSION.exec(code.slice(i));
+      if (match && match.index === 0) {
+        const evaluated = evaluateParameter(match, state, budget);
+        result += evaluated.expanded;
+        i += evaluated.length;
+        continue;
+      }
+    }
+
+    result += ch;
+    i++;
+  }
+
+  return result;
 }
 
 class UnsupportedEnvSplitEscape extends Error {}
@@ -485,27 +584,30 @@ function executableWords(words, budget, inherited = new Map(), callerValues = in
       const operand = value.slice(equals + 1);
       const count = environments.length;
       budget.spend(count + 1);
-      if (GIT_ENV_NAME.test(key)) {
-        for (let n = 0; n < count; n++) {
-          const environment = environments[n];
-          // Shell prefix appends can see local values, even when not exported.
-          // Repeated operands use the prior outcome in this same prefix.
-          const prior = prefixAssignments.has(key) && environment.has(key)
-            ? environment.get(key) : callerValues.get(key);
-          const values = assignmentValues(prior, operand, append, dynamic, budget);
+      const resolvedOperand = dynamic ? resolveShellSource(operand, { variables: callerValues }, budget) : operand;
+      const isStillDynamic = dynamic && (resolvedOperand.includes('\u0000') || /\$(?:[A-Za-z_]|\{)/.test(resolvedOperand));
+      for (let n = 0; n < count; n++) {
+        const environment = environments[n];
+        // Shell prefix appends can see local values, even when not exported.
+        // Repeated operands use the prior outcome in this same prefix.
+        const prior = prefixAssignments.has(key) && environment.has(key)
+          ? environment.get(key) : callerValues.get(key);
+        const values = assignmentValues(prior, resolvedOperand, append, isStillDynamic, budget);
+        if (GIT_ENV_NAME.test(key) && environments.length < 8) {
           for (const alternative of values.slice(1)) {
+            if (environments.length >= 8) break;
             budget.spend(environment.size + 1);
             const variant = new Map(environment);
             variant.set(key, alternative);
             environments.push(variant);
           }
-          environment.set(key, values[0]);
         }
+        environment.set(key, values[0]);
       }
       // Retain ordered operations so same-shell states apply each append once.
       if (!prefixAssignments.has(key)) prefixAssignments.set(key, []);
       prefixAssignments.get(key).push({ value: operand, append, dynamic });
-      if (dynamic) dynamicAssignments.add(key);
+      if (dynamic && GIT_ENV_NAME.test(key)) dynamicAssignments.add(key);
     }
   }
   function resetEnvironment(name) {
@@ -936,7 +1038,7 @@ function commandRole(words, budget) {
     const codeWords = words.slice(words[1]?.value === '--' ? 2 : 1);
     const code = codeWords.map(word => word.value).join(' ');
     const dynamic = codeWords.some(word => word.dynamic);
-    return { kind: 'shell', code, dynamic, stdin: false };
+    return { kind: 'shell', code, codeWords, dynamic, stdin: false };
   }
   if (name === 'sed') {
     const scripts = sedScriptParts(words, budget);
@@ -1211,17 +1313,26 @@ function updateShellState(state, normalized, budget) {
   const states = [state];
   const result = (handled, changed, uncertain = false) => ({ handled, changed, uncertain, states });
   if (!local) return result(false, false);
+  const MAX_STATES = 8;
   function assign(name, value, dynamic = false, append = false) {
     const count = states.length;
     budget.spend(count + 1);
+    const isGitEnv = GIT_ENV_NAME.test(name);
     for (let n = 0; n < count; n++) {
       const current = states[n];
       if (current.readonly.has(name)) continue;
-      const values = assignmentValues(current.variables.get(name), value, append, dynamic, budget);
-      for (const alternative of values.slice(1)) {
-        const variant = copyShellState(current, budget);
-        variant.variables.set(name, alternative);
-        states.push(variant);
+      const resolvedValue = dynamic ? resolveShellSource(value, current, budget) : value;
+      const isStillDynamic = dynamic && (resolvedValue.includes('\u0000') || /\$(?:[A-Za-z_]|\{)/.test(resolvedValue));
+      const values = isGitEnv
+        ? assignmentValues(current.variables.get(name), resolvedValue, append, isStillDynamic, budget)
+        : [append ? (current.variables.get(name) || '') + resolvedValue : resolvedValue];
+      if (isGitEnv && states.length < MAX_STATES) {
+        for (const alternative of values.slice(1)) {
+          if (states.length >= MAX_STATES) break;
+          const variant = copyShellState(current, budget);
+          variant.variables.set(name, alternative);
+          states.push(variant);
+        }
       }
       current.variables.set(name, values[0]);
     }
@@ -1315,39 +1426,36 @@ function applyDeclaration(current, key, equals, declaration) {
   if (readonly || uncertain) current.readonly.add(key);
 }
 
-const PARAMETER_EXPANSION = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g;
-
-function resolveShellSource(code, state, normalized, budget) {
-  if (!code || typeof code !== 'string') return code;
-  let current = code;
-  let replaced = true;
-  let iterations = 0;
-  while (replaced && iterations < 5) {
-    replaced = false;
-    iterations++;
-    current = current.replace(PARAMETER_EXPANSION, (match, braced, bare) => {
-      const name = braced || bare;
-      budget.spend(name.length + 1);
-      let val = null;
-      if (normalized?.prefixAssignments?.has(name)) {
-        const ops = normalized.prefixAssignments.get(name);
-        val = ops[ops.length - 1]?.value;
-      } else if (state?.variables?.has(name)) {
-        val = state.variables.get(name);
-      }
-      if (val !== null && val !== undefined && val !== match) {
-        replaced = true;
-        return val;
-      }
-      return match;
-    });
+function splitResolvedWord(word, resolved, isUnquoted, ifsRegex) {
+  const stillDynamic = resolved.includes('\u0000') || /\$(?:[A-Za-z_]|\{)/.test(resolved);
+  if (isUnquoted && ifsRegex.test(resolved.trim())) {
+    const parts = resolved.trim().split(ifsRegex);
+    const tokens = [];
+    for (const part of parts) {
+      if (!part) continue;
+      const partStillDynamic = part.includes('\u0000') || /\$(?:[A-Za-z_]|\{)/.test(part);
+      tokens.push({
+        value: part,
+        dynamic: Boolean(word.dynamic && partStillDynamic),
+        quoted: false
+      });
+    }
+    return tokens;
   }
-  return current;
+  return [{
+    value: resolved,
+    dynamic: Boolean(word.dynamic && stillDynamic),
+    quoted: word.quoted
+  }];
 }
 
 function resolveGitWords(words, state, normalized, budget) {
   if (!state && !normalized) return words;
   const result = [];
+  const ifs = state?.variables?.get('IFS') ?? ' \t\n';
+  const isDefaultIfs = ifs === ' \t\n' || ifs === ' ' || ifs === '';
+  const ifsRegex = isDefaultIfs ? /\s+/ : new RegExp(`[${escapeRegex(ifs)}]+`);
+
   for (let i = 0; i < words.length; i++) {
     const word = words[i];
     budget.spend(word.value.length + 1);
@@ -1355,27 +1463,16 @@ function resolveGitWords(words, state, normalized, budget) {
       result.push(word);
       continue;
     }
-    const resolved = resolveShellSource(word.value, state, normalized, budget);
+    const resolved = resolveShellSource(word.value, state, budget);
     if (resolved === word.value) {
       result.push(word);
       continue;
     }
-    if (!word.quoted && /\s+/.test(resolved.trim())) {
-      const parts = resolved.trim().split(/\s+/);
-      for (const part of parts) {
-        result.push({
-          value: part,
-          dynamic: false,
-          quoted: false
-        });
-      }
-    } else {
-      result.push({
-        value: resolved,
-        dynamic: false,
-        quoted: word.quoted
-      });
+    const isUnquoted = !word.quoted || hasUnquotedExpansion(word.raw);
+    if (isUnquoted && resolved === '') {
+      continue;
     }
+    result.push(...splitResolvedWord(word, resolved, isUnquoted, ifsRegex));
   }
   return result;
 }
@@ -1459,11 +1556,23 @@ function checkCommand(input) {
       : role.kind === 'git' ? checkGitWords(gitWords, budget, 0, environment) : null;
     if (reason) return reason;
     if (role.code) {
-      const code = role.dynamic
-        ? resolveShellSource(role.code, state, normalized, budget)
-        : role.code;
-      if (normalized.local && words[0]?.value === 'eval') frame.sameShellCode = code;
-      else frame.childEnvironments.push({ code, opaque: false, environment });
+      if (normalized.local && words[0]?.value === 'eval') {
+        const parts = [];
+        for (const w of (role.codeWords || [])) {
+          if (w.dynamic) {
+            parts.push(resolveShellSource(w.value, state, budget));
+          } else {
+            parts.push(w.value);
+          }
+        }
+        const code = parts.length ? parts.join(' ') : role.code;
+        frame.sameShellPrograms.push({ code, state });
+      } else {
+        const code = role.dynamic
+          ? resolveShellSource(role.code, state, budget)
+          : role.code;
+        frame.childEnvironments.push({ code, opaque: false, environment });
+      }
     }
     if (role.kind === 'sedExec') {
       // Fragments sed will hand to the shell are scanned as real shell
@@ -1506,19 +1615,20 @@ function checkCommand(input) {
   }
   // Commit the command's resulting states and queue whatever it would run.
   function finishCommand(frame) {
-    const { command, context, parent, conditional, sameShellCode, changed } = frame;
+    const { command, context, parent, conditional, sameShellPrograms, changed } = frame;
     context.states = frame.alternatives;
     // Bash lastpipe and zsh can execute a final pipeline builtin in the
     // parent shell. Preserve that possible state as well as isolation; this
     // is deliberately conservative when the host shell/options are unknown.
-    if (command.pipeFrom && !command.pipeTo && !command.background && (changed || sameShellCode)) pending.push({ mergeInto: parent, context });
+    if (command.pipeFrom && !command.pipeTo && !command.background && (changed || sameShellPrograms.length > 0)) pending.push({ mergeInto: parent, context });
     for (const child of frame.childEnvironments) enqueue(child.code, child.opaque, { states: [shellState(child.environment, budget)] });
-    if (sameShellCode) {
+    for (const prog of sameShellPrograms) {
+      if (!prog.code) continue;
       // A conditional eval may not run. Its nested scans have fresh lexical
       // roots, so preserve the skipped branch across all delayed updates.
       const evaluated = conditional ? copyShellContext(context, budget) : context;
       if (conditional) pending.push({ mergeInto: context, context: evaluated });
-      enqueue(sameShellCode, false, evaluated);
+      enqueue(prog.code, false, evaluated);
     }
   }
   // Process one scanned command task. Returns a block reason or null.
@@ -1537,7 +1647,7 @@ function checkCommand(input) {
     const frame = {
       task, command, context, parent,
       conditional: isConditional(command.scope),
-      alternatives: [], childEnvironments: [], sameShellCode: null, changed: false
+      alternatives: [], childEnvironments: [], sameShellPrograms: [], changed: false
     };
     budget.spend(context.states.length + 1);
     for (const state of context.states) {
