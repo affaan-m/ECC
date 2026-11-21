@@ -282,6 +282,12 @@ jobs:
           ECC_RELEASE_SHA256: ${{ needs.pack-installer.outputs.package_sha256 }}
         run: node tests/ci/packed-artifact-lifecycle.js
 
+      - name: Verify packed Copilot quality gate
+        env:
+          ECC_RELEASE_PACKAGE: release-artifacts/${{ needs.pack-installer.outputs.package_file }}
+          ECC_RELEASE_SHA256: ${{ needs.pack-installer.outputs.package_sha256 }}
+        run: node tests/ci/copilot-packed-quality.js
+
   validate:
     name: Validate Components
     runs-on: ubuntu-latest
