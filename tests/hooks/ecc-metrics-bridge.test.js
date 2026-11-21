@@ -131,6 +131,17 @@ function runTests() {
   else failed++;
 
   if (
+    test('Read calls paging the same file at different offsets hash differently', () => {
+      const h1 = hashToolCall('Read', { file_path: '/repo/big.log', offset: 1, limit: 2000 });
+      const h2 = hashToolCall('Read', { file_path: '/repo/big.log', offset: 2001, limit: 2000 });
+      assert.notStrictEqual(h1, h2);
+      assert.strictEqual(h1, hashToolCall('Read', { file_path: '/repo/big.log', offset: 1, limit: 2000 }));
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('non-file tools hash by stable input to avoid false loop collisions', () => {
       const h1 = hashToolCall('Glob', { pattern: '**/*.js', path: '/repo/a' });
       const h2 = hashToolCall('Glob', { pattern: '**/*.md', path: '/repo/a' });

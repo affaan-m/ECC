@@ -78,9 +78,9 @@ function hashToolCall(toolName, toolInput) {
         })
       )
       .digest('hex');
-  } else if (toolInput?.file_path) {
-    key = String(toolInput.file_path);
   } else {
+    // Hash every parameter: Read pages one file through offset/limit, so the
+    // path alone made consecutive pages of the same file look like a loop.
     key = stableStringify(toolInput || {}).slice(0, HASH_INPUT_LIMIT);
   }
   return crypto.createHash('sha256').update(`${name}:${key}`).digest('hex').slice(0, 8);
