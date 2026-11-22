@@ -44,12 +44,17 @@ function isClassifierNotice(text) {
   return CLASSIFIER_NOTICE.test(String(text).replace(/\s+/g, ' ').trim());
 }
 
+/** Visit immutable record fragments in their original byte order. */
+function* transcriptFragmentBuffers(fragment) {
+  for (let current = fragment; current; current = current.next) yield current.bytes;
+}
+
 /** Read complete JSONL records backwards; breaking the iterator closes the file. */
 function* transcriptLinesBackwards(transcriptPath) {
   const descriptor = fs.openSync(transcriptPath, 'r');
   try {
     let position = fs.fstatSync(descriptor).size;
-    let pending = [];
+    let pending = null;
     while (position > 0) {
       const length = Math.min(TRANSCRIPT_READ_BYTES, position);
       position -= length;
@@ -65,18 +70,18 @@ function* transcriptLinesBackwards(transcriptPath) {
         const newline = buffer.lastIndexOf(0x0a, end - 1);
         if (newline < 0) break;
         const segment = buffer.subarray(newline + 1, end);
-        if (pending.length > 0) {
-          pending.push(segment);
-          yield Buffer.concat(pending.reverse()).toString('utf8');
-          pending = [];
+        if (pending) {
+          const fragments = { bytes: segment, next: pending };
+          yield Buffer.concat(Array.from(transcriptFragmentBuffers(fragments))).toString('utf8');
+          pending = null;
         } else if (segment.length > 0) {
           yield segment.toString('utf8');
         }
         end = newline;
       }
-      if (end > 0) pending.push(buffer.subarray(0, end));
+      if (end > 0) pending = { bytes: buffer.subarray(0, end), next: pending };
     }
-    if (pending.length > 0) yield Buffer.concat(pending.reverse()).toString('utf8');
+    if (pending) yield Buffer.concat(Array.from(transcriptFragmentBuffers(pending))).toString('utf8');
   } finally {
     fs.closeSync(descriptor);
   }

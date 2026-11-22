@@ -16,19 +16,18 @@ const user = content => JSON.stringify({ type: 'user', message: { content } });
 const tool = content => JSON.stringify({ type: 'tool', content });
 
 function loadSummary({ shortRead = Infinity, failure = null } = {}) {
-  const stats = { bytes: 0, opens: 0, closes: 0, active: new Set(), calls: [] };
+  let stats = { bytes: 0, opens: 0, closes: 0, active: [], calls: [] };
   const facade = Object.freeze({
     ...fs,
     readFileSync(filename, ...args) {
       if (failure) throw new Error('injected transcript read failure');
       const result = fs.readFileSync(filename, ...args);
-      stats.bytes += Buffer.byteLength(result);
+      stats = { ...stats, bytes: stats.bytes + Buffer.byteLength(result) };
       return result;
     },
     openSync(...args) {
       const fd = fs.openSync(...args);
-      stats.opens += 1;
-      stats.active.add(fd);
+      stats = { ...stats, opens: stats.opens + 1, active: [...stats.active, fd] };
       return fd;
     },
     fstatSync(fd) {
@@ -39,24 +38,26 @@ function loadSummary({ shortRead = Infinity, failure = null } = {}) {
       if (failure === 'read') throw new Error('injected read failure');
       if (failure === 'eof') return 0;
       const count = fs.readSync(fd, buffer, offset, Math.min(length, shortRead), position);
-      stats.bytes += count;
+      stats = { ...stats, bytes: stats.bytes + count };
       return count;
     },
     closeSync(fd) {
       fs.closeSync(fd);
-      stats.closes += 1;
-      stats.active.delete(fd);
+      stats = { ...stats, closes: stats.closes + 1, active: stats.active.filter(value => value !== fd) };
     }
   });
   const sandbox = {
     module: { exports: {} },
     process: { env: {}, platform: process.platform },
     require: name => name === 'fs' ? facade : name === 'child_process'
-      ? { spawnSync: (...args) => { stats.calls.push(args); return { status: 0, stdout: 'saved summary' }; } }
+      ? { spawnSync: (...args) => {
+        stats = { ...stats, calls: [...stats.calls, args] };
+        return { status: 0, stdout: 'saved summary' };
+      } }
       : realRequire(name)
   };
   vm.runInNewContext(source, sandbox, { filename: summaryPath });
-  return { api: sandbox.module.exports, stats };
+  return { api: sandbox.module.exports, getStats: () => stats };
 }
 
 let sequence = 0;
@@ -80,11 +81,11 @@ try {
   const expected = Array.from({ length: 25 }, (_, index) => `**User:** recent ${index + 5}`).join('\n\n');
 
   test('reads only a small tail of a large transcript once the recent window is full', () => {
-    const { api, stats } = loadSummary();
+    const { api, getStats } = loadSummary();
     assert.strictEqual(api.extractConversationText(largeFile), expected);
-    assert.ok(stats.bytes <= 128 * 1024, `read ${stats.bytes} bytes for 25 recent turns`);
-    assert.strictEqual(stats.active.size, 0, 'early exit must close the transcript');
-    assert.strictEqual(stats.opens, stats.closes);
+    assert.ok(getStats().bytes <= 128 * 1024, `read ${getStats().bytes} bytes for 25 recent turns`);
+    assert.strictEqual(getStats().active.length, 0, 'early exit must close the transcript');
+    assert.strictEqual(getStats().opens, getStats().closes);
   });
 
   test('decodes complete UTF-8 records across chunks and short reads with CRLF and no final newline', () => {
@@ -93,44 +94,44 @@ try {
       user('first'), user(content), '{broken',
       JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'last response' }] } })
     ].join('\r\n'));
-    const { api, stats } = loadSummary({ shortRead: 17 });
+    const { api, getStats } = loadSummary({ shortRead: 17 });
     assert.strictEqual(api.extractConversationText(file), [
       '**User:** first', `**User:** ${content.slice(0, 400)}`, '**Claude:** last response'
     ].join('\n\n'));
-    assert.strictEqual(stats.active.size, 0);
-    assert.strictEqual(stats.opens, stats.closes);
+    assert.strictEqual(getStats().active.length, 0);
+    assert.strictEqual(getStats().opens, getStats().closes);
   });
 
   test('continues past a large non-conversation tail instead of imposing a byte cutoff', () => {
     const file = transcript(recent.join('\n') + '\n' + (tool('x'.repeat(1000)) + '\n').repeat(512));
-    const { api, stats } = loadSummary();
+    const { api, getStats } = loadSummary();
     assert.strictEqual(api.extractConversationText(file), expected);
-    assert.ok(stats.bytes > 512 * 1024, 'complete skipped records must not hide older usable turns');
-    assert.strictEqual(stats.active.size, 0);
+    assert.ok(getStats().bytes > 512 * 1024, 'complete skipped records must not hide older usable turns');
+    assert.strictEqual(getStats().active.length, 0);
   });
 
   test('read failures and unexpected EOF return the existing fallback without leaking descriptors', () => {
     const file = transcript(user('preserve fallback') + '\n');
     for (const failure of ['stat', 'read', 'eof']) {
-      const { api, stats } = loadSummary({ failure });
+      const { api, getStats } = loadSummary({ failure });
       assert.strictEqual(api.extractConversationText(file), null, failure);
-      assert.strictEqual(stats.active.size, 0, failure);
-      assert.strictEqual(stats.opens, stats.closes, failure);
+      assert.strictEqual(getStats().active.length, 0, failure);
+      assert.strictEqual(getStats().opens, getStats().closes, failure);
     }
   });
 
   test('the actual summary generation path preserves the prompt while avoiding old-history I/O', () => {
-    const { api, stats } = loadSummary();
+    const { api, getStats } = loadSummary();
     assert.strictEqual(api.generateSessionSummary(largeFile), 'saved summary');
-    assert.strictEqual(stats.calls.length, 1);
-    const [command, args, options] = stats.calls[0];
+    assert.strictEqual(getStats().calls.length, 1);
+    const [command, args, options] = getStats().calls[0];
     assert.strictEqual(command, 'claude');
     assert.deepStrictEqual(Array.from(args), ['--model', 'haiku', '-p']);
     assert.ok(options.input.includes(expected));
     assert.ok(!options.input.includes('recent 4\n'));
     assert.strictEqual(options.env.ECC_SKIP_LLM_SUMMARY, '1');
-    assert.ok(stats.bytes <= 128 * 1024, `summary generation read ${stats.bytes} bytes`);
-    assert.strictEqual(stats.active.size, 0);
+    assert.ok(getStats().bytes <= 128 * 1024, `summary generation read ${getStats().bytes} bytes`);
+    assert.strictEqual(getStats().active.length, 0);
   });
 
   test('the pre-compact CLI persists a summary generated from the same recent conversation', () => {
