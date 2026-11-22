@@ -480,6 +480,7 @@ export async function createEccRuntime(input: {
     // Detect package manager (fs only: no shell probing, so this works on Windows).
     const lockfiles: Record<string, string> = {
       "bun.lockb": "bun",
+      "bun.lock": "bun",
       "pnpm-lock.yaml": "pnpm",
       "yarn.lock": "yarn",
       "package-lock.json": "npm",

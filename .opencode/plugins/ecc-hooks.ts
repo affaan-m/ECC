@@ -75,6 +75,7 @@ const PLUGIN_DIR = resolvePluginDir()
 // future layout double-instantiates this module. The guard applies to V2
 // domain registration only; the V1 factory stays constructible on demand
 // (tests and legacy loaders instantiate it per project).
+const ACTIVE_REGISTRATIONS_KEY = Symbol.for("ecc.hooks.active-registrations")
 const GUARD_KEY = Symbol.for("ecc.hooks.registered-directories")
 const registeredDirectories: Set<string> =
   ((globalThis as any)[GUARD_KEY] as Set<string> | undefined) ??
@@ -105,9 +106,17 @@ export const ECCHooksPluginDefinition = {
   async setup(ctx: any): Promise<() => void> {
     const directory: string = ctx?.location?.directory ?? process.cwd()
 
-    if (registeredDirectories.has(directory)) {
-      return () => {}
+    // OpenCode hot-reloads plugins on file changes. Replacing the previous
+    // registration set keeps exactly one active set per directory and lets a
+    // reloaded instance register its hooks instead of returning a dead no-op.
+    const active: Map<string, { dispose?: () => Promise<void> | void }[]> =
+      ((globalThis as any)[ACTIVE_REGISTRATIONS_KEY] ??= new Map())
+    const previous = active.get(directory)
+    if (previous) {
+      await disposeRegistrations(previous)
+      active.delete(directory)
     }
+    registeredDirectories.delete(directory)
     registeredDirectories.add(directory)
 
     const runtime = await createEccRuntime({ directory, worktree: directory }, PLUGIN_DIR)
@@ -248,7 +257,7 @@ export const ECCHooksPluginDefinition = {
             },
             execute: async (input: any, context: any) => {
               const mod = await loadToolModule("changed-files", PLUGIN_DIR)
-              const result = await mod.execute(input ?? {}, context ?? { directory: worktreePath, worktree: worktreePath })
+              const result = await mod.execute(input ?? {}, { ...(context ?? {}), directory: context?.directory ?? worktreePath, worktree: context?.worktree ?? worktreePath })
               return { content: String(result) }
             },
           })
@@ -267,7 +276,7 @@ export const ECCHooksPluginDefinition = {
             },
             execute: async (input: any, context: any) => {
               const mod = await loadToolModule("dependency-analyzer", PLUGIN_DIR)
-              const result = await mod.execute(input ?? {}, context ?? { directory: worktreePath, worktree: worktreePath })
+              const result = await mod.execute(input ?? {}, { ...(context ?? {}), directory: context?.directory ?? worktreePath, worktree: context?.worktree ?? worktreePath })
               return { content: String(result) }
             },
           })
@@ -337,9 +346,12 @@ export const ECCHooksPluginDefinition = {
       throw error
     }
 
+    active.set(directory, registrations)
+
     return async () => {
       controller.abort()
       registeredDirectories.delete(directory)
+      active.delete(directory)
       await disposeRegistrations(registrations)
     }
   },

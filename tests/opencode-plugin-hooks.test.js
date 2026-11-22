@@ -441,6 +441,18 @@ async function main() {
       },
     ],
     [
+      "shell.env detects the Bun 1.2 text lockfile",
+      async () => withTempProject(["bun.lock"], async (projectDir) => {
+        const client = createClient()
+        const $ = createFailingShell()
+        const hooks = await ECCHooksPlugin({ client, $, directory: projectDir })
+
+        const output = { env: {} }
+        await hooks["shell.env"]({ cwd: projectDir }, output)
+        assert.strictEqual(output.env.PACKAGE_MANAGER, "bun")
+      }),
+    ],
+    [
       "shell.env ignores directories named like lockfiles and language markers",
       async () => {
         const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-opencode-plugin-"))
@@ -1084,23 +1096,34 @@ async function main() {
         assert.ok(added.includes("changed-files"))
         assert.ok(added.includes("dependency-analyzer"))
 
-        // A second setup for the SAME directory must not double-register.
+        // Tool definitions receive V2 tool contexts without worktree/directory;
+        // the adapter must hand them the resolved project paths.
+        const toolDefs = []
+        await ctx.state.transform({ add: (definition) => toolDefs.push(definition) })
+        const dependencyAnalyzer = toolDefs.find((entry) => entry.name === "dependency-analyzer")
+        const fallbackResult = await dependencyAnalyzer.execute({}, {})
+        assert.strictEqual(typeof fallbackResult.content, "string")
+
+        // Hot reload: a second setup for the SAME directory replaces the
+        // previous registration set instead of leaving a dead instance.
         const ctx2 = createMockV2Context(projectDir)
         const dispose2 = await definition.setup(ctx2)
-        assert.strictEqual(ctx2.state.registered.length, 0, "directory guard must block re-registration")
-        assert.strictEqual(ctx2.state.subscribeCalls, 0)
+        assert.strictEqual(ctx2.state.registered.length, 5, "reload must re-register the full hook set")
+        assert.ok(
+          ctx.state.regObjects.every((r) => r.disposed >= 1),
+          "replaced registrations must be disposed",
+        )
 
-        // Dispose everything; one registration rejects its dispose (T13) and
-        // must not leave an unhandled rejection or stop the others.
-        ctx.state.regObjects[0].rejectsDispose = true
-        await dispose()
+        // Dispose the active set; one registration rejects its dispose (T13)
+        // and must not leave an unhandled rejection or stop the others.
+        ctx2.state.regObjects[0].rejectsDispose = true
+        await dispose2()
         await new Promise((resolve) => setTimeout(resolve, 20))
         assert.strictEqual(unhandledRejections.length, 0, "dispose must not leave unhandled rejections")
         assert.ok(
-          ctx.state.regObjects.every((r) => r.disposed >= 1),
+          ctx2.state.regObjects.every((r) => r.disposed >= 1),
           "every registration must be disposed",
         )
-        await dispose2()
 
         // After dispose, the guard is released: re-setup registers again.
         const ctx3 = createMockV2Context(projectDir)

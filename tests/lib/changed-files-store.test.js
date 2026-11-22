@@ -34,6 +34,22 @@ async function runTests() {
 
   console.log('\n=== Testing changed-files-store ===\n')
 
+  const secondInstance = await import(pathToFileURL(storePath).href + '?instance=2')
+
+  if (
+    test('module instances share state through globalThis', () => {
+      clearChanges()
+      initStore(worktree)
+      recordChange('shared/example.ts', 'added')
+      assert.strictEqual(secondInstance.hasChanges(), true)
+      assert.deepStrictEqual(secondInstance.getChangedPaths(), [{ path: 'shared/example.ts', changeType: 'added' }])
+      clearChanges()
+      assert.strictEqual(secondInstance.hasChanges(), false)
+    })
+  )
+    passed++
+  else failed++
+
   if (
     test('initStore and recordChange store relative path', () => {
       clearChanges()

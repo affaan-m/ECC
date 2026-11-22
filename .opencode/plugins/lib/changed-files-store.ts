@@ -2,18 +2,24 @@ import * as path from "path"
 
 export type ChangeType = "added" | "modified" | "deleted"
 
-const changes = new Map<string, ChangeType>()
-let worktreeRoot = ""
+// OpenCode cache-busts the plugin entrypoint, so this module can be evaluated
+// more than once per process. Keep the state on globalThis so the plugin
+// runtime and the tool modules always observe the same store.
+const STORE_KEY = Symbol.for("ecc.changed-files-store")
+const shared: { changes: Map<string, ChangeType>; root: string } =
+  ((globalThis as any)[STORE_KEY] ??= { changes: new Map<string, ChangeType>(), root: "" })
+
+const changes = shared.changes
 
 export function initStore(worktree: string): void {
-  worktreeRoot = worktree || process.cwd()
+  shared.root = worktree || process.cwd()
 }
 
 function toRelative(p: string): string {
   if (!p) return ""
   const normalized = path.normalize(p)
-  if (path.isAbsolute(normalized) && worktreeRoot) {
-    const rel = path.relative(worktreeRoot, normalized)
+  if (path.isAbsolute(normalized) && shared.root) {
+    const rel = path.relative(shared.root, normalized)
     return rel.startsWith("..") ? normalized : rel
   }
   return normalized
