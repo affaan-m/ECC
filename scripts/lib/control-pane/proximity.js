@@ -87,7 +87,11 @@ function runGit(worktreePath, args) {
 
 function runGitDiff(worktreePath, base, extraArgs) {
   const mergeBase = runGit(worktreePath, ['merge-base', '--', base, 'HEAD']).trim();
-  return runGit(worktreePath, ['-c', 'core.quotePath=false', 'diff', ...extraArgs, mergeBase, '--']);
+  // The range parser needs source hunks with stable headers, not a user's
+  // colored, prefix-free, merged-context or externally transformed display.
+  return runGit(worktreePath, ['-c', 'core.quotePath=false', 'diff',
+    '--no-color', '--no-ext-diff', '--no-textconv', '--src-prefix=a/', '--dst-prefix=b/',
+    '--inter-hunk-context=0', ...extraArgs, mergeBase, '--']);
 }
 
 function untrackedFiles(worktreePath) {

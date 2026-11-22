@@ -194,3 +194,6 @@ The control pane compares each worktree against the merge base of its declared b
 and HEAD. Committed, staged, and unstaged tracked edits carry changed line ranges.
 Untracked files that Git does not ignore participate as whole-file working sets.
 Changes made only on the base branch after the worktree diverged do not participate.
+The probes request plain source diffs with fixed path prefixes and zero inter-hunk
+context. Color, prefix preferences, external diff programs, and text conversions
+remain user settings but do not change the line ranges used for collision scoring.
