@@ -1098,11 +1098,20 @@ async function main() {
 
         // Tool definitions receive V2 tool contexts without worktree/directory;
         // the adapter must hand them the resolved project paths.
+        fs.writeFileSync(
+          path.join(projectDir, "package.json"),
+          JSON.stringify({ name: "probe", dependencies: { typescript: "^5.0.0" } }),
+        )
         const toolDefs = []
         await ctx.state.transform({ add: (definition) => toolDefs.push(definition) })
         const dependencyAnalyzer = toolDefs.find((entry) => entry.name === "dependency-analyzer")
         const fallbackResult = await dependencyAnalyzer.execute({}, {})
-        assert.strictEqual(typeof fallbackResult.content, "string")
+        const parsedFallback = JSON.parse(fallbackResult.content)
+        assert.strictEqual(parsedFallback.success, true, "tool context fallback must resolve the project root")
+        assert.ok(
+          parsedFallback.dependencies.some((entry) => entry.name === "typescript"),
+          "dependency-analyzer must read package.json from the fallback root",
+        )
 
         // Hot reload: a second setup for the SAME directory replaces the
         // previous registration set instead of leaving a dead instance.

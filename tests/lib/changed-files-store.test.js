@@ -37,6 +37,31 @@ async function runTests() {
   const secondInstance = await import(pathToFileURL(storePath).href + '?instance=2')
 
   if (
+    test('store keeps worktree roots isolated', () => {
+      const otherRoot = path.join(repoRoot, 'tests')
+      initStore(worktree)
+      secondInstance.initStore(worktree)
+      clearChanges()
+      recordChange('root-a.ts', 'added')
+
+      initStore(otherRoot)
+      secondInstance.initStore(otherRoot)
+      recordChange('root-b.ts', 'modified')
+      assert.deepStrictEqual(secondInstance.getChangedPaths(), [{ path: 'root-b.ts', changeType: 'modified' }])
+
+      initStore(worktree)
+      secondInstance.initStore(worktree)
+      assert.deepStrictEqual(secondInstance.getChangedPaths(), [{ path: 'root-a.ts', changeType: 'added' }])
+      clearChanges()
+      initStore(otherRoot)
+      clearChanges()
+      initStore(worktree)
+    })
+  )
+    passed++
+  else failed++
+
+  if (
     test('module instances share state through globalThis', () => {
       clearChanges()
       initStore(worktree)

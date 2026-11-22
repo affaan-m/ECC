@@ -60,7 +60,8 @@ const changedFilesTool: ToolDefinition = tool({
       .describe("Output format: tree for terminal display, json for structured data (default: tree)"),
   },
   async execute(args, context) {
-    const { buildTree, getChangedPaths, hasChanges } = await loadChangedFilesStore()
+    const { buildTree, getChangedPaths, hasChanges, initStore } = await loadChangedFilesStore()
+    initStore(context?.worktree ?? context?.directory ?? process.cwd())
     const filter = args.filter === "all" || !args.filter ? undefined : (args.filter as ChangeType)
     const format = args.format ?? "tree"
 

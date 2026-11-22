@@ -4,22 +4,36 @@ export type ChangeType = "added" | "modified" | "deleted"
 
 // OpenCode cache-busts the plugin entrypoint, so this module can be evaluated
 // more than once per process. Keep the state on globalThis so the plugin
-// runtime and the tool modules always observe the same store.
+// runtime and the tool modules always observe the same change map, keyed by
+// worktree root so two projects in one process never share entries.
 const STORE_KEY = Symbol.for("ecc.changed-files-store")
-const shared: { changes: Map<string, ChangeType>; root: string } =
-  ((globalThis as any)[STORE_KEY] ??= { changes: new Map<string, ChangeType>(), root: "" })
+const shared: { byRoot: Map<string, Map<string, ChangeType>> } =
+  ((globalThis as any)[STORE_KEY] ??= { byRoot: new Map<string, Map<string, ChangeType>>() })
 
-const changes = shared.changes
+let worktreeRoot = ""
 
 export function initStore(worktree: string): void {
-  shared.root = worktree || process.cwd()
+  worktreeRoot = worktree || process.cwd()
+  if (!shared.byRoot.has(worktreeRoot)) {
+    shared.byRoot.set(worktreeRoot, new Map<string, ChangeType>())
+  }
+}
+
+function changes(): Map<string, ChangeType> {
+  if (!worktreeRoot) initStore(process.cwd())
+  let map = shared.byRoot.get(worktreeRoot)
+  if (!map) {
+    map = new Map<string, ChangeType>()
+    shared.byRoot.set(worktreeRoot, map)
+  }
+  return map
 }
 
 function toRelative(p: string): string {
   if (!p) return ""
   const normalized = path.normalize(p)
-  if (path.isAbsolute(normalized) && shared.root) {
-    const rel = path.relative(shared.root, normalized)
+  if (path.isAbsolute(normalized) && worktreeRoot) {
+    const rel = path.relative(worktreeRoot, normalized)
     return rel.startsWith("..") ? normalized : rel
   }
   return normalized
@@ -28,15 +42,15 @@ function toRelative(p: string): string {
 export function recordChange(filePath: string, type: ChangeType): void {
   const rel = toRelative(filePath)
   if (!rel) return
-  changes.set(rel, type)
+  changes().set(rel, type)
 }
 
 export function getChanges(): Map<string, ChangeType> {
-  return new Map(changes)
+  return new Map(changes())
 }
 
 export function clearChanges(): void {
-  changes.clear()
+  changes().clear()
 }
 
 export type TreeNode = {
@@ -71,7 +85,7 @@ function addToTree(children: TreeNode[], segs: string[], fullPath: string, chang
 
 export function buildTree(filter?: ChangeType): TreeNode[] {
   const root: TreeNode[] = []
-  for (const [relPath, changeType] of changes) {
+  for (const [relPath, changeType] of changes()) {
     if (filter && changeType !== filter) continue
     const segs = relPath.split(path.sep).filter(Boolean)
     if (segs.length === 0) continue
@@ -91,7 +105,7 @@ export function buildTree(filter?: ChangeType): TreeNode[] {
 
 export function getChangedPaths(filter?: ChangeType): Array<{ path: string; changeType: ChangeType }> {
   const list: Array<{ path: string; changeType: ChangeType }> = []
-  for (const [p, t] of changes) {
+  for (const [p, t] of changes()) {
     if (filter && t !== filter) continue
     list.push({ path: p, changeType: t })
   }
@@ -100,5 +114,5 @@ export function getChangedPaths(filter?: ChangeType): Array<{ path: string; chan
 }
 
 export function hasChanges(): boolean {
-  return changes.size > 0
+  return changes().size > 0
 }
