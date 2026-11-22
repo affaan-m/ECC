@@ -11,6 +11,12 @@ const { shellQuote } = require('./control-pane/actions');
  * hook bridge.
  */
 
+// Legacy builds send write_to_file / replace_file_content / multi_replace_file_content;
+// Antigravity CLI 1.5+ sends write_file / edit_file and the Xcode agent sends
+// create_file (#4096). Match both so every build reaches the bridge.
+const WRITE_TOOLS = 'write_to_file|write_file|create_file';
+const FILE_TOOLS = `${WRITE_TOOLS}|replace_file_content|multi_replace_file_content|edit_file`;
+
 function buildAntigravityHooksConfig(options = {}) {
   const { bridgeScript } = options;
   if (typeof bridgeScript !== 'string' || !path.isAbsolute(bridgeScript) || bridgeScript.includes('\0')) {
@@ -38,7 +44,7 @@ function buildAntigravityHooksConfig(options = {}) {
       ],
     },
     {
-      matcher: 'write_to_file|replace_file_content|multi_replace_file_content',
+      matcher: FILE_TOOLS,
       hooks: [
         {
           type: 'command',
@@ -56,7 +62,7 @@ function buildAntigravityHooksConfig(options = {}) {
 
   // Runtime hook flags select the profile, including explicit environment overrides.
   preToolUseHandlers.push({
-      matcher: 'write_to_file',
+      matcher: WRITE_TOOLS,
       hooks: [
         {
           type: 'command',
@@ -83,7 +89,7 @@ function buildAntigravityHooksConfig(options = {}) {
     'ecc-guard': {
       PreToolUse: preToolUseHandlers,
       PostToolUse: [{
-        matcher: 'write_to_file|replace_file_content|multi_replace_file_content',
+        matcher: FILE_TOOLS,
         hooks: [{
           type: 'command',
           command: `node ${quotedBridgeScript} --mode post-tool-use --hook post:edit:accumulator`,

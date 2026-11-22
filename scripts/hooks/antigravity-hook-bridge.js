@@ -37,6 +37,18 @@ function parseArgs(argv) {
   return options;
 }
 
+// Legacy names (write_to_file, replace_file_content, multi_replace_file_content)
+// stay mapped so older Antigravity builds keep working.
+const TOOL_NAMES = {
+  run_command: 'Bash',
+  write_to_file: 'Write',
+  write_file: 'Write',
+  create_file: 'Write',
+  replace_file_content: 'Edit',
+  multi_replace_file_content: 'Edit',
+  edit_file: 'Edit',
+};
+
 function adaptAntigravityInputToEcc(antigravityData) {
   if (!antigravityData || typeof antigravityData !== 'object') {
     return { tool_name: '', tool_input: {} };
@@ -46,15 +58,18 @@ function adaptAntigravityInputToEcc(antigravityData) {
   const toolName = toolCall.name || antigravityData.tool_name || '';
   const args = toolCall.args || antigravityData.tool_input || {};
 
-  // Normalize Antigravity tools to ECC tool conventions
+  // Normalize Antigravity tools to ECC tool conventions. Older builds send
+  // TargetFile/CodeContent; Antigravity CLI 1.5+ sends Path/Content (#4096).
   const toolInput = {
     ...args,
     command: args.CommandLine || args.command || '',
-    file_path: args.TargetFile || args.file_path || args.path || '',
+    file_path: args.TargetFile || args.Path || args.file_path || args.path || '',
   };
+  const content = [args.content, args.CodeContent, args.Content].find(value => typeof value === 'string');
+  if (content !== undefined) toolInput.content = content;
 
   return {
-    tool_name: ({ run_command: 'Bash', write_to_file: 'Write', replace_file_content: 'Edit', multi_replace_file_content: 'Edit' })[toolName] || toolName,
+    tool_name: Object.hasOwn(TOOL_NAMES, toolName) ? TOOL_NAMES[toolName] : toolName,
     tool_input: toolInput,
     session_id: antigravityData.conversationId || antigravityData.session_id || '',
     cwd: args.Cwd || antigravityData.cwd || antigravityData.workspacePaths?.[0] || '',
