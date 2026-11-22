@@ -49,6 +49,16 @@ const TOOL_NAMES = {
   edit_file: 'Edit',
 };
 
+// Move (not copy) CodeContent/Content to `content`: a duplicate would double
+// the payload and push large writes past the downstream hooks' stdin limit.
+function moveNativeContent(toolInput) {
+  if (typeof toolInput.content === 'string') return;
+  const key = ['CodeContent', 'Content'].find(name => typeof toolInput[name] === 'string');
+  if (!key) return;
+  toolInput.content = toolInput[key];
+  delete toolInput[key];
+}
+
 function adaptAntigravityInputToEcc(antigravityData) {
   if (!antigravityData || typeof antigravityData !== 'object') {
     return { tool_name: '', tool_input: {} };
@@ -65,8 +75,7 @@ function adaptAntigravityInputToEcc(antigravityData) {
     command: args.CommandLine || args.command || '',
     file_path: args.TargetFile || args.Path || args.file_path || args.path || '',
   };
-  const content = [args.content, args.CodeContent, args.Content].find(value => typeof value === 'string');
-  if (content !== undefined) toolInput.content = content;
+  moveNativeContent(toolInput);
 
   return {
     tool_name: Object.hasOwn(TOOL_NAMES, toolName) ? TOOL_NAMES[toolName] : toolName,

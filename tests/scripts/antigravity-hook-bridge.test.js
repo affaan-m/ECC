@@ -54,6 +54,12 @@ async function main() {
   }
   assert.strictEqual(adaptAntigravityInputToEcc({ toolCall: { name: 'write_file', args: { Path: '/tmp/a.js', Content: 'new' } } }).tool_input.content, 'new');
   assert.strictEqual(adaptAntigravityInputToEcc({ toolCall: { name: 'write_to_file', args: { TargetFile: '/tmp/a.js', CodeContent: 'old' } } }).tool_input.content, 'old');
+  // The native content field is moved, not copied, so the payload is not doubled.
+  for (const key of ['Content', 'CodeContent']) {
+    const moved = adaptAntigravityInputToEcc({ toolCall: { name: 'write_file', args: { Path: '/tmp/a.js', [key]: 'body' } } }).tool_input;
+    assert.ok(!(key in moved), `${key} should not be duplicated`);
+    assert.strictEqual(JSON.stringify(moved).split('body').length - 1, 1);
+  }
   assert.strictEqual(adaptAntigravityInputToEcc({ toolCall: { name: 'write_file', args: { TargetFile: '/tmp/a.js', Path: '/tmp/b.js' } } }).tool_input.file_path, '/tmp/a.js');
   assert.ok(!('content' in adaptAntigravityInputToEcc({ toolCall: { name: 'run_command', args: { CommandLine: 'ls' } } }).tool_input));
   assert.strictEqual(adaptAntigravityInputToEcc({ toolCall: { name: 'toString', args: {} } }).tool_name, 'toString');
@@ -113,6 +119,9 @@ async function main() {
     ]) {
       assert.strictEqual(cli('pre-tool-use', 'pre:config-protection', { workspacePaths: [root], toolCall }).decision, 'deny', toolCall.name);
     }
+    // A large ordinary write that fits the bridge's stdin limit must still fit config-protection's.
+    const large = { workspacePaths: [root], toolCall: { name: 'write_file', args: { Path: path.join(root, 'big.js'), Content: 'a'.repeat(600000) } } };
+    assert.strictEqual(cli('pre-tool-use', 'pre:config-protection', large).decision, 'allow');
     cli('post-tool-use', 'post:edit:accumulator');
     assert.strictEqual(fs.readFileSync(accumulator, 'utf8').trim(), target);
     cli('stop', 'stop:format-typecheck', { conversationId });
