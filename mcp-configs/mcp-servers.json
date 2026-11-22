@@ -38,8 +38,8 @@
     },
     "supabase": {
       "command": "npx",
-      "args": ["-y", "@supabase/mcp-server-supabase@0.17.0", "--project-ref=YOUR_PROJECT_REF"],
-      "description": "Supabase database operations. Reviewed package version is pinned (0.17.0)."
+      "args": ["-y", "@supabase/mcp-server-supabase@latest", "--project-ref=YOUR_PROJECT_REF"],
+      "description": "Supabase database operations"
     },
     "ecc-memory-vault": {
       "command": "ecc-memory-mcp",
@@ -132,8 +132,8 @@
     },
     "context7": {
       "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp@4.7.0"],
-      "description": "Live documentation lookup — use with /docs command and documentation-lookup skill (resolve-library-id, query-docs). Reviewed package version is pinned (4.7.0)."
+      "args": ["-y", "@upstash/context7-mcp@latest"],
+      "description": "Live documentation lookup — use with /docs command and documentation-lookup skill (resolve-library-id, query-docs)."
     },
     "codescene": {
       "command": "npx",
@@ -145,8 +145,8 @@
     },
     "magic": {
       "command": "npx",
-      "args": ["-y", "@magicuidesign/mcp@2.1.0"],
-      "description": "Magic UI components. Reviewed package version is pinned (2.1.0)."
+      "args": ["-y", "@magicuidesign/mcp@latest"],
+      "description": "Magic UI components"
     },
     "memxus": {
       "type": "http",
