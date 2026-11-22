@@ -13,10 +13,12 @@
 'use strict';
 
 const { spawnSync } = require('child_process');
+const { Buffer } = require('buffer');
 const fs = require('fs');
 
 const MAX_TRANSCRIPT_CHARS = 7000;
 const MAX_TURNS = 25;
+const TRANSCRIPT_READ_BYTES = 64 * 1024;
 const LLM_TIMEOUT_MS = 90000;
 // Leave the Stop hook time to persist its mechanical fallback after a timeout.
 const HOOK_FINISH_RESERVE_MS = 1000;
@@ -42,61 +44,103 @@ function isClassifierNotice(text) {
   return CLASSIFIER_NOTICE.test(String(text).replace(/\s+/g, ' ').trim());
 }
 
+/** Visit immutable record fragments in their original byte order. */
+function* transcriptFragmentBuffers(fragment) {
+  for (let current = fragment; current; current = current.next) yield current.bytes;
+}
+
+/** Read complete JSONL records backwards; breaking the iterator closes the file. */
+function* transcriptLinesBackwards(transcriptPath) {
+  const descriptor = fs.openSync(transcriptPath, 'r');
+  try {
+    let position = fs.fstatSync(descriptor).size;
+    let pending = null;
+    while (position > 0) {
+      const length = Math.min(TRANSCRIPT_READ_BYTES, position);
+      position -= length;
+      const buffer = Buffer.allocUnsafe(length);
+      let filled = 0;
+      while (filled < length) {
+        const count = fs.readSync(descriptor, buffer, filled, length - filled, position + filled);
+        if (count === 0) throw new Error('Transcript ended during read');
+        filled += count;
+      }
+      let end = length;
+      while (end > 0) {
+        const newline = buffer.lastIndexOf(0x0a, end - 1);
+        if (newline < 0) break;
+        const segment = buffer.subarray(newline + 1, end);
+        if (pending) {
+          const fragments = { bytes: segment, next: pending };
+          yield Buffer.concat(Array.from(transcriptFragmentBuffers(fragments))).toString('utf8');
+          pending = null;
+        } else if (segment.length > 0) {
+          yield segment.toString('utf8');
+        }
+        end = newline;
+      }
+      if (end > 0) pending = { bytes: buffer.subarray(0, end), next: pending };
+    }
+    if (pending) yield Buffer.concat(Array.from(transcriptFragmentBuffers(pending))).toString('utf8');
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
 /**
  * Extract the last MAX_TURNS user+assistant turns from a JSONL transcript.
+ * Read only the suffix needed for those turns. Complete records spanning
+ * chunks remain intact, so unusually large/non-conversation tails can still
+ * require a full scan; no fixed byte cutoff silently discards usable history.
  * Returns null when the transcript is missing or has no parseable turns.
  */
 function extractConversationText(transcriptPath) {
-  let content;
+  let turns = [];
   try {
-    content = fs.readFileSync(transcriptPath, 'utf8');
+    // Older records cannot change a summary once its most recent turns are full.
+    for (const line of transcriptLinesBackwards(transcriptPath)) {
+      let entryTurns = [];
+      try {
+        const entry = JSON.parse(line);
+        const isUser = entry.type === 'user' || entry.message?.role === 'user';
+        const isAssistant = entry.type === 'assistant';
+
+        if (isUser) {
+          const rawContent = entry.message?.content ?? entry.content;
+          const text =
+            typeof rawContent === 'string'
+              ? rawContent
+              : Array.isArray(rawContent)
+                ? rawContent
+                    .filter(c => c?.type === 'text')
+                    .map(c => c.text)
+                    .join(' ')
+                : '';
+          const cleaned = text.replace(/\n+/g, ' ').trim();
+          if (cleaned && !isClassifierNotice(cleaned)) {
+            entryTurns = [...entryTurns, { role: 'User', text: cleaned.slice(0, 400) }];
+          }
+        }
+
+        if (isAssistant && Array.isArray(entry.message?.content)) {
+          const textParts = entry.message.content
+            .filter(b => b?.type === 'text')
+            .map(b => b.text)
+            .join(' ')
+            .replace(/\n+/g, ' ')
+            .trim();
+          if (textParts) {
+            entryTurns = [...entryTurns, { role: 'Claude', text: textParts.slice(0, 600) }];
+          }
+        }
+      } catch {
+        // Skip unparseable lines
+      }
+      turns = [...entryTurns, ...turns];
+      if (turns.length >= MAX_TURNS) break;
+    }
   } catch {
     return null;
-  }
-
-  const lines = content.split('\n').filter(Boolean);
-  let turns = [];
-
-  // Older records cannot change a summary once its most recent turns are full.
-  for (let index = lines.length - 1; index >= 0 && turns.length < MAX_TURNS; index--) {
-    let entryTurns = [];
-    try {
-      const entry = JSON.parse(lines[index]);
-      const isUser = entry.type === 'user' || entry.message?.role === 'user';
-      const isAssistant = entry.type === 'assistant';
-
-      if (isUser) {
-        const rawContent = entry.message?.content ?? entry.content;
-        const text =
-          typeof rawContent === 'string'
-            ? rawContent
-            : Array.isArray(rawContent)
-              ? rawContent
-                  .filter(c => c?.type === 'text')
-                  .map(c => c.text)
-                  .join(' ')
-              : '';
-        const cleaned = text.replace(/\n+/g, ' ').trim();
-        if (cleaned && !isClassifierNotice(cleaned)) {
-          entryTurns = [...entryTurns, { role: 'User', text: cleaned.slice(0, 400) }];
-        }
-      }
-
-      if (isAssistant && Array.isArray(entry.message?.content)) {
-        const textParts = entry.message.content
-          .filter(b => b?.type === 'text')
-          .map(b => b.text)
-          .join(' ')
-          .replace(/\n+/g, ' ')
-          .trim();
-        if (textParts) {
-          entryTurns = [...entryTurns, { role: 'Claude', text: textParts.slice(0, 600) }];
-        }
-      }
-    } catch {
-      // Skip unparseable lines
-    }
-    turns = [...entryTurns, ...turns];
   }
 
   if (turns.length === 0) return null;
