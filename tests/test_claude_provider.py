@@ -2,12 +2,18 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
+import anthropic
+import httpx
 import httpx2
 import pytest
 from anthropic import Anthropic
 
 from llm.core.types import LLMInput, Message, Role
 from llm.providers.claude import ClaudeProvider, _needs_explicit_adaptive_thinking
+
+# The HTTP library the installed SDK builds on: 0.x uses httpx, 1.0 onward
+# httpx2. pyproject allows both generations, so the transport must match.
+http = httpx2 if int(anthropic.__version__.split(".")[0]) >= 1 else httpx
 
 
 class FakeMessages:
@@ -107,13 +113,13 @@ def test_generate_sends_a_request_the_installed_sdk_accepts(
 ) -> None:
     # The real SDK, not a fake: anthropic 2.x removed the sampling parameters from
     # messages.create(), so passing temperature raises TypeError before any request.
-    requests: list[httpx2.Request] = []
+    requests: list[Any] = []
 
-    def handler(request: httpx2.Request) -> httpx2.Response:
+    def handler(request: Any) -> Any:
         requests.append(request)
-        return httpx2.Response(200, json=_message_json(json.loads(request.content)["model"]))
+        return http.Response(200, json=_message_json(json.loads(request.content)["model"]))
 
-    http_client = httpx2.Client(transport=httpx2.MockTransport(handler))
+    http_client = http.Client(transport=http.MockTransport(handler))
     provider = ClaudeProvider(api_key="test-key")
     provider.client = Anthropic(api_key="test-key", max_retries=0, http_client=http_client)
 
