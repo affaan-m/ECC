@@ -37,7 +37,12 @@ function failAfterPartialWrite(callback, observe) {
   const originalWrite = fs.writeFileSync;
   const error = Object.assign(new Error('Simulated disk full after partial write'), { code: 'ENOSPC' });
   let calls = 0;
-  fs.writeFileSync = destination => {
+  fs.writeFileSync = (destination, content, ...options) => {
+    // Lock metadata is a separate write. Inject failure into the actual
+    // recording publication, after its transaction has acquired the lock.
+    if (!String(content).includes('"ecc.session.recording.v1"')) {
+      return originalWrite(destination, content, ...options);
+    }
     calls += 1;
     // The atomic writer stages through an open descriptor; write the partial
     // bytes to that same descriptor instead of re-opening any path.
@@ -160,7 +165,10 @@ if (process.platform !== 'win32') {
         const next = snapshot(`Permissions ${mode.toString(8)}`);
         const originalWrite = fs.writeFileSync;
         const observedModes = [];
-        fs.writeFileSync = (destination, contents) => {
+        fs.writeFileSync = (destination, contents, ...writeOptions) => {
+          if (!String(contents).includes('"ecc.session.recording.v1"')) {
+            return originalWrite(destination, contents, ...writeOptions);
+          }
           assert.strictEqual(typeof destination, 'number', 'staging must write through a descriptor');
           const readMode = () => fs.fstatSync(destination).mode & 0o777;
           observedModes.push(readMode());

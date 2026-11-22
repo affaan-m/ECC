@@ -41,11 +41,13 @@ function createSettingsLock(lockPath, label = 'Claude settings') {
     fs.rmSync(tempPath, { force: true });
     throw error;
   }
-  fs.rmSync(tempPath, { force: true });
-
   let released = false;
   const release = () => {
     if (released) return;
+    const currentStats = fs.lstatSync(lockPath, { bigint: true });
+    if (!sameFileIdentity(currentStats, ownedStats)) {
+      throw new Error(`Refusing to release a changed ${label} lock: ${lockPath}`);
+    }
     const quarantinePath = `${lockPath}.release-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
     fs.renameSync(lockPath, quarantinePath);
     const quarantinedStats = fs.lstatSync(quarantinePath, { bigint: true });
@@ -59,6 +61,16 @@ function createSettingsLock(lockPath, label = 'Claude settings') {
   // Retain the identity observed through the creation descriptor. A pathname
   // sampled after publication may already refer to a replacement lock.
   acquiredLockIdentities.set(release, Object.freeze({ dev: ownedStats.dev, ino: ownedStats.ino }));
+  try {
+    fs.rmSync(tempPath, { force: true });
+  } catch (error) {
+    try {
+      release();
+    } catch (releaseError) {
+      error.releaseError = releaseError;
+    }
+    throw error;
+  }
   return release;
 }
 
@@ -82,8 +94,9 @@ function inspectSettingsLock(lockPath) {
       return { metadata: null, stats };
     }
     let metadata = null;
+    const content = fs.readFileSync(descriptor, 'utf8');
     try {
-      metadata = JSON.parse(fs.readFileSync(descriptor, 'utf8'));
+      metadata = JSON.parse(content);
     } catch (_error) {
       // Invalid locks may be recovered only after the bounded lease below.
     }
@@ -182,8 +195,8 @@ function acquireSettingsLock(settingsPath, { label = 'Claude settings', timeoutM
   }
 }
 
-function runWithSettingsLock(settingsPath, callback) {
-  const releaseLock = acquireSettingsLock(settingsPath);
+function runWithSettingsLock(settingsPath, callback, options = {}) {
+  const releaseLock = acquireSettingsLock(settingsPath, options);
   let primaryError = null;
   let result;
   try {
