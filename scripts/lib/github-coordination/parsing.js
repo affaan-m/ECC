@@ -106,7 +106,8 @@ function mergeIssueBody(issue, nextState, policy = DEFAULT_POLICY) {
   const regex = new RegExp(`\\n?<!--\\s*${markerEscaped}:start\\s*-->[\\s\\S]*?<!--\\s*${markerEscaped}:end\\s*-->\\n?`, 'm');
 
   if (regex.test(body)) {
-    return body.replace(regex, `\n${rendered}\n`).trim() + '\n';
+    // State text is literal data, including replacement tokens such as $&.
+    return body.replace(regex, () => `\n${rendered}\n`).trim() + '\n';
   }
 
   const trimmed = body.trimEnd();
