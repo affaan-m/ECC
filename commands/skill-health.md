@@ -56,3 +56,5 @@ node "$ECC_ROOT/scripts/skills-health.js" --dashboard --json
 ## Snapshot storage
 
 Snapshot creation and rollback require writable storage with hardlink support. The versioning API checks that capability before creating or changing version history and refuses unsupported storage without a copy fallback. Use a hardlink-capable location for new snapshots. Reading existing health and version history does not require creating hard links.
+
+Rollback writes and flushes restored content before replacing the live skill, so a partial write or failed flush preserves unsnapshotted work. It follows `SKILL.md` symbolic links and preserves existing permission bits; the resolved parent directory must be writable. Replacement creates a new file inode, so other hard-linked aliases retain their previous content. Snapshot and amendment-history records remain separate writes.
