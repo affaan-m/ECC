@@ -11,7 +11,7 @@ let passed = 0;
 let failed = 0;
 
 function createFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-evolution-storage-'));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'skill-evolution-storage-')));
   const skillDir = path.join(root, 'skills', 'demo');
   fs.mkdirSync(skillDir, { recursive: true });
   fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# Original\n');
