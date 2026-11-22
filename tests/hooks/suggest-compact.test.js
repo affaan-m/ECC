@@ -1104,6 +1104,80 @@ function runTests() {
   })) passed++;
   else failed++;
 
+  // The shipped hooks.json command, not the bare script: run-with-flags only
+  // runs a hook in-process when the script exports run().
+  const repoRoot = path.join(__dirname, '..', '..');
+  const shippedCommand = require('../../hooks/hooks.json').hooks.PreToolUse
+    .flatMap(entry => entry.hooks.map(hook => hook.command))
+    .find(command => command.includes('pre:edit-write:suggest-compact'));
+  const processLog = path.join(suiteTempDir, 'node-processes.log');
+  const processTracer = path.join(suiteTempDir, 'trace-node-process.js');
+  fs.writeFileSync(processTracer,
+    `require('fs').appendFileSync(${JSON.stringify(processLog)}, process.pid + '\\n');\n`);
+
+  function runShippedHook(payload, envOverrides = {}) {
+    fs.rmSync(processLog, { force: true });
+    const env = {
+      ...process.env,
+      TMPDIR: suiteTempDir,
+      TMP: suiteTempDir,
+      TEMP: suiteTempDir,
+      CLAUDE_PLUGIN_ROOT: repoRoot,
+      ECC_HOOK_PROFILE: 'standard',
+      NODE_OPTIONS: `--require ${JSON.stringify(processTracer)}`,
+      ...envOverrides,
+    };
+    delete env.ECC_DISABLED_HOOKS;
+    const result = spawnSync(shippedCommand, {
+      shell: true, cwd: repoRoot, env, input: JSON.stringify(payload), encoding: 'utf8', timeout: 30000,
+    });
+    const processes = fs.existsSync(processLog)
+      ? fs.readFileSync(processLog, 'utf8').split('\n').filter(Boolean).length
+      : 0;
+    return { code: result.status, stdout: result.stdout || '', stderr: result.stderr || '', processes };
+  }
+
+  if (test('shipped hook runs in the runner process instead of spawning a second node', () => {
+    const ctx = createCounterContext('test-shipped');
+    try {
+      const result = runShippedHook({ session_id: ctx.sessionId, tool_name: 'Edit' });
+      assert.strictEqual(result.code, 0, result.stderr);
+      assert.strictEqual(result.processes, 1, `Expected 1 node process per tool call, got ${result.processes}`);
+      assert.strictEqual(fs.readFileSync(ctx.counterFile, 'utf8').trim(), '1');
+      assert.strictEqual(result.stdout, '');
+    } finally {
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('shipped hook emits both signals as one PreToolUse additionalContext payload', () => {
+    const ctx = createContextContext();
+    const transcript = writeTranscriptFixture(190000);
+    ctx.cleanup();
+    fs.writeFileSync(ctx.counterFile, '49');
+    try {
+      const result = runShippedHook(
+        { session_id: ctx.sessionId, transcript_path: transcript, tool_name: 'Edit' },
+        { ECC_CONTEXT_WINDOW_TOKENS: '200000', CLAUDE_CODE_AUTO_COMPACT_WINDOW: '', ECC_CONTEXT_GATE_PCT: '0' }
+      );
+      assert.strictEqual(result.code, 0, result.stderr);
+      const parsed = JSON.parse(result.stdout);
+      assert.strictEqual(parsed.hookSpecificOutput.hookEventName, 'PreToolUse');
+      const lines = parsed.hookSpecificOutput.additionalContext.split('\n');
+      assert.strictEqual(lines.length, 2, parsed.hookSpecificOutput.additionalContext);
+      assert.match(lines[0], /^\[StrategicCompact\] Context ~190k tokens \(95% of 200k window\)/);
+      assert.match(lines[1], /^\[StrategicCompact\] 50 tool calls reached/);
+      assert.ok(result.stderr.includes('50 tool calls reached'), 'suggestions still go to the debug log');
+      assert.strictEqual(fs.readFileSync(ctx.counterFile, 'utf8').trim(), '50');
+      assert.ok(fs.existsSync(ctx.bucketFile), 'the fired context bucket is recorded');
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
   // Summary
   console.log(`
 Results: Passed: ${passed}, Failed: ${failed}`);
