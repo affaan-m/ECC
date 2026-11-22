@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { readFileWithSharingRetry, writeFileAtomic } = require('../atomic-write');
+const { runWithSettingsLock } = require('../install/claude-settings-lock');
 
 const SESSION_SCHEMA_VERSION = 'ecc.session.v1';
 const SESSION_RECORDING_SCHEMA_VERSION = 'ecc.session.recording.v1';
@@ -297,8 +298,7 @@ function readExistingRecording(filePath) {
   }
 }
 
-function writeFallbackSessionRecording(snapshot, options = {}) {
-  const filePath = getFallbackSessionRecordingPath(snapshot, options);
+function writeFallbackSessionRecordingUnlocked(snapshot, filePath) {
   const recordedAt = new Date().toISOString();
   const existing = readExistingRecording(filePath);
   const snapshotChanged = !existing
@@ -330,6 +330,16 @@ function writeFallbackSessionRecording(snapshot, options = {}) {
     path: filePath,
     recordedAt
   };
+}
+
+function writeFallbackSessionRecording(snapshot, options = {}) {
+  const filePath = getFallbackSessionRecordingPath(snapshot, options);
+  // Atomic publication protects file contents, while this transaction protects
+  // the read/append/publish history update from other recording writers.
+  return runWithSettingsLock(filePath, () => writeFallbackSessionRecordingUnlocked(snapshot, filePath), {
+    label: 'session recording',
+    timeoutMs: options.lockTimeoutMs ?? 5000,
+  });
 }
 
 function loadStateStore(options = {}) {

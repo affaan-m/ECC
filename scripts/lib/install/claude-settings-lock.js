@@ -182,8 +182,8 @@ function acquireSettingsLock(settingsPath, { label = 'Claude settings', timeoutM
   }
 }
 
-function runWithSettingsLock(settingsPath, callback) {
-  const releaseLock = acquireSettingsLock(settingsPath);
+function runWithSettingsLock(settingsPath, callback, options = {}) {
+  const releaseLock = acquireSettingsLock(settingsPath, options);
   let primaryError = null;
   let result;
   try {

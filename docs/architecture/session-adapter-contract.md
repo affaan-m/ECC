@@ -229,6 +229,21 @@ Every ECC session adapter MUST:
    back to a JSON recording file only when the state store module is not
    available yet.
 
+### Fallback recording transactions
+
+JSON recording updates hold an exclusive lock for that recording path while
+reading the previous history, appending a changed snapshot, and publishing the
+replacement atomically. Concurrent writers therefore preserve both updates;
+consecutive identical snapshots still produce one history entry. Other session
+recordings use separate locks.
+
+The shim reuses ECC's local settings-file lock, including its hardlink-capable
+storage requirement and stale-owner recovery. A contender waits up to five
+seconds by default; direct callers can set `lockTimeoutMs` in the persistence
+options. A lock timeout fails the save without replacing the committed
+recording. Atomic publication continues to preserve the previous file when
+writing a replacement fails.
+
 ## Consumer Expectations
 
 Consumers SHOULD:
