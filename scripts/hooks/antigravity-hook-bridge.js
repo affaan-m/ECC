@@ -49,14 +49,14 @@ const TOOL_NAMES = {
   edit_file: 'Edit',
 };
 
-// Move (not copy) CodeContent/Content to `content`: a duplicate would double
+// Rename (not copy) CodeContent/Content to `content`: a duplicate would double
 // the payload and push large writes past the downstream hooks' stdin limit.
-function moveNativeContent(toolInput) {
-  if (typeof toolInput.content === 'string') return;
+function withNativeContent(toolInput) {
+  if (typeof toolInput.content === 'string') return toolInput;
   const key = ['CodeContent', 'Content'].find(name => typeof toolInput[name] === 'string');
-  if (!key) return;
-  toolInput.content = toolInput[key];
-  delete toolInput[key];
+  if (!key) return toolInput;
+  const { [key]: content, ...rest } = toolInput;
+  return { ...rest, content };
 }
 
 function adaptAntigravityInputToEcc(antigravityData) {
@@ -70,12 +70,11 @@ function adaptAntigravityInputToEcc(antigravityData) {
 
   // Normalize Antigravity tools to ECC tool conventions. Older builds send
   // TargetFile/CodeContent; Antigravity CLI 1.5+ sends Path/Content (#4096).
-  const toolInput = {
+  const toolInput = withNativeContent({
     ...args,
     command: args.CommandLine || args.command || '',
     file_path: args.TargetFile || args.Path || args.file_path || args.path || '',
-  };
-  moveNativeContent(toolInput);
+  });
 
   return {
     tool_name: Object.hasOwn(TOOL_NAMES, toolName) ? TOOL_NAMES[toolName] : toolName,

@@ -60,6 +60,9 @@ async function main() {
     assert.ok(!(key in moved), `${key} should not be duplicated`);
     assert.strictEqual(JSON.stringify(moved).split('body').length - 1, 1);
   }
+  const nativeArgs = { Path: '/tmp/a.js', Content: 'body' };
+  adaptAntigravityInputToEcc({ toolCall: { name: 'write_file', args: nativeArgs } });
+  assert.deepStrictEqual(nativeArgs, { Path: '/tmp/a.js', Content: 'body' }, 'caller args must not be mutated');
   assert.strictEqual(adaptAntigravityInputToEcc({ toolCall: { name: 'write_file', args: { TargetFile: '/tmp/a.js', Path: '/tmp/b.js' } } }).tool_input.file_path, '/tmp/a.js');
   assert.ok(!('content' in adaptAntigravityInputToEcc({ toolCall: { name: 'run_command', args: { CommandLine: 'ls' } } }).tool_input));
   assert.strictEqual(adaptAntigravityInputToEcc({ toolCall: { name: 'toString', args: {} } }).tool_name, 'toString');
