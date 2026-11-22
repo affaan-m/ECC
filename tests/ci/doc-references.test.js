@@ -62,7 +62,7 @@ function writeReferrers(root) {
     '',
   ].join('\n'));
   write(root, 'CONTRIBUTING.md', 'Conventional file, never audited.\n');
-  write(root, 'ROOT-GUIDE.md', 'See [design notes](/docs/design/notes.md).\n');
+  write(root, 'ROOT-GUIDE.md', 'See [design notes](/docs/design/notes.md).\n\n[after-blank]: docs/after-blank.md\n');
   write(root, 'docs/guide.md', '# Guide\n\nUp: [readme](../README.md). Back to [guide](guide.md).\n\nSee sibling.md for more.\n');
   write(root, 'docs/self-only.md', 'Only [myself](self-only.md).\n');
   write(root, 'docs/ja-JP/README.md', '[翻訳](guide.md)\n');
@@ -86,7 +86,7 @@ const TARGETS = [
   'docs/html/README.md', 'docs/with space.md', 'docs/url-current.md', 'docs/url-former.md',
   'docs/url-raw.md', 'docs/from-package.md', 'docs/from-script.md', 'docs/orphan.md',
   'docs/untracked-referrer.md', 'docs/angled name.md', 'docs/guide(draft).md', 'docs/angled ref.md',
-  'docs/escaped(1.md', 'docs/large-target.md', 'docs/ja-JP/guide.md', 'docs/ja-JP/skills/demo/SKILL.md',
+  'docs/after-blank.md', 'docs/escaped(1.md', 'docs/large-target.md', 'docs/ja-JP/guide.md', 'docs/ja-JP/skills/demo/SKILL.md',
 ];
 
 function buildFixture() {
@@ -130,6 +130,7 @@ function checkLinks(check, referrers) {
     assert.deepStrictEqual(referrers('docs/angled name.md'), [{ file: 'README.md', line: 9 }]);
     assert.deepStrictEqual(referrers('docs/guide(draft).md'), [{ file: 'README.md', line: 9 }]);
     assert.deepStrictEqual(referrers('docs/angled ref.md'), [{ file: 'README.md', line: 10 }]);
+    assert.deepStrictEqual(referrers('docs/after-blank.md'), [{ file: 'ROOT-GUIDE.md', line: 3 }]);
     assert.deepStrictEqual(referrers('docs/escaped(1.md'), [{ file: 'README.md', line: 11 }]);
   });
 }
@@ -175,7 +176,7 @@ function checkText(check, report) {
     const text = audit.formatText(report);
     assert.match(text, /exempt by convention: CONTRIBUTING\.md, README\.md\)\n/);
     assert.match(text, /No reference from another tracked file: 5\n/);
-    assert.match(text, /Non-locale docs: 4 of 21 unreferenced\n {2}ROOT-GUIDE\.md\n {2}docs\/orphan\.md\n/);
+    assert.match(text, /Non-locale docs: 4 of 22 unreferenced\n {2}ROOT-GUIDE\.md\n {2}docs\/orphan\.md\n/);
     assert.match(text, / {2}docs\/ja-JP\/: 1 of 3 unreferenced\n/);
     assert.ok(!text.includes('docs/ja-JP/skills/demo/SKILL.md'), 'locale paths stay in --json');
     assert.strictEqual(audit.formatDoc(report, 'docs/missing.md'), null);
@@ -230,7 +231,8 @@ function checkReadOnly(check, root) {
 
 function checkReadErrors(check, root) {
   check('an unreadable tracked referrer fails the audit instead of dropping its references', () => {
-    if (process.getuid && process.getuid() === 0) return; // root reads through any mode.
+    // chmod does not block reads on Windows, and root reads through any mode.
+    if (process.platform === 'win32' || (process.getuid && process.getuid() === 0)) return;
     const locked = path.join(root, 'locked');
     fs.chmodSync(locked, 0o000);
     try {

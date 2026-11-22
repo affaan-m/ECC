@@ -47,7 +47,7 @@ const LOCALE_PATTERN = /^docs\/([a-z]{2}(?:-[A-Z]{2})?)\//;
 const SKIPPED_READ_CODES = new Set(['ENOENT', 'ENOTDIR', 'EISDIR']);
 
 const INLINE_LINK_PATTERN = /\]\(\s*/g;
-const REFERENCE_DEFINITION_PATTERN = /^\s{0,3}\[[^\]]+\]:\s*(?:<([^<>\n]*)>|(\S+))/gm;
+const REFERENCE_DEFINITION_PATTERN = /^ {0,3}\[[^\]]+\]:\s*(?:<([^<>\n]*)>|(\S+))/gm;
 const HTML_LINK_PATTERN = /\b(?:href|src)\s*=\s*["']([^"']+)["']/gi;
 const ESCAPED_PUNCTUATION_PATTERN = /\\([!-/:-@[-`{-~])/g;
 const REPO_URL_PATTERN = /(?:github\.com\/affaan-m\/(?:ECC|everything-claude-code)\/(?:blob|tree|raw)|raw\.githubusercontent\.com\/affaan-m\/(?:ECC|everything-claude-code))\/[^/\s)]+\/([^\s)"'#?>`]+)/gi;
