@@ -14,6 +14,13 @@ function git(cwd, ...args) {
 function fixture(callback, { first = [5], second = [40], attributes = '' } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-proximity-git-config-'));
   const repo = path.join(directory, 'repo');
+  const originalEnv = process.env;
+  // Cover both fixture setup and the production Git probes in the callback.
+  process.env = {
+    ...Object.fromEntries(Object.entries(originalEnv).filter(([key]) => !key.toUpperCase().startsWith('GIT_'))),
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: os.devNull,
+  };
   try {
     fs.mkdirSync(repo);
     git(repo, 'init', '-q', '-b', 'main');
@@ -34,7 +41,10 @@ function fixture(callback, { first = [5], second = [40], attributes = '' } = {})
       return { id, worktree: { path: worktree, base: 'main' } };
     });
     callback({ repo, directory, sessions });
-  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+  } finally {
+    process.env = originalEnv;
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 function assertDisjoint({ repo, sessions }, firstLines = [[5, 5]], secondLines = [[40, 40]]) {
