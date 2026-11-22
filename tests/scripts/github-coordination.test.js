@@ -9,6 +9,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const { createStateStore } = require('../../scripts/lib/state-store');
+const { extractCoordinationState, renderCoordinationState } = require('../../scripts/lib/github-coordination');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'github-coordination.js');
 
@@ -338,6 +339,63 @@ async function runTests() {
         assert.strictEqual(payload.count, 1);
         assert.strictEqual(payload.items[0].issueNumber, 13);
         assert.ok(payload.items[0].labels.includes('epic'));
+      } finally {
+        cleanup(rootDir);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await test('decompose preserves literal task text and state for a subsequent sync', async () => {
+      const rootDir = createTempDir('github-coordination-literal-');
+      const dbPath = path.join(rootDir, 'state.db');
+      try {
+        const task = "Preserve $& and $$, plus $` and $' in examples";
+        const prefix = `# Literal examples\n\n## Tasks\n- [ ] ${task}\n\n## Notes\nKeep this prose.\n\n`;
+        const suffix = '\n\nKeep this footer.\n';
+        const state = {
+          owner: 'worker', branch: 'fix/literal-examples', review: 'approved',
+          notes: 'Preserve $$ in shell examples', tasks: [], dependencies: [],
+        };
+        const issue = {
+          number: 12, title: 'Literal examples', state: 'OPEN',
+          author: { login: 'maintainer' }, labels: [{ name: 'epic' }],
+          url: 'https://github.com/example/project/issues/12',
+          body: prefix + renderCoordinationState(state) + suffix,
+          updatedAt: '2026-06-01T12:00:00Z',
+        };
+        let shim = writeGhShim(rootDir, {
+          'issue view 12 --repo example/project --json number,title,body,url,state,labels,author,updatedAt,assignees': issue,
+        });
+        const env = { ECC_GH_SHIM: shim.shimPath, ECC_GH_SHIM_LOG: shim.logPath };
+        const result = run(['decompose', '12', '--repo', 'example/project', '--db', dbPath, '--json'], { cwd: rootDir, env });
+        assert.strictEqual(result.status, 0, result.stderr);
+        const calls = fs.readFileSync(shim.logPath, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+        const edit = calls.find(({ args }) => args[0] === 'issue' && args[1] === 'edit' && args.includes('--body'));
+        assert.ok(edit, 'expected an issue body update');
+        const body = edit.args[edit.args.indexOf('--body') + 1];
+        assert.ok(body.startsWith(prefix));
+        assert.ok(body.endsWith(suffix));
+        const persisted = extractCoordinationState(body);
+        assert.deepStrictEqual(persisted.tasks, [{ title: task, done: false }]);
+        assert.strictEqual(persisted.notes, state.notes);
+        const cached = (await readStore(dbPath)).items[0].metadata.coordination;
+        assert.deepStrictEqual(cached.tasks, persisted.tasks);
+
+        shim = writeGhShim(rootDir, {
+          'issue list --repo example/project --state all --limit 100 --label epic --json number,title,body,url,state,labels,author,updatedAt,assignees': [{ ...issue, body }],
+          'issue list --repo example/project --state all --limit 100 --search in:body "ecc-coordination:start" --json number,title,body,url,state,labels,author,updatedAt,assignees': [],
+        });
+        const synced = run(['sync', '--repo', 'example/project', '--db', dbPath, '--dry-run', '--json'], { cwd: rootDir, env });
+        assert.strictEqual(synced.status, 0, synced.stderr);
+        assert.strictEqual(synced.stderr, '');
+        const item = parseJson(synced.stdout).items[0];
+        assert.strictEqual(item.owner, state.owner);
+        assert.strictEqual(item.branch, state.branch);
+        assert.strictEqual(item.review, state.review);
+        assert.strictEqual(item.status, 'claimed');
       } finally {
         cleanup(rootDir);
       }

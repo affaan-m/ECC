@@ -8,6 +8,7 @@ const {
   buildIssueStateFromAction,
   desiredLabelsForState,
   extractTasks,
+  mergeIssueBody,
   renderCoordinationState,
   DEFAULT_POLICY,
 } = require('../../scripts/lib/github-coordination');
@@ -246,6 +247,34 @@ const DESCRIPTORS = [
       const tasks = extractTasks(body);
       assert.strictEqual(tasks.length, 1);
       assert.strictEqual(tasks[0].title, 'First task');
+    },
+  },
+
+  {
+    group: 'mergeIssueBody',
+    name: 'preserves replacement tokens when inserting and repeatedly updating state',
+    fn: () => {
+      for (const policy of [DEFAULT_POLICY, { ...DEFAULT_POLICY, sectionMarker: 'custom.state' }]) {
+        for (const literal of ['$$', '$&', '$`', "$'", '$1', '$<name>']) {
+          const state = {
+            notes: `Keep ${literal} literally`,
+            tasks: [{ title: `Test ${literal} replacement`, done: false }],
+            project: { state: 'backlog', fields: { example: literal } },
+            lastActionAt: '2026-01-01T00:00:00.000Z',
+            lastSyncAt: '2026-01-01T00:00:00.000Z',
+          };
+          const expected = extractCoordinationState(renderCoordinationState(state, policy), policy);
+          let body = mergeIssueBody({ body: 'Issue introduction.' }, state, policy) + '\nIssue footer.\n';
+          for (let update = 0; update < 2; update += 1) {
+            body = mergeIssueBody({ body }, state, policy);
+            assert.deepStrictEqual(extractCoordinationState(body, policy), expected, literal);
+            assert.ok(body.startsWith('Issue introduction.\n'));
+            assert.ok(body.endsWith('\nIssue footer.\n'));
+            assert.strictEqual(body.split(`<!-- ${policy.sectionMarker}:start -->`).length, 2);
+            assert.strictEqual(body.split(`<!-- ${policy.sectionMarker}:end -->`).length, 2);
+          }
+        }
+      }
     },
   },
 
