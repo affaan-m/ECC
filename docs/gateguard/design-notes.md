@@ -584,13 +584,13 @@ is unchanged.
 
 Session state expires after an idle window. A state key from a real session
 id (`session_id`, `CLAUDE_SESSION_ID`, `ECC_SESSION_ID`) or a transcript path
-names one conversation, so its window is 8 hours: a break in a long
-conversation does not re-ask the checks it already answered. The project
+names one conversation, so its window is 30 days: resuming a paused session
+several days later does not re-ask the checks it already answered. The project
 fingerprint fallback (`proj-` keys) can be shared by unrelated sessions in the
 same directory, so it keeps 30 minutes.
 
 Module-load pruning removes a state file idle for twice its key's window,
-judged by file name: `state-proj-*` uses 30 minutes, any other key 8 hours.
+judged by file name: `state-proj-*` uses 30 minutes, any other key 30 days.
 A session id that itself starts with `proj-` gets the short window for both
 expiry and pruning, which can only expire state sooner. Temporary files from interrupted writes
 are never loaded and always use the short window.
