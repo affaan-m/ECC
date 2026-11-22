@@ -35,7 +35,7 @@ Tarefas com menor sensibilidade ao contexto:
 No Claude Code, o raciocínio adaptativo permite que o modelo decida quanto pensar em cada tarefa. Para modelos Fable, Sonnet 5 e posteriores, e Opus 4.7 e posteriores, use effort para controlar o raciocínio em vez de um orçamento fixo de tokens. Os níveis disponíveis dependem do modelo.
 
 Controle o pensamento via:
-- **Effort**: Use `/effort` na sessão, `--effort <level>` na inicialização ou `CLAUDE_CODE_EFFORT_LEVEL`; a variável de ambiente tem prioridade sobre os dois, então remova-a antes de aumentar o nível por outro meio. Salve um nível por modelo em `modelSettings` em `~/.claude/settings.json`; a chave antiga de usuário `effortLevel` não se aplica ao Opus 5.5 nem a modelos mais novos.
+- **Effort**: Use `/effort` na sessão, `--effort <level>` na inicialização ou `CLAUDE_CODE_EFFORT_LEVEL`; a variável de ambiente tem prioridade sobre os dois, então remova-a de onde está definida e reinicie o Claude Code antes de usar outro controle. Salve um nível por modelo em `modelSettings`, dentro de `~/.claude/settings.json`; a chave antiga de usuário `effortLevel` não se aplica ao Opus 5.5 nem a modelos mais novos.
 - **Toggle**: Option+T (macOS) / Alt+T (Windows/Linux), ou `alwaysThinkingEnabled` nas configurações. Essas opções não desativam o pensamento em Opus 5.5, Sonnet 5.5 ou modelos Fable.
 - **Orçamento fixo**: O Claude Code ignora valores positivos de `MAX_THINKING_TOKENS` em modelos com raciocínio adaptativo. Em Opus 4.6 ou Sonnet 4.6, defina `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` para usar um orçamento fixo com `MAX_THINKING_TOKENS`.
 - **Modo verbose**: Ctrl+O para ver a saída de pensamento
