@@ -120,12 +120,20 @@ function runTests() {
       'Should invoke pre:bash:dispatcher on run_command'
     );
 
-    const editMatcher = guard.PreToolUse.find(entry => entry.matcher === 'write_to_file|replace_file_content|multi_replace_file_content');
-    assert.ok(editMatcher, 'Should have write_to_file|replace_file_content matcher');
-    assert.ok(
-      editMatcher.hooks.some(h => h.command.includes('pre:edit-write:gateguard-fact-force')),
-      'Should invoke GateGuard on write operations'
-    );
+    const editMatcher = guard.PreToolUse.find(entry => entry.hooks.some(h => h.command.includes('pre:edit-write:gateguard-fact-force')));
+    assert.ok(editMatcher, 'Should invoke GateGuard on write operations');
+    assert.ok(editMatcher.hooks.some(h => h.command.includes('pre:config-protection')), 'Should invoke config-protection on write operations');
+
+    // #4096: legacy and current Antigravity file tool names must all match.
+    const names = matcher => matcher.split('|');
+    const fileTools = ['write_to_file', 'replace_file_content', 'multi_replace_file_content', 'write_file', 'create_file', 'edit_file'];
+    const accumulator = guard.PostToolUse.find(entry => entry.hooks.some(h => h.command.includes('post:edit:accumulator')));
+    const docWarning = guard.PreToolUse.find(entry => entry.hooks.some(h => h.command.includes('pre:write:doc-file-warning')));
+    for (const tool of fileTools) {
+      assert.ok(names(editMatcher.matcher).includes(tool), `PreToolUse file matcher should include ${tool}`);
+      assert.ok(names(accumulator.matcher).includes(tool), `PostToolUse accumulator matcher should include ${tool}`);
+    }
+    assert.deepStrictEqual(names(docWarning.matcher).sort(), ['create_file', 'write_file', 'write_to_file']);
   });
 
   test('buildAntigravityMcpConfig generates valid stdio MCP configuration for ecc-memory', () => {

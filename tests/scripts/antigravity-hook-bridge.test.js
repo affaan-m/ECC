@@ -46,6 +46,26 @@ async function main() {
     assert.strictEqual(input.tool_input.command, 'echo ok');
     assert.strictEqual(input.tool_input.file_path, '/tmp/code.js');
   }
+  // #4096: Antigravity CLI 1.5+ and the Xcode agent use new tool and argument names.
+  for (const [native, expected] of [['write_file', 'Write'], ['create_file', 'Write'], ['edit_file', 'Edit']]) {
+    const input = adaptAntigravityInputToEcc({ toolCall: { name: native, args: { Path: '/tmp/code.js' } } });
+    assert.strictEqual(input.tool_name, expected, native);
+    assert.strictEqual(input.tool_input.file_path, '/tmp/code.js', native);
+  }
+  assert.strictEqual(adaptAntigravityInputToEcc({ toolCall: { name: 'write_file', args: { Path: '/tmp/a.js', Content: 'new' } } }).tool_input.content, 'new');
+  assert.strictEqual(adaptAntigravityInputToEcc({ toolCall: { name: 'write_to_file', args: { TargetFile: '/tmp/a.js', CodeContent: 'old' } } }).tool_input.content, 'old');
+  // The native content field is moved, not copied, so the payload is not doubled.
+  for (const key of ['Content', 'CodeContent']) {
+    const moved = adaptAntigravityInputToEcc({ toolCall: { name: 'write_file', args: { Path: '/tmp/a.js', [key]: 'body' } } }).tool_input;
+    assert.ok(!(key in moved), `${key} should not be duplicated`);
+    assert.strictEqual(JSON.stringify(moved).split('body').length - 1, 1);
+  }
+  const nativeArgs = { Path: '/tmp/a.js', Content: 'body' };
+  adaptAntigravityInputToEcc({ toolCall: { name: 'write_file', args: nativeArgs } });
+  assert.deepStrictEqual(nativeArgs, { Path: '/tmp/a.js', Content: 'body' }, 'caller args must not be mutated');
+  assert.strictEqual(adaptAntigravityInputToEcc({ toolCall: { name: 'write_file', args: { TargetFile: '/tmp/a.js', Path: '/tmp/b.js' } } }).tool_input.file_path, '/tmp/a.js');
+  assert.ok(!('content' in adaptAntigravityInputToEcc({ toolCall: { name: 'run_command', args: { CommandLine: 'ls' } } }).tool_input));
+  assert.strictEqual(adaptAntigravityInputToEcc({ toolCall: { name: 'toString', args: {} } }).tool_name, 'toString');
   const session = adaptAntigravityInputToEcc({ conversationId: 'session-a', workspacePaths: ['/workspace/app'] });
   assert.strictEqual(session.session_id, 'session-a');
   assert.strictEqual(session.cwd, '/workspace/app');
@@ -93,6 +113,18 @@ async function main() {
     const warning = cli('pre-tool-use', 'pre:write:doc-file-warning', { toolCall: { name: 'write_to_file', args: { TargetFile: path.join(root, 'NOTES.md') } } });
     assert.match(warning.reason, /Ad-hoc documentation/);
     assert.strictEqual(cli('pre-tool-use', 'pre:config-protection', payload, { ECC_HOOK_INPUT_MAX_BYTES: '2' }).decision, 'deny');
+    // #4096: an existing config reached through write_file/edit_file + Path must be protected.
+    const eslintrc = path.join(root, '.eslintrc.json');
+    fs.writeFileSync(eslintrc, '{}\n');
+    for (const toolCall of [
+      { name: 'write_file', args: { Path: eslintrc, Content: '{"rules":{}}' } },
+      { name: 'edit_file', args: { Path: eslintrc, Target: '{}', Replacement: '{"rules":{}}' } },
+    ]) {
+      assert.strictEqual(cli('pre-tool-use', 'pre:config-protection', { workspacePaths: [root], toolCall }).decision, 'deny', toolCall.name);
+    }
+    // A large ordinary write that fits the bridge's stdin limit must still fit config-protection's.
+    const large = { workspacePaths: [root], toolCall: { name: 'write_file', args: { Path: path.join(root, 'big.js'), Content: 'a'.repeat(600000) } } };
+    assert.strictEqual(cli('pre-tool-use', 'pre:config-protection', large).decision, 'allow');
     cli('post-tool-use', 'post:edit:accumulator');
     assert.strictEqual(fs.readFileSync(accumulator, 'utf8').trim(), target);
     cli('stop', 'stop:format-typecheck', { conversationId });
