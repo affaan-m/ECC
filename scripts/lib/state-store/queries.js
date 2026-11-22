@@ -236,24 +236,25 @@ function summarizeInstallHealth(installations) {
   };
 }
 
-function summarizeWorkItems(workItems) {
+function summarizeWorkItems(statusCounts, items) {
   const summary = {
-    totalCount: workItems.length,
+    totalCount: 0,
     openCount: 0,
     blockedCount: 0,
     closedCount: 0,
-    items: workItems,
+    items,
   };
 
-  for (const workItem of workItems) {
-    const classification = classifyWorkItemStatus(workItem.status);
+  for (const { status, total_count: count } of statusCounts) {
+    summary.totalCount += count;
+    const classification = classifyWorkItemStatus(status);
     if (classification === 'closed') {
-      summary.closedCount += 1;
+      summary.closedCount += count;
     } else if (classification === 'attention') {
-      summary.openCount += 1;
-      summary.blockedCount += 1;
+      summary.openCount += count;
+      summary.blockedCount += count;
     } else {
-      summary.openCount += 1;
+      summary.openCount += count;
     }
   }
 
@@ -478,10 +479,12 @@ function createQueryApi(db, { prepareRead = sql => db.prepare(sql) } = {}) {
     SELECT COUNT(*) AS total_count
     FROM work_items
   `);
-  const listAllWorkItemsStatement = prepareRead(`
-    SELECT *
+  // Counts cover the whole queue without transferring or decoding historical
+  // metadata. Classify raw status groups in JS to retain its Unicode casing.
+  const countWorkItemStatusesStatement = prepareRead(`
+    SELECT status, COUNT(*) AS total_count
     FROM work_items
-    ORDER BY updated_at DESC, id DESC
+    GROUP BY status
   `);
   // Read the entire native READY set in SQL instead of truncating to the
   // 100 most recently updated items before checking their eligibility.
@@ -815,8 +818,10 @@ function createQueryApi(db, { prepareRead = sql => db.prepare(sql) } = {}) {
     const recentSkillRuns = listRecentSkillRunsStatement.all(recentSkillRunLimit).map(mapSkillRunRow);
     const installations = listInstallStateStatement.all().map(mapInstallStateRow);
     const pendingGovernanceEvents = listPendingGovernanceStatement.all(pendingLimit).map(mapGovernanceEventRow);
-    const workItems = summarizeWorkItems(listAllWorkItemsStatement.all().map(mapWorkItemRow));
-    workItems.items = listWorkItemsStatement.all(workItemLimit).map(mapWorkItemRow);
+    const workItems = summarizeWorkItems(
+      countWorkItemStatusesStatement.all(),
+      listWorkItemsStatement.all(workItemLimit).map(mapWorkItemRow)
+    );
     const skillRuns = {
       windowSize: recentSkillRunLimit,
       summary: summarizeSkillRuns(recentSkillRuns),
