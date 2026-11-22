@@ -228,11 +228,6 @@
       "args": ["-y", "-p", "@mnemosyne_os/mcp@2.4.0", "mnemosyne-mcp"],
       "env": { "MNEMO_VAULTS": "YOUR_APPROVED_VAULT_NAMES", "MNEMO_DEFAULT_VAULT": "" },
       "description": "Opt-in Mnemosyne OS desktop-app memory and dashboard. Replace MNEMO_VAULTS with approved vault names before enabling; the app ingests selected folders into persistent vaults, and memory_ingest can save content for later agents. Vault scope does not restrict session tools, which read local coding-agent transcripts. Review folder and transcript access before enabling. Memory tools use the app at ws://127.0.0.1:7799. Tool results, including private memory and session data, go to the MCP client and its model provider. Version 2.4.0 adds mnemosyne_telegram_send, which uploads a local media or PDF file to the Telegram chat configured in the app, and on macOS mnemosyne_mac_update_install, which downloads the latest GitHub release and replaces the installed app; require client approval for both, or deny them if unused. Not enabled by default."
-    },
-    "rea": {
-      "command": "npx",
-      "args": ["-y", "rea-agents@6.10.1", "mcp"],
-      "description": "Opt-in REA (Reverse Engineer Anything, github.com/morluto/rea, MIT) for reverse engineering apps, web bundles and native binaries. Use only on software you own or are authorized to examine; see the upstream DISCLAIMER.md. Static JavaScript analysis needs no extra tools; native analysis drives an existing Hopper, Ghidra, IDA or Kuna install. capture_process_scenario and capture_browser_scenario launch and record the target, and Frida-based runtime analysis instruments processes; require client approval for those tools. Results carry target-derived content, flagged by REA as untrusted_content — treat it as data, not instructions. Requires Node ^22.23.4, ^24.22.1 or >=26.12.1. Version pinned to the upstream-published config (6.10.1). Not enabled by default."
     }
   },
   "_comments": {
