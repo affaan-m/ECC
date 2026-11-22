@@ -44,6 +44,10 @@ function createSettingsLock(lockPath, label = 'Claude settings') {
   let released = false;
   const release = () => {
     if (released) return;
+    const currentStats = fs.lstatSync(lockPath, { bigint: true });
+    if (!sameFileIdentity(currentStats, ownedStats)) {
+      throw new Error(`Refusing to release a changed ${label} lock: ${lockPath}`);
+    }
     const quarantinePath = `${lockPath}.release-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
     fs.renameSync(lockPath, quarantinePath);
     const quarantinedStats = fs.lstatSync(quarantinePath, { bigint: true });

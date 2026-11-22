@@ -131,26 +131,62 @@ const cases = [
     release();
     assert.ok(!fs.existsSync(lock));
   })],
-  ['temporary cleanup failure preserves a replacement lock and the original error', () => withSettingsFile((_root, file) => {
+  ['temporary cleanup failure keeps a replacement owner exclusive and preserves the original error', () => withSettingsFile((_root, file) => {
     const lock = file + '.ecc.lock';
     const originalRemove = fs.rmSync;
+    const originalRename = fs.renameSync;
     const expected = Object.assign(new Error('temporary cleanup failed'), { code: 'EIO' });
-    const replacement = JSON.stringify({ pid: process.pid, token: 'replacement-owner' });
     let injected = false;
+    let replacement;
+    let replacementStats;
+    let releaseReplacement;
+    let contenderAttempted = false;
+    let releaseContender;
+    let contenderError;
+    const tryContender = () => {
+      if (contenderAttempted) return;
+      contenderAttempted = true;
+      try { releaseContender = acquireSettingsLock(file); }
+      catch (error) { contenderError = error; }
+    };
     fs.rmSync = function (target) {
       if (!injected && target.startsWith(lock + '.create-') && fs.existsSync(lock)) {
         injected = true;
         fs.unlinkSync(lock);
-        fs.writeFileSync(lock, replacement);
+        releaseReplacement = acquireSettingsLock(file);
+        replacement = fs.readFileSync(lock, 'utf8');
+        replacementStats = fs.lstatSync(lock, { bigint: true });
         throw expected;
       }
       return originalRemove.apply(this, arguments);
     };
+    fs.renameSync = function (source, target) {
+      const result = originalRename.apply(this, arguments);
+      if (source === lock && target.startsWith(lock + '.release-')) {
+        tryContender();
+      }
+      return result;
+    };
     try {
       assert.throws(() => acquireSettingsLock(file), error => error === expected);
-    } finally { fs.rmSync = originalRemove; }
+      // Also exercise contention if rollback refuses the foreign lock before
+      // renaming it: B remains the live owner in either interleaving.
+      tryContender();
+    } finally {
+      fs.rmSync = originalRemove;
+      fs.renameSync = originalRename;
+    }
     assert.ok(injected);
+    assert.strictEqual(JSON.parse(replacement).pid, process.pid, 'B is a live owner acquired through the public API');
+    assert.ok(contenderAttempted);
+    assert.strictEqual(releaseContender, undefined, 'C must not acquire while replacement owner B is still active');
+    assert.match(contenderError.message, /Another ECC process/);
     assert.strictEqual(fs.readFileSync(lock, 'utf8'), replacement);
+    const finalStats = fs.lstatSync(lock, { bigint: true });
+    assert.deepStrictEqual({ dev: finalStats.dev, ino: finalStats.ino },
+      { dev: replacementStats.dev, ino: replacementStats.ino }, 'B remains at its canonical lock path');
+    releaseReplacement();
+    assert.ok(!fs.existsSync(lock));
   })],
   ['metadata read failure cannot steal an aged lock from a live owner', () => withOwner((_root, file) => {
     const lock = file + '.ecc.lock';
