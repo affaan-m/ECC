@@ -194,3 +194,13 @@ The control pane compares each worktree against the merge base of its declared b
 and HEAD. Committed, staged, and unstaged tracked edits carry changed line ranges.
 Untracked files that Git does not ignore participate as whole-file working sets.
 Changes made only on the base branch after the worktree diverged do not participate.
+
+Live line ranges use the old side of the diff, in the merge-base revision's
+coordinates. An insertion occupies its base position (zero before the first line),
+so added or removed lines do not shift later edits out of alignment across agents.
+Line comparisons are precise only when both working sets use the same base
+revision. Shared files with different revisions, or with just one known revision,
+retain conservative whole-file overlap. New files, deleted files, renames and
+binary edits also retain whole-file treatment. These ranges are advisory signals,
+not a substitute for a three-way merge. Callers that provide their own ranges
+without a base revision keep the existing assumption that their coordinates match.

@@ -43,34 +43,56 @@ function decodeGitPath(header) {
   return Buffer.concat(parts).toString('utf8');
 }
 
+function diffHeaderPath(header, prefix) {
+  const gitPath = decodeGitPath(header);
+  return gitPath && gitPath.startsWith(prefix) ? gitPath.slice(prefix.length) : null;
+}
+
 /**
- * Parse `git diff --unified=0` output into per-file NEW-side line ranges. Hunk
- * headers look like `@@ -a,b +c,d @@`; we keep the +c,d (new) side so the overlap
- * channel can tell that two agents touch the *same file* but *different line
- * ranges* (different functions) and not flag a false collision.
+ * Parse `git diff --unified=0` output into per-file line ranges. The default
+ * keeps the new side for existing callers. Production comparisons request
+ * base-side ranges so insertions/deletions in one worktree cannot move its
+ * coordinates relative to another. Insertions occupy their base position;
+ * new files, deleted files and renamed paths retain whole-file treatment.
  *
  * @param {string} diff
  * @returns {Map<string, Array<[number,number]>>}
  */
-function parseDiffRanges(diff) {
+function parseDiffRanges(diff, { side = 'new' } = {}) {
   const byFile = new Map();
   let current = null;
+  let source = null;
+  let inHunk = false;
   for (const line of String(diff || '').split('\n')) {
     if (line.startsWith('diff --git ')) {
       current = null;
+      source = null;
+      inHunk = false;
       continue;
     }
-    if (line.startsWith('+++ ')) {
-      const gitPath = decodeGitPath(line.slice(4));
-      current = gitPath && gitPath.startsWith('b/') ? gitPath.slice(2) : null;
-      if (current && !byFile.has(current)) byFile.set(current, []);
-      continue;
+    // Deleted "-- ..." or added "++ ..." source lines look like file headers.
+    // Only consume headers before the first hunk of each diff --git section.
+    if (!inHunk) {
+      if (line.startsWith('--- ')) {
+        source = diffHeaderPath(line.slice(4), 'a/');
+        continue;
+      }
+      if (line.startsWith('+++ ')) {
+        current = diffHeaderPath(line.slice(4), 'b/');
+        if (current && !byFile.has(current)) byFile.set(current, []);
+        continue;
+      }
     }
-    const hunk = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
-    if (hunk && current) {
-      const start = parseInt(hunk[1], 10);
-      const count = hunk[2] === undefined ? 1 : parseInt(hunk[2], 10);
+    const hunk = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+    if (hunk) {
+      inHunk = true;
+      if (!current) continue;
+      if (side === 'base' && (!source || source !== current)) continue;
+      const offset = side === 'base' ? 1 : 3;
+      const start = parseInt(hunk[offset], 10);
+      const count = hunk[offset + 1] === undefined ? 1 : parseInt(hunk[offset + 1], 10);
       if (count > 0) byFile.get(current).push([start, start + count - 1]);
+      else if (side === 'base') byFile.get(current).push([start, start]);
     }
   }
   return byFile;
@@ -85,8 +107,8 @@ function runGit(worktreePath, args) {
   });
 }
 
-function runGitDiff(worktreePath, base, extraArgs) {
-  const mergeBase = runGit(worktreePath, ['merge-base', '--', base, 'HEAD']).trim();
+function runGitDiff(worktreePath, base, extraArgs, knownMergeBase) {
+  const mergeBase = knownMergeBase || runGit(worktreePath, ['merge-base', '--', base, 'HEAD']).trim();
   return runGit(worktreePath, ['-c', 'core.quotePath=false', 'diff', ...extraArgs, mergeBase, '--']);
 }
 
@@ -101,28 +123,37 @@ function untrackedFiles(worktreePath) {
 
 /**
  * Default working-set source: a session's worktree diff against its base, with
- * per-file changed line ranges. Returns [{ path, lines? }], or [] on failure so
- * proximity degrades gracefully (never throws into the snapshot path).
+ * per-file base-side line ranges. Keep the revision alongside the files so
+ * two different merge bases are not mistaken for one coordinate system.
  */
-function defaultWorkingSetFor(session) {
+function defaultWorkingSetSnapshotFor(session) {
   const wt = session && session.worktree;
-  if (!wt || !wt.path) return [];
+  if (!wt || !wt.path) return { files: [], baseRevision: null };
   const base = wt.base || 'HEAD';
   try {
-    const ranges = parseDiffRanges(runGitDiff(wt.path, base, ['--unified=0']));
-    // Deletions, binary changes and quoted paths have no usable new-side hunks.
+    const baseRevision = runGit(wt.path, ['merge-base', '--', base, 'HEAD']).trim();
+    const ranges = parseDiffRanges(runGitDiff(wt.path, base, ['--unified=0'], baseRevision), { side: 'base' });
+    // Binary changes and other paths without usable hunks remain whole-file.
     try {
-      for (const file of runGitDiff(wt.path, base, ['--name-only', '-z']).split('\0').filter(Boolean)) {
+      for (const file of runGitDiff(wt.path, base, ['--name-only', '-z'], baseRevision).split('\0').filter(Boolean)) {
         if (!ranges.has(file)) ranges.set(file, []);
       }
     } catch {
       // Preserve ranges already read if the supplementary filename probe fails.
     }
     for (const file of untrackedFiles(wt.path)) ranges.set(file, []);
-    return [...ranges.entries()].map(([path, lines]) => (lines.length > 0 ? { path, lines } : { path }));
+    return {
+      files: [...ranges.entries()].map(([path, lines]) => (lines.length > 0 ? { path, lines } : { path })),
+      baseRevision
+    };
   } catch {
-    return [];
+    return { files: [], baseRevision: null };
   }
+}
+
+/** Base-side working-set files, or [] when the probe is unavailable. */
+function defaultWorkingSetFor(session) {
+  return defaultWorkingSetSnapshotFor(session).files;
 }
 
 /**
@@ -146,15 +177,17 @@ function defaultChangedFilesFor(session) {
  * (returns file-name strings) for tests.
  */
 function sessionsToAgents(sessions, deps = {}) {
-  const workingSetFor = deps.workingSetFor || (deps.changedFilesFor ? session => deps.changedFilesFor(session).map(p => ({ path: p })) : defaultWorkingSetFor);
+  const workingSetFor = deps.workingSetFor || (deps.changedFilesFor ? session => deps.changedFilesFor(session).map(p => ({ path: p })) : null);
   const agents = [];
   for (const session of sessions || []) {
-    const files = workingSetFor(session).map(f => ({ weight: 1, ...f }));
+    const workingSet = workingSetFor ? { files: workingSetFor(session) } : defaultWorkingSetSnapshotFor(session);
+    const files = workingSet.files.map(f => ({ weight: 1, ...f }));
     if (files.length === 0) continue;
     agents.push({
       agentId: session.id,
       label: session.task || session.id,
       startedAt: session.createdAt || null,
+      ...(workingSet.baseRevision ? { baseRevision: workingSet.baseRevision } : {}),
       files
     });
   }
