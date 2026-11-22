@@ -11,7 +11,7 @@ let passed = 0;
 let failed = 0;
 
 function createFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-evolution-storage-'));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'skill-evolution-storage-')));
   const skillDir = path.join(root, 'skills', 'demo');
   fs.mkdirSync(skillDir, { recursive: true });
   fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# Original\n');
@@ -188,15 +188,21 @@ test('failed live rollback write preserves version and applied history, then ret
   const logPath = versioning.getEvolutionLogPath(skillDir, 'amendments');
   const priorLog = fs.readFileSync(logPath, 'utf8');
   const writeFileSync = fs.writeFileSync;
+  const renameSync = fs.renameSync;
   const injectedError = Object.assign(new Error('Injected live write failure'), { code: 'EACCES' });
   fs.writeFileSync = (file, ...args) => {
     if (file === path.join(skillDir, 'SKILL.md')) throw injectedError;
     return writeFileSync(file, ...args);
   };
+  fs.renameSync = (source, destination) => {
+    if (destination === path.join(skillDir, 'SKILL.md')) throw injectedError;
+    return renameSync(source, destination);
+  };
   try {
     assert.throws(() => versioning.rollbackTo(skillDir, 1), error => error === injectedError);
   } finally {
     fs.writeFileSync = writeFileSync;
+    fs.renameSync = renameSync;
   }
   assert.equal(fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8'), '# Unsnapshotted work\n');
   assert.deepEqual(fs.readdirSync(versionsDir).sort(), ['v1.md']);
@@ -217,20 +223,31 @@ test('failed rollback preserves a foreign snapshot replacement and both error de
   fs.writeFileSync(live, '# Unsnapshotted work\n');
   const target = path.join(versionsDir, 'v2.md');
   const writeFileSync = fs.writeFileSync;
+  const renameSync = fs.renameSync;
   const primary = Object.assign(new Error('Injected live refusal'), { code: 'EACCES' });
-  fs.writeFileSync = (file, ...args) => {
-    if (file === live) {
-      fs.renameSync(target, path.join(versionsDir, 'owned-attempt.saved'));
+  let replaced = false;
+  const refusePublication = () => {
+    if (!replaced) {
+      renameSync(target, path.join(versionsDir, 'owned-attempt.saved'));
       writeFileSync(target, '# Foreign snapshot\n');
-      throw primary;
+      replaced = true;
     }
+    throw primary;
+  };
+  fs.writeFileSync = (file, ...args) => {
+    if (file === live) refusePublication();
     return writeFileSync(file, ...args);
+  };
+  fs.renameSync = (source, destination) => {
+    if (destination === live) refusePublication();
+    return renameSync(source, destination);
   };
   try {
     assert.throws(() => versioning.rollbackTo(skillDir, 1), error =>
       error.primaryError === primary && /changed ownership/.test(error.recoveryError.message) && /recovery is pending/.test(error.message));
   } finally {
     fs.writeFileSync = writeFileSync;
+    fs.renameSync = renameSync;
   }
   assert.equal(fs.readFileSync(live, 'utf8'), '# Unsnapshotted work\n');
   assert.equal(fs.readFileSync(target, 'utf8'), '# Foreign snapshot\n');

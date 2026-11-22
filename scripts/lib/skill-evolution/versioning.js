@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { appendFile, ensureDir } = require('../utils');
+const { writeFileAtomic } = require('../atomic-write');
 
 const VERSION_DIRECTORY_NAME = '.versions';
 const EVOLUTION_DIRECTORY_NAME = '.evolution';
@@ -351,14 +352,15 @@ function rollbackTo(skillPath, targetVersion, options = {}) {
     throw new Error(`Invalid target version: ${targetVersion}`);
   }
 
-  ensureSkillExists(skillPath);
+  // Replace the referent so a linked SKILL.md keeps pointing to its source.
+  const skillFilePath = fs.realpathSync(ensureSkillExists(skillPath));
 
   const targetPath = path.join(getVersionsDir(skillPath), `v${normalizedTargetVersion}.md`);
   if (!fs.existsSync(targetPath)) {
     throw new Error(`Version not found: v${normalizedTargetVersion}`);
   }
 
-  const priorContent = fs.readFileSync(getSkillFilePath(skillPath));
+  const priorContent = fs.readFileSync(skillFilePath);
   const currentVersion = getCurrentVersion(skillPath);
   const targetContent = fs.readFileSync(targetPath, 'utf8');
   // Publish the restored-content snapshot before replacing unsnapshotted live work.
@@ -370,10 +372,11 @@ function rollbackTo(skillPath, targetVersion, options = {}) {
   };
   const snapshot = publishVersion(skillPath, targetContent, snapshotOptions);
   try {
-    fs.writeFileSync(getSkillFilePath(skillPath), targetContent, 'utf8');
+    // A partial write or failed flush must not truncate unsnapshotted work.
+    writeFileAtomic(skillFilePath, targetContent, { preserveExistingMode: true });
   } catch (primaryError) {
     try {
-      if (!fs.readFileSync(getSkillFilePath(skillPath)).equals(priorContent)) {
+      if (!fs.readFileSync(skillFilePath).equals(priorContent)) {
         throw new Error('Live skill changed during the failed write; target snapshot retained');
       }
     } catch (recoveryError) {
