@@ -98,7 +98,7 @@ let activeStateFile = null;
 let activeSessionKey = '';
 
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
-const SESSION_ID_TIMEOUT_MS = 8 * 60 * 60 * 1000;
+const SESSION_ID_TIMEOUT_MS = 30 * 24 * 60 * 60 * 1000;
 const PROJECT_KEY_PREFIX = 'proj-';
 let activeIdleWindowMs = SESSION_TIMEOUT_MS;
 const READ_HEARTBEAT_MS = 60 * 1000;
@@ -1631,6 +1631,12 @@ function hashSessionKey(prefix, value) {
   return `${prefix}-${crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 24)}`;
 }
 
+function canonicalTranscriptKey(transcriptPath) {
+  const isWin = /^[a-z]:[\\/]|^\\\\/i.test(transcriptPath) || process.platform === 'win32';
+  const resolved = (isWin ? path.win32 : path.posix).resolve(transcriptPath);
+  return isWin ? resolved.replace(/\\/g, '/').toLowerCase() : resolved;
+}
+
 function resolveSessionKey(data) {
   const directCandidates = [data && data.session_id, data && data.sessionId, data && data.session && data.session.id, process.env.CLAUDE_SESSION_ID, process.env.ECC_SESSION_ID];
 
@@ -1643,7 +1649,7 @@ function resolveSessionKey(data) {
 
   const transcriptPath = (data && (data.transcript_path || data.transcriptPath)) || process.env.CLAUDE_TRANSCRIPT_PATH;
   if (transcriptPath && String(transcriptPath).trim()) {
-    return hashSessionKey('tx', path.resolve(String(transcriptPath).trim()));
+    return hashSessionKey('tx', canonicalTranscriptKey(String(transcriptPath).trim()));
   }
 
   const projectFingerprint = process.env.CLAUDE_PROJECT_DIR || process.cwd();
@@ -2769,7 +2775,7 @@ function firstTouchMultiEdit(ctx, edits, filePath, fileKey, batch) {
 
 function gateShell(ctx) {
   const { toolName, toolInput, rawInput } = ctx;
-  const command = toolInput.command || '';
+  const command = typeof toolInput.command === 'string' ? toolInput.command : '';
   if (isReadOnlyGitIntrospection(command)) {
     recordDecision('pass', 'readonly-git');
     return rawInput;
@@ -2792,14 +2798,34 @@ function gateShell(ctx) {
   return rawInput; // allow
 }
 
+function normalizeShellCommandForKey(command) {
+  return String(command || '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+}
+
+function hashDestructiveCommand(command) {
+  return `__destructive__${crypto.createHash('sha256').update(command).digest('hex').slice(0, 16)}`;
+}
+
+function destructiveCommandKeys(command) {
+  const raw = String(command || '');
+  const normalized = normalizeShellCommandForKey(raw);
+  const primaryKey = hashDestructiveCommand(normalized);
+  if (normalized === raw) {
+    return { primaryKey, lookupKeys: [primaryKey] };
+  }
+  return { primaryKey, lookupKeys: [primaryKey, hashDestructiveCommand(raw)] };
+}
+
 // Gate destructive commands on first attempt; allow retry after facts presented
 function gateDestructiveShell(command, rawInput) {
-  const key = '__destructive__' + crypto.createHash('sha256').update(command).digest('hex').slice(0, 16);
-  if (isChecked(key)) {
+  const { primaryKey, lookupKeys } = destructiveCommandKeys(command);
+  if (isChecked(lookupKeys)) {
     recordDecision('pass-checked', 'destructive-retry');
     return rawInput; // allow retry after facts presented
   }
-  if (!markChecked(key)) {
+  if (!markChecked(primaryKey)) {
     return allowWithStateWarning();
   }
   recordDecision('destructive-deny', 'destructive');

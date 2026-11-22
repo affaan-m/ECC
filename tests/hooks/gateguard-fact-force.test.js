@@ -50,7 +50,7 @@ function writeExpiredState() {
     fs.mkdirSync(stateDir, { recursive: true });
     const expired = {
       checked: ['some_file.js', '__bash_session__'],
-      last_active: Date.now() - (8 * 60 + 1) * 60 * 1000
+      last_active: Date.now() - (30 * 24 * 60 + 1) * 60 * 1000
     };
     fs.writeFileSync(stateFile, JSON.stringify(expired), 'utf8');
   } catch (_) {
@@ -1757,7 +1757,7 @@ function runTests() {
       fs.writeFileSync(staleFile, JSON.stringify({ checked: [], last_active: Date.now() }), 'utf8');
       fs.writeFileSync(freshFile, JSON.stringify({ checked: [], last_active: Date.now() }), 'utf8');
 
-      const staleTime = new Date(Date.now() - 17 * 60 * 60 * 1000);
+      const staleTime = new Date(Date.now() - 61 * 24 * 60 * 60 * 1000);
       fs.utimesSync(staleFile, staleTime, staleTime);
 
       const result = runHook({
@@ -7588,25 +7588,87 @@ function runTests() {
     return file;
   };
   const HOUR = 60 * 60 * 1000;
+  const DAY = 24 * HOUR;
 
-  gateCase('state keyed by a session id survives two idle hours', () => {
-    writeState({ checked: ['__bash_session__'], last_active: Date.now() - 2 * HOUR });
+  gateCase('state keyed by a session id survives a multi-day idle gap', () => {
+    writeState({ checked: ['__bash_session__'], last_active: Date.now() - 7 * DAY });
     assert.strictEqual(roDecision(roBash('npm test')), undefined);
   });
 
-  gateCase('state keyed by a session id expires after eight idle hours', () => {
-    writeState({ checked: ['__bash_session__'], last_active: Date.now() - 8 * HOUR - 60 * 1000 });
+  gateCase('state keyed by a session id expires after 30 idle days', () => {
+    writeState({ checked: ['__bash_session__'], last_active: Date.now() - 30 * DAY - 60 * 1000 });
     assert.strictEqual(roDecision(roBash('npm test')), 'deny');
   });
 
-  gateCase('state keyed by a transcript path survives two idle hours', () => {
+  gateCase('state keyed by a transcript path survives a multi-day idle gap', () => {
     const transcript = path.join(stateDir, 'idle-session.jsonl');
     roBash('npm test', { transcript_path: transcript }, idleEnvNoIds);
     const [file] = idleStateFiles();
     assert.ok(/^state-tx-/.test(file), file);
     const state = JSON.parse(fs.readFileSync(path.join(stateDir, file), 'utf8'));
-    fs.writeFileSync(path.join(stateDir, file), JSON.stringify({ ...state, last_active: Date.now() - 2 * HOUR }), 'utf8');
+    fs.writeFileSync(path.join(stateDir, file), JSON.stringify({ ...state, last_active: Date.now() - 5 * DAY }), 'utf8');
     assert.strictEqual(roDecision(roBash('npm test', { transcript_path: transcript }, idleEnvNoIds)), undefined);
+  });
+
+  gateCase('same destructive PowerShell command in same session survives a multi-day gap and pruning (#4091)', () => {
+    const cmd = 'Invoke-Expression $lintCmd';
+    const first = runPowerShellHook({ tool_name: 'PowerShell', tool_input: { command: cmd } });
+    assert.strictEqual(roDecision(first), 'deny');
+    assert.strictEqual(roDecision(runPowerShellHook({ tool_name: 'PowerShell', tool_input: { command: cmd } })), undefined);
+
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    const fiveDaysAgo = Date.now() - 5 * DAY;
+    fs.writeFileSync(stateFile, JSON.stringify({ ...state, last_active: fiveDaysAgo }), 'utf8');
+    fs.utimesSync(stateFile, new Date(fiveDaysAgo), new Date(fiveDaysAgo));
+
+    loadDirectHook();
+    assert.ok(fs.existsSync(stateFile), 'session state file should survive 5-day gap on module load');
+    assert.strictEqual(
+      roDecision(runPowerShellHook({ tool_name: 'PowerShell', tool_input: { command: cmd } })),
+      undefined,
+      'same PowerShell command should not be rejected again after multi-day gap'
+    );
+  });
+
+  gateCase('same destructive PowerShell command across CRLF/LF and outer whitespace normalization is allowed on retry', () => {
+    const first = runPowerShellHook({
+      tool_name: 'PowerShell',
+      tool_input: { command: '  Remove-Item -Recurse C:/tmp/demo\r\n' }
+    });
+    assert.strictEqual(roDecision(first), 'deny');
+    assert.strictEqual(
+      roDecision(runPowerShellHook({ tool_name: 'PowerShell', tool_input: { command: 'Remove-Item -Recurse C:/tmp/demo' } })),
+      undefined,
+      'normalized retry should match CRLF/whitespace-padded PowerShell command'
+    );
+  });
+
+  gateCase('destructive PowerShell retry still honors legacy unnormalized raw command hashes', () => {
+    const crypto = require('crypto');
+    const rawCmd = 'Remove-Item -Recurse C:/tmp/legacy-demo\r\n';
+    const legacyKey = `__destructive__${crypto.createHash('sha256').update(rawCmd).digest('hex').slice(0, 16)}`;
+    writeState({ checked: [legacyKey], last_active: Date.now() - 2 * DAY });
+    assert.strictEqual(
+      roDecision(runPowerShellHook({ tool_name: 'PowerShell', tool_input: { command: rawCmd } })),
+      undefined,
+      'legacy raw hash in state.checked should still be honored'
+    );
+  });
+
+  gateCase('Windows-style transcript_path casing and separator variations share one tx-* session state', () => {
+    const txWinUpper = 'C:\\Users\\Dev\\Session-4091.jsonl';
+    const txWinLower = 'c:/users/dev/session-4091.jsonl';
+    const first = runPowerShellHook(
+      { tool_name: 'PowerShell', tool_input: { command: 'Invoke-Expression $lintCmd' }, transcript_path: txWinUpper },
+      idleEnvNoIds
+    );
+    assert.strictEqual(roDecision(first), 'deny');
+    const second = runPowerShellHook(
+      { tool_name: 'PowerShell', tool_input: { command: 'Invoke-Expression $lintCmd' }, transcript_path: txWinLower },
+      idleEnvNoIds
+    );
+    assert.strictEqual(roDecision(second), undefined, 'normalized Windows transcript_path should match the same tx-* state');
+    assert.strictEqual(idleStateFiles().length, 1, 'only one tx-* state file should be created');
   });
 
   gateCase('state keyed by the project fallback still expires after 30 idle minutes', () => {
@@ -7626,9 +7688,9 @@ function runTests() {
     const oldProj = idleSeed(`state-proj-${'b'.repeat(24)}.json`, 0);
     const oldTmp = path.join(stateDir, 'state-recent-session.json.tmp.1.abcd');
     fs.writeFileSync(oldTmp, '{}', 'utf8');
-    age(recentSession, 2 * HOUR);
-    age(recentTx, 2 * HOUR);
-    age(oldSession, 17 * HOUR);
+    age(recentSession, 7 * DAY);
+    age(recentTx, 7 * DAY);
+    age(oldSession, 61 * DAY);
     age(oldProj, 61 * 60 * 1000);
     age(oldTmp, 61 * 60 * 1000);
     loadDirectHook();
