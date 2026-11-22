@@ -9,13 +9,15 @@ const { spawnSync } = require('child_process');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'run-all.js'), 'utf8');
 
-function run(result, filename = 'sample.test.js', actions = true, fileExists = true) {
+function run(result, filename = 'sample.test.js', actions = true, fileExists = true, processOverrides = {}) {
   const logs = [];
   const exit = {};
   let status;
   let spawns = 0;
+  let childEnv;
   const fakeProcess = {
-    env: actions ? { GITHUB_ACTIONS: 'true' } : {},
+    ...processOverrides,
+    env: { ...(actions ? { GITHUB_ACTIONS: 'true' } : {}), ...processOverrides.env },
     exit(code) { status = code; throw exit; },
     set exitCode(code) { status = code; },
   };
@@ -37,7 +39,7 @@ function run(result, filename = 'sample.test.js', actions = true, fileExists = t
         if (name === 'path') return path;
         if (name === 'perf_hooks') return require('perf_hooks');
         if (name === 'child_process') return {
-          spawnSync() { spawns += 1; return result; },
+          spawnSync(_command, _args, options) { spawns += 1; childEnv = options.env; return result; },
         };
         throw new Error(`Unexpected dependency: ${name}`);
       },
@@ -46,7 +48,7 @@ function run(result, filename = 'sample.test.js', actions = true, fileExists = t
     if (error !== exit) throw error;
   }
   assert.strictEqual(spawns, 1);
-  return { status, logs, annotations: logs.filter(line => line.startsWith('::error ')) };
+  return { status, logs, childEnv, annotations: logs.filter(line => line.startsWith('::error ')) };
 }
 
 function fixtureRun(files, options = {}) {
@@ -69,7 +71,7 @@ function fixtureRun(files, options = {}) {
       ECC_TEST_JOBS: String(options.jobs || 1),
       ECC_TEST_SERIAL: options.serial || '',
       FIXTURE_ROOT: root,
-    });
+    }, options.env);
     const result = spawnSync(process.execPath, [path.join(testsDir, 'run-all.js')], { encoding: 'utf8', env, timeout: 20000 });
     assert.ifError(result.error);
     const report = !options.reportDirectory && fs.existsSync(reportPath) ? JSON.parse(fs.readFileSync(reportPath, 'utf8')) : null;
@@ -79,6 +81,40 @@ function fixtureRun(files, options = {}) {
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+}
+
+const LOCATION_OVERRIDES = [
+  'CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'AGENTS_HOME', 'OPENCODE_CONFIG_DIR', 'ECC_GROK_HOME', 'ECC_AGENT_DATA_HOME',
+  'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME',
+  'ECC_SESSION_RECORDING_DIR', 'CLAUDE_PLUGIN_ROOT', 'ECC_PLUGIN_ROOT', 'ECC_MCP_CONFIG_PATH',
+];
+
+/** Config-home and config-dir override names that scripts/ reads, by name. */
+function scriptLocationOverrides() {
+  const names = new Set();
+  const walk = dir => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(?:c?js|mjs|sh)$/.test(entry.name)) {
+        for (const match of fs.readFileSync(full, 'utf8').matchAll(/\b[A-Z][A-Z0-9_]*_(?:HOME|CONFIG_DIR)\b/g)) names.add(match[0]);
+      }
+    }
+  };
+  walk(path.join(__dirname, '..', '..', 'scripts'));
+  return [...names].sort();
+}
+
+/** Run a suite with every key in `keys` set in the runner and report which ones reached it. */
+function leakedKeys(keys) {
+  const sentinel = path.join(os.tmpdir(), 'ecc-developer-override-sentinel');
+  const result = fixtureRun({
+    'env.test.js': "const keys=JSON.parse(process.env.FIXTURE_KEYS);const leaked=keys.filter(k=>Object.hasOwn(process.env,k));console.log('LEAKED '+JSON.stringify(leaked));if(process.env.ECC_UNRELATED_SENTINEL!=='kept')throw new Error('unrelated variable dropped');console.log('Passed: 1, Failed: 0');",
+  }, { env: { ...Object.fromEntries(keys.map(key => [key, sentinel])), FIXTURE_KEYS: JSON.stringify(keys), ECC_UNRELATED_SENTINEL: 'kept' } });
+  assert.strictEqual(result.status, 0, result.stdout + result.stderr);
+  const line = result.stdout.split('\n').find(entry => entry.includes('LEAKED '));
+  assert.ok(line, `suite output missing\n${result.stdout}`);
+  return JSON.parse(line.slice(line.indexOf('LEAKED ') + 'LEAKED '.length));
 }
 
 function assertCompleteReport(result, expectedFiles, expectedFailed = 0) {
@@ -211,6 +247,22 @@ const tests = [
     }, { jobs: 2 });
     assert.strictEqual(result.status, 0, result.stdout + result.stderr);
     assertCompleteReport(result, ['nested.test.js']);
+  }],
+  ['developer location overrides cannot reach suite processes', () => {
+    assert.deepStrictEqual(leakedKeys(LOCATION_OVERRIDES), []);
+  }],
+  ['on Windows an override is stripped whatever the case of its name; elsewhere only the exact name', () => {
+    const env = { claude_config_dir: 'x', Codex_Home: 'y', CLAUDE_CONFIG_DIR: 'z', Unrelated_Value: 'kept' };
+    const passing = { status: 0, stdout: 'Passed: 1, Failed: 0' };
+    const windows = { ...run(passing, 'sample.test.js', false, true, { platform: 'win32', env }).childEnv };
+    assert.deepStrictEqual(windows, { Unrelated_Value: 'kept' });
+    const linux = { ...run(passing, 'sample.test.js', false, true, { platform: 'linux', env }).childEnv };
+    assert.deepStrictEqual(linux, { claude_config_dir: 'x', Codex_Home: 'y', Unrelated_Value: 'kept' });
+  }],
+  ['every config-home or config-dir override read by scripts/ is stripped from suites', () => {
+    const names = scriptLocationOverrides();
+    assert.ok(names.includes('CLAUDE_CONFIG_DIR') && names.includes('OPENCODE_CONFIG_DIR'), names.join(','));
+    assert.deepStrictEqual(leakedKeys(names), [], 'add the new override to LOCATION_OVERRIDE_KEYS in tests/run-all.js');
   }],
   ['an unwritable report target fails the run even when every suite passes', () => {
     const result = fixtureRun({ 'a.test.js': "console.log('Passed: 1, Failed: 0');" }, { reportDirectory: true });
