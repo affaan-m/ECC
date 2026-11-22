@@ -10,6 +10,7 @@
  */
 
 const crypto = require('crypto');
+const { types } = require('util');
 
 function canonicalize(value, holderKey = '') {
   // Follow JSON.stringify: a Date (or any toJSON value) is hashed as the JSON
@@ -19,6 +20,15 @@ function canonicalize(value, holderKey = '') {
   }
   if (value === null || typeof value !== 'object') {
     return value;
+  }
+  // JSON unboxes native scalar wrappers before visiting properties. Use
+  // internal-slot checks so values from another realm work and a forged
+  // Symbol.toStringTag cannot turn an ordinary record into a scalar.
+  if (types.isBoxedPrimitive(value)) {
+    if (types.isNumberObject(value)) return +value;
+    if (types.isStringObject(value)) return String(value);
+    if (types.isBooleanObject(value)) return Boolean.prototype.valueOf.call(value);
+    if (types.isBigIntObject(value)) return BigInt.prototype.valueOf.call(value);
   }
   if (Array.isArray(value)) {
     return value.map((item, index) => canonicalize(item, String(index)));

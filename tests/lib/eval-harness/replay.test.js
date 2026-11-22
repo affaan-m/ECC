@@ -369,4 +369,32 @@ test('failed request serialization refuses before invoking a live tool', () => {
   } finally { cleanup(dir); }
 });
 
+test('boxed scalar arguments replay only the matching JSON value and preserve response scalars', () => {
+  const dir = tempDir('boxed-scalars');
+  try {
+    const store = new replay.FixtureStore(dir);
+    let liveCalls = 0;
+    const scalarTools = {
+      scalar: {
+        effect_class: 'SE0', determinism: 'deterministic',
+        impl: args => { liveCalls += 1; return { value: args.value }; }
+      }
+    };
+    const recorder = replay.createReplayer(scalarTools, { mode: 'record', store });
+    const replayer = replay.createReplayer(scalarTools, { mode: 'replay', store });
+    for (const [value, different] of [[7, 8], [false, true], ['first', 'second']]) {
+      recorder.call('scalar', { value: Object(value) });
+      assert.throws(() => replayer.call('scalar', { value: Object(different) }),
+        error => error.code === 'tool.fixture_missing');
+      assert.throws(() => replayer.call('scalar', { value: {} }),
+        error => error.code === 'tool.fixture_missing');
+      assert.deepStrictEqual(replayer.call('scalar', { value: Object(value) }), { value });
+      assert.deepStrictEqual(replayer.call('scalar', { value }), { value });
+    }
+    assert.throws(() => recorder.call('scalar', { value: Object(1n) }), TypeError);
+    assert.strictEqual(liveCalls, 3);
+    assert.strictEqual(fs.readdirSync(dir).length, 3);
+  } finally { cleanup(dir); }
+});
+
 finish('replay');

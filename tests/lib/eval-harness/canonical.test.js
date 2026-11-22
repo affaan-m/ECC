@@ -127,4 +127,62 @@ test('toJSON values canonicalize as JSON.stringify serializes them', () => {
   }
 });
 
+test('boxed JSON scalars retain their values at root, nested and array positions', () => {
+  const { runInNewContext } = require('vm');
+  const values = [0, -0, 7, 1.25, NaN, Infinity, false, true, '', 'value'];
+  for (const value of values) {
+    const boxed = Object(value);
+    boxed.ignored = 'not part of a JSON scalar';
+    for (const input of [boxed, { z: boxed }, [boxed]]) {
+      const jsonValue = JSON.parse(JSON.stringify(input));
+      assert.strictEqual(canonicalJson(input), canonicalJson(jsonValue));
+      assert.strictEqual(hashValue(input), hashValue(jsonValue));
+    }
+    assert.strictEqual(boxed.ignored, 'not part of a JSON scalar');
+  }
+  const foreign = runInNewContext('[Object(7), Object(false), Object("value")]');
+  assert.strictEqual(canonicalJson(foreign), '[7,false,"value"]');
+  assert.notStrictEqual(hashValue(Object(7)), hashValue(Object(8)));
+  assert.notStrictEqual(hashValue(Object(false)), hashValue(Object(true)));
+  assert.notStrictEqual(hashValue(Object(7)), hashValue({}));
+});
+
+test('boxed scalar conversion follows JSON coercion after toJSON', () => {
+  const number = Object(7);
+  number.valueOf = () => 9;
+  const text = Object('before');
+  text.toString = () => 'after';
+  const boolean = Object(false);
+  boolean.valueOf = () => true; // JSON uses its internal boolean value.
+  for (const input of [number, text, boolean, { toJSON: () => Object(3) }]) {
+    assert.strictEqual(canonicalJson(input), JSON.stringify(input));
+  }
+  number[Symbol.toPrimitive] = () => 1n;
+  assert.throws(() => JSON.stringify(number), TypeError);
+  assert.throws(() => canonicalJson(number), TypeError);
+  text[Symbol.toPrimitive] = () => Symbol('value');
+  assert.throws(() => JSON.stringify(text), TypeError);
+  assert.throws(() => canonicalJson(text), TypeError);
+  const tagged = { [Symbol.toStringTag]: 'Number', z: 2, a: 1 };
+  assert.strictEqual(canonicalJson(tagged), '{"a":1,"z":2}');
+  const symbol = Object(Symbol('value'));
+  symbol.z = 2;
+  symbol.a = 1;
+  assert.strictEqual(canonicalJson(symbol), '{"a":1,"z":2}');
+});
+
+test('boxed BigInt is rejected unless toJSON supplies a serializable value', () => {
+  const { runInNewContext } = require('vm');
+  for (const boxed of [Object(1n), runInNewContext('Object(2n)')]) {
+    for (const input of [boxed, { value: boxed }, [boxed]]) {
+      assert.throws(() => JSON.stringify(input), TypeError);
+      assert.throws(() => canonicalJson(input), TypeError);
+      assert.throws(() => hashValue(input), TypeError);
+    }
+  }
+  const serializable = Object(12n);
+  serializable.toJSON = () => '12';
+  assert.strictEqual(canonicalJson(serializable), '"12"');
+});
+
 finish('canonical');
