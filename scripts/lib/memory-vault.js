@@ -139,6 +139,35 @@ function sameFileIdentity(left, right) {
   return left.dev === right.dev;
 }
 
+function memoryScanLimitError() {
+  const error = new Error('Memory scan byte budget exhausted.');
+  error.code = 'ECC_MEMORY_SCAN_LIMIT';
+  return error;
+}
+
+function readBoundedText(descriptor, label, maxBytes, options) {
+  const readLimit = Math.min(maxBytes + 1, options.maxReadBytes ?? maxBytes + 1);
+  const chunks = [];
+  let total = 0;
+  while (total < readLimit) {
+    const buffer = Buffer.alloc(Math.min(64 * 1024, readLimit - total));
+    const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+    if (bytesRead === 0) break;
+    // Charge raw I/O before decoding or a later read can fail. Decoding also
+    // removes a UTF-8 BOM, so re-encoding text cannot recover the byte cost.
+    if (options.onReadBytes) options.onReadBytes(bytesRead);
+    chunks.push(buffer.subarray(0, bytesRead));
+    total += bytesRead;
+  }
+  if (total > maxBytes) {
+    throw new Error(`${label} is too large (maximum ${maxBytes} bytes).`);
+  }
+  if (total === readLimit && fs.fstatSync(descriptor, { bigint: true }).size > BigInt(total)) {
+    throw memoryScanLimitError();
+  }
+  return decodeUtf8(Buffer.concat(chunks, total), label);
+}
+
 function readRegularTextFile(filePath, options = {}) {
   const label = options.label || 'file';
   const maxBytes = options.maxBytes || MAX_DOCUMENT_BYTES;
@@ -169,20 +198,10 @@ function readRegularTextFile(filePath, options = {}) {
     if (opened.size > BigInt(maxBytes)) {
       throw new Error(`${label} is too large (${opened.size} bytes).`);
     }
-
-    const chunks = [];
-    let total = 0;
-    while (total <= maxBytes) {
-      const buffer = Buffer.alloc(Math.min(64 * 1024, maxBytes + 1 - total));
-      const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null);
-      if (bytesRead === 0) break;
-      chunks.push(buffer.subarray(0, bytesRead));
-      total += bytesRead;
+    if (options.maxReadBytes !== undefined && opened.size > BigInt(options.maxReadBytes)) {
+      throw memoryScanLimitError();
     }
-    if (total > maxBytes) {
-      throw new Error(`${label} is too large (maximum ${maxBytes} bytes).`);
-    }
-    return decodeUtf8(Buffer.concat(chunks, total), label);
+    return readBoundedText(descriptor, label, maxBytes, options);
   } finally {
     fs.closeSync(descriptor);
   }
@@ -491,14 +510,10 @@ function readMemoryFiles(options = {}) {
         const source = readRegularTextFile(filePath, {
           label: 'memory document',
           maxBytes: MAX_DOCUMENT_BYTES,
+          maxReadBytes: MAX_SCAN_BYTES - scannedBytes,
+          onReadBytes: count => { scannedBytes += count; },
           trustedRoot: root,
         });
-        const sourceBytes = Buffer.byteLength(source, 'utf8');
-        if (scannedBytes + sourceBytes > MAX_SCAN_BYTES) {
-          truncated = true;
-          break;
-        }
-        scannedBytes += sourceBytes;
         const memory = parseMemoryDocument(source, filePath);
         assertMemoryMatchesLocation(memory, scope, root, filePath);
         if (findPotentialSecrets(memory).length > 0) {
@@ -511,6 +526,10 @@ function readMemoryFiles(options = {}) {
           path: vaultRelativePath(scope, root, filePath),
         });
       } catch (error) {
+        if (error?.code === 'ECC_MEMORY_SCAN_LIMIT') {
+          truncated = true;
+          break;
+        }
         invalidFileCount += 1;
         if (invalidFiles.length < MAX_DIAGNOSTICS) {
           invalidFiles.push({

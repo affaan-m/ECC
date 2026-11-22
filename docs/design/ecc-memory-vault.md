@@ -35,6 +35,12 @@ one harness's hook support.
 
 ### Retrieval completeness and current state
 
+Each scan has one 16 MiB document-read budget shared by all requested scopes.
+It counts raw bytes, including UTF-8 BOMs and bytes consumed before decoding or
+reading fails. Reaching this budget truncates the scan; a file that does not fit
+the remaining budget is not classified as an invalid document solely for that
+reason.
+
 A bounded scan can be incomplete even when it has found a matching ID. Direct
 reads reject truncated scans and scans containing invalid or unreadable memory
 documents before claiming absence, uniqueness or complete backlinks. The core
