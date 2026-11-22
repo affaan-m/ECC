@@ -46,6 +46,11 @@ async function withOwner(callback) {
     fs.rmSync(root, { recursive: true, force: true });
   }
 }
+function withSettingsFile(callback) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-settings-fault-'));
+  try { callback(root, path.join(root, 'settings.json')); }
+  finally { fs.rmSync(root, { recursive: true, force: true }); }
+}
 const cases = [
   ['default contention is fail-fast; optional timeout is bounded and leaves owner intact', () => withOwner((_root, file) => {
     const before = fs.readFileSync(file + '.ecc.lock', 'utf8');
@@ -104,6 +109,84 @@ const cases = [
       assert.throws(() => acquireSettingsLock(file, { timeoutMs: 2000 }), error => error === expected);
       assert.strictEqual(attempts, 1);
     } finally { fs.linkSync = originalLink; }
+  })],
+  ['temporary cleanup failure releases the published lock and allows retry', () => withSettingsFile((_root, file) => {
+    const lock = file + '.ecc.lock';
+    const originalRemove = fs.rmSync;
+    const expected = Object.assign(new Error('temporary file is busy'), { code: 'EACCES' });
+    let injected = false;
+    fs.rmSync = function (target) {
+      if (!injected && target.startsWith(lock + '.create-') && fs.existsSync(lock)) {
+        injected = true;
+        throw expected;
+      }
+      return originalRemove.apply(this, arguments);
+    };
+    try {
+      assert.throws(() => acquireSettingsLock(file), error => error === expected);
+    } finally { fs.rmSync = originalRemove; }
+    assert.ok(injected, 'cleanup failed after the lock was published');
+    assert.ok(!fs.existsSync(lock), 'failed acquisition must not retain a live-owner lock');
+    const release = acquireSettingsLock(file);
+    release();
+    assert.ok(!fs.existsSync(lock));
+  })],
+  ['temporary cleanup failure preserves a replacement lock and the original error', () => withSettingsFile((_root, file) => {
+    const lock = file + '.ecc.lock';
+    const originalRemove = fs.rmSync;
+    const expected = Object.assign(new Error('temporary cleanup failed'), { code: 'EIO' });
+    const replacement = JSON.stringify({ pid: process.pid, token: 'replacement-owner' });
+    let injected = false;
+    fs.rmSync = function (target) {
+      if (!injected && target.startsWith(lock + '.create-') && fs.existsSync(lock)) {
+        injected = true;
+        fs.unlinkSync(lock);
+        fs.writeFileSync(lock, replacement);
+        throw expected;
+      }
+      return originalRemove.apply(this, arguments);
+    };
+    try {
+      assert.throws(() => acquireSettingsLock(file), error => error === expected);
+    } finally { fs.rmSync = originalRemove; }
+    assert.ok(injected);
+    assert.strictEqual(fs.readFileSync(lock, 'utf8'), replacement);
+  })],
+  ['metadata read failure cannot steal an aged lock from a live owner', () => withOwner((_root, file) => {
+    const lock = file + '.ecc.lock';
+    fs.utimesSync(lock, new Date(0), new Date(0));
+    const before = fs.readFileSync(lock, 'utf8');
+    const originalRead = fs.readFileSync;
+    const expected = Object.assign(new Error('lock metadata read failed'), { code: 'EIO' });
+    let inspectedDescriptor;
+    let unexpectedRelease;
+    fs.readFileSync = function (target) {
+      if (typeof target === 'number') {
+        inspectedDescriptor = target;
+        throw expected;
+      }
+      return originalRead.apply(this, arguments);
+    };
+    try {
+      assert.throws(() => { unexpectedRelease = acquireSettingsLock(file); }, error => error === expected);
+    } finally {
+      fs.readFileSync = originalRead;
+      if (unexpectedRelease) unexpectedRelease();
+    }
+    assert.strictEqual(typeof inspectedDescriptor, 'number');
+    assert.throws(() => fs.fstatSync(inspectedDescriptor), { code: 'EBADF' });
+    assert.strictEqual(fs.readFileSync(lock, 'utf8'), before);
+  })],
+  ['malformed metadata is recovered only after its bounded lease', () => withSettingsFile((_root, file) => {
+    const lock = file + '.ecc.lock';
+    fs.writeFileSync(lock, '{invalid json');
+    assert.throws(() => acquireSettingsLock(file), /Another ECC process/);
+    assert.strictEqual(fs.readFileSync(lock, 'utf8'), '{invalid json');
+    fs.utimesSync(lock, new Date(0), new Date(0));
+    const release = acquireSettingsLock(file);
+    assert.strictEqual(JSON.parse(fs.readFileSync(lock, 'utf8')).pid, process.pid);
+    release();
+    assert.ok(!fs.existsSync(lock));
   })],
   ['recovery tolerates a lock disappearing between inspection and quarantine', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-lock-disappeared-'));

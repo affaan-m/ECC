@@ -41,8 +41,6 @@ function createSettingsLock(lockPath, label = 'Claude settings') {
     fs.rmSync(tempPath, { force: true });
     throw error;
   }
-  fs.rmSync(tempPath, { force: true });
-
   let released = false;
   const release = () => {
     if (released) return;
@@ -59,6 +57,16 @@ function createSettingsLock(lockPath, label = 'Claude settings') {
   // Retain the identity observed through the creation descriptor. A pathname
   // sampled after publication may already refer to a replacement lock.
   acquiredLockIdentities.set(release, Object.freeze({ dev: ownedStats.dev, ino: ownedStats.ino }));
+  try {
+    fs.rmSync(tempPath, { force: true });
+  } catch (error) {
+    try {
+      release();
+    } catch (releaseError) {
+      error.releaseError = releaseError;
+    }
+    throw error;
+  }
   return release;
 }
 
@@ -82,8 +90,9 @@ function inspectSettingsLock(lockPath) {
       return { metadata: null, stats };
     }
     let metadata = null;
+    const content = fs.readFileSync(descriptor, 'utf8');
     try {
-      metadata = JSON.parse(fs.readFileSync(descriptor, 'utf8'));
+      metadata = JSON.parse(content);
     } catch (_error) {
       // Invalid locks may be recovered only after the bounded lease below.
     }
