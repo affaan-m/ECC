@@ -15,8 +15,10 @@ const inertSchema: any = new Proxy(function () {}, {
 let zod: any
 try {
   zod = (await import("zod")).z
-} catch {
+} catch (error: unknown) {
   zod = undefined
+  const message = error instanceof Error ? error.message : String(error)
+  console.warn(`[ecc] zod unavailable, tool schemas fall back to inert builders: ${message}`)
 }
 
 // OpenCode's tool helper returns the definition unchanged and exposes Zod as schema.

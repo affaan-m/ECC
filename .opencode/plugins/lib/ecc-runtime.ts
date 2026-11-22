@@ -191,7 +191,7 @@ export async function createEccRuntime(input: {
   const onFileEdited = async (event: { path: string }) => {
     try {
       editedFiles.add(event.path)
-      changedFilesStore?.recordChange?.(event.path, "modified")
+      changedFilesStore?.recordChange?.(event.path, "modified", worktreePath)
 
       // Auto-format JS/TS files (strict profile only: it shells out).
       if (hookEnabled("post:edit:format", ["strict"]) && /\.(ts|tsx|js|jsx)$/.test(event.path)) {
@@ -297,16 +297,16 @@ export async function createEccRuntime(input: {
     try {
       const filePath = getFilePath(input.args)
       if (input.tool === "edit" && filePath) {
-        changedFilesStore?.recordChange?.(filePath, "modified")
+        changedFilesStore?.recordChange?.(filePath, "modified", worktreePath)
       }
       if (input.tool === "write" && filePath) {
         const key = input.callID ?? `write-${++writeCounter}-${filePath}`
         const pending = pendingToolChanges.get(key)
         if (pending) {
-          changedFilesStore?.recordChange?.(pending.path, pending.type)
+          changedFilesStore?.recordChange?.(pending.path, pending.type, worktreePath)
           pendingToolChanges.delete(key)
         } else {
-          changedFilesStore?.recordChange?.(filePath, "modified")
+          changedFilesStore?.recordChange?.(filePath, "modified", worktreePath)
         }
       }
 
@@ -437,7 +437,7 @@ export async function createEccRuntime(input: {
     if (!hookEnabled("session:end-marker", ["minimal", "standard", "strict"])) return
     log("info", "[ECC] Session ended - cleaning up")
     editedFiles.clear()
-    changedFilesStore?.clearChanges?.()
+    changedFilesStore?.clearChanges?.(worktreePath)
     pendingToolChanges.clear()
   }
 
@@ -446,7 +446,7 @@ export async function createEccRuntime(input: {
     let changeType: "added" | "modified" | "deleted" = "modified"
     if (event.type === "create" || event.type === "add") changeType = "added"
     else if (event.type === "delete" || event.type === "remove") changeType = "deleted"
-    changedFilesStore?.recordChange?.(event.path, changeType)
+    changedFilesStore?.recordChange?.(event.path, changeType, worktreePath)
     if (event.type === "change" && /\.(ts|tsx|js|jsx)$/.test(event.path)) {
       editedFiles.add(event.path)
     }

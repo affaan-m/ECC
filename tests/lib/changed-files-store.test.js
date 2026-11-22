@@ -62,6 +62,21 @@ async function runTests() {
   else failed++
 
   if (
+    test('explicit root argument never reads the module default', () => {
+      const otherRoot = path.join(repoRoot, 'tests')
+      clearChanges(worktree)
+      clearChanges(otherRoot)
+      recordChange('explicit.ts', 'added', worktree)
+      assert.strictEqual(hasChanges(worktree), true)
+      assert.strictEqual(hasChanges(otherRoot), false)
+      assert.deepStrictEqual(getChangedPaths('added', worktree), [{ path: 'explicit.ts', changeType: 'added' }])
+      clearChanges(worktree)
+    })
+  )
+    passed++
+  else failed++
+
+  if (
     test('module instances share state through globalThis', () => {
       clearChanges()
       initStore(worktree)
