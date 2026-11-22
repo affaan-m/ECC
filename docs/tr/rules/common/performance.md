@@ -32,10 +32,10 @@ Daha düşük context hassasiyeti olan görevler:
 
 ## Extended Thinking + Plan Mode
 
-Claude Code'da uyarlanabilir akıl yürütme, modelin her görev için ne kadar düşüneceğine kendisinin karar vermesini sağlar. Fable modelleri, Sonnet 5 ve üzeri ile Opus 4.7 ve üzeri için sabit bir token bütçesi yerine akıl yürütmeyi effort ile kontrol et. Kullanılabilir seviyeler modele göre değişir.
+Claude Code'da uyarlanabilir akıl yürütme, modelin her görev için ne kadar düşüneceğine kendisinin karar vermesini sağlar. Fable modelleri, Sonnet 5 ve sonrası ile Opus 4.7 ve sonrası için sabit bir token bütçesi yerine akıl yürütmeyi effort ile kontrol et. Kullanılabilir seviyeler modele göre değişir.
 
 Extended thinking kontrolü:
-- **Effort**: Oturum içinde `/effort`, başlatırken `--effort <level>` veya `CLAUDE_CODE_EFFORT_LEVEL` kullan. `~/.claude/settings.json` içindeki `modelSettings` altında model başına seviye kaydet; eski kullanıcı düzeyi `effortLevel` anahtarı Opus 5.5 veya daha yeni modellerde geçerli değildir.
+- **Effort**: Oturum içinde `/effort`, başlatırken `--effort <level>` veya `CLAUDE_CODE_EFFORT_LEVEL` kullan; ortam değişkeni ikisinden de önce gelir, bu yüzden başka bir yolla seviyeyi yükseltmeden önce onu kaldır. `~/.claude/settings.json` içindeki `modelSettings` altında model başına seviye kaydet; eski kullanıcı düzeyi `effortLevel` anahtarı Opus 5.5 veya daha yeni modellerde geçerli değildir.
 - **Toggle**: Option+T (macOS) / Alt+T (Windows/Linux) veya ayarlarda `alwaysThinkingEnabled`. Bunlar Opus 5.5, Sonnet 5.5 veya Fable modellerinde düşünmeyi devre dışı bırakamaz.
 - **Sabit bütçe**: Claude Code, uyarlanabilir akıl yürütme modellerinde pozitif `MAX_THINKING_TOKENS` değerlerini yok sayar. Opus 4.6 veya Sonnet 4.6 üzerinde, `MAX_THINKING_TOKENS` ile sabit bütçe kullanmak için `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` ayarla.
 - **Verbose mode**: Thinking çıktısını görmek için Ctrl+O
@@ -43,7 +43,7 @@ Extended thinking kontrolü:
 Desteklenen kontroller için [Claude Code model yapılandırması](https://code.claude.com/docs/en/model-config#adjust-effort-level) ve [ortam değişkenleri](https://code.claude.com/docs/en/env-vars) bölümlerine bak.
 
 Derin akıl yürütme gerektiren karmaşık görevler için:
-1. `/effort high` gibi desteklenen daha yüksek bir effort seviyesi seç
+1. Mevcut seviyeyi kontrol et ve `/effort` ile desteklenen daha yüksek bir seviye seç; Opus 4.7 zaten `xhigh` ile başlar, bu yüzden `high` seviyeyi düşürür
 2. Yapılandırılmış yaklaşım için **Plan Mode**'u etkinleştir
 3. Kapsamlı analiz için birden fazla kritik tur kullan
 4. Çeşitli perspektifler için split role sub-agent'lar kullan

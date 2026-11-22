@@ -35,7 +35,7 @@ Tareas con menor sensibilidad al contexto:
 En Claude Code, el razonamiento adaptativo permite que el modelo decida cuánto pensar en cada tarea. Para los modelos Fable, Sonnet 5 y posteriores, y Opus 4.7 y posteriores, usa el effort para controlar el razonamiento en lugar de un presupuesto fijo de tokens. Los niveles disponibles dependen del modelo.
 
 Controla el extended thinking mediante:
-- **Effort**: Usa `/effort` dentro de una sesión, `--effort <level>` al iniciar, o `CLAUDE_CODE_EFFORT_LEVEL`. Guarda un nivel por modelo en `modelSettings` dentro de `~/.claude/settings.json`; la clave anterior a nivel de usuario `effortLevel` no se aplica a Opus 5.5 ni a modelos más nuevos.
+- **Effort**: Usa `/effort` dentro de una sesión, `--effort <level>` al iniciar, o `CLAUDE_CODE_EFFORT_LEVEL`; la variable de entorno tiene prioridad sobre ambos, así que elimínala antes de subir el nivel por otra vía. Guarda un nivel por modelo en `modelSettings` dentro de `~/.claude/settings.json`; la clave anterior `effortLevel` del usuario no se aplica a Opus 5.5 ni a modelos más nuevos.
 - **Toggle**: Option+T (macOS) / Alt+T (Windows/Linux), o `alwaysThinkingEnabled` en la configuración. Estas opciones no pueden desactivar el pensamiento en Opus 5.5, Sonnet 5.5 ni en los modelos Fable.
 - **Presupuesto fijo**: Claude Code ignora los valores positivos de `MAX_THINKING_TOKENS` en modelos con razonamiento adaptativo. En Opus 4.6 o Sonnet 4.6, establece `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` para usar un presupuesto fijo con `MAX_THINKING_TOKENS`.
 - **Modo verbose**: Ctrl+O para ver la salida del pensamiento
@@ -43,7 +43,7 @@ Controla el extended thinking mediante:
 Consulta la [configuración de modelos de Claude Code](https://code.claude.com/docs/en/model-config#adjust-effort-level) y las [variables de entorno](https://code.claude.com/docs/en/env-vars) para los controles admitidos.
 
 Para tareas complejas que requieren razonamiento profundo:
-1. Elige un nivel de effort más alto y admitido, como `/effort high`
+1. Comprueba el nivel actual y elige uno más alto con `/effort`; Opus 4.7 ya empieza en `xhigh`, así que `high` lo reduciría
 2. Habilita el **Modo Plan** para un enfoque estructurado
 3. Usa múltiples rondas de crítica para un análisis exhaustivo
 4. Usa sub-agentes con roles divididos para perspectivas diversas

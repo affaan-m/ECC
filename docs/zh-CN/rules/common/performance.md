@@ -41,7 +41,7 @@
 
 通过以下方式控制思考：
 
-* **Effort（努力级别）**：在会话中使用 `/effort`，在启动时使用 `--effort <level>`，或设置 `CLAUDE_CODE_EFFORT_LEVEL`。在 `~/.claude/settings.json` 的 `modelSettings` 中按模型保存级别；较早的用户级 `effortLevel` 键不适用于 Opus 5.5 或更新的模型。
+* **Effort（努力级别）**：在会话中使用 `/effort`，在启动时使用 `--effort <level>`，或设置 `CLAUDE_CODE_EFFORT_LEVEL`；环境变量优先于这两者，因此在用其他方式提高级别前请先取消设置。在 `~/.claude/settings.json` 的 `modelSettings` 中按模型保存级别；较早的用户级 `effortLevel` 键不适用于 Opus 5.5 或更新的模型。
 * **切换**：Option+T (macOS) / Alt+T (Windows/Linux)，或在设置中启用 `alwaysThinkingEnabled`。在 Opus 5.5、Sonnet 5.5 或 Fable 模型上，这些方式无法禁用思考。
 * **固定预算**：在自适应推理模型上，Claude Code 会忽略正的 `MAX_THINKING_TOKENS` 值。在 Opus 4.6 或 Sonnet 4.6 上，设置 `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` 即可配合 `MAX_THINKING_TOKENS` 使用固定预算。
 * **详细模式**：Ctrl+O 查看思考输出
@@ -50,7 +50,7 @@
 
 对于需要深度推理的复杂任务:
 
-1. 选择更高的受支持 effort 级别，例如 `/effort high`
+1. 先确认当前级别，再用 `/effort` 选择支持范围内更高的级别；Opus 4.7 默认已是 `xhigh`，用 `high` 反而会降低级别
 2. 启用 **计划模式** 以获得结构化方法
 3. 使用多轮批判进行彻底分析
 4. 使用分割角色子代理以获得多元视角

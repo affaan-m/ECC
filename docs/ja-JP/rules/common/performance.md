@@ -35,7 +35,7 @@
 Claude Code では、適応推論によりモデルがタスクごとに思考量を決めます。Fable モデル、Sonnet 5 以降、Opus 4.7 以降では、固定のトークン予算ではなく effort で推論を制御します。利用できるレベルはモデルによって異なります。
 
 拡張思考の制御:
-- **Effort**: セッション内では `/effort`、起動時は `--effort <level>`、または `CLAUDE_CODE_EFFORT_LEVEL` を使用します。`~/.claude/settings.json` の `modelSettings` にモデルごとのレベルを保存できます。以前のユーザーレベル `effortLevel` キーは Opus 5.5 以降のモデルには適用されません。
+- **Effort**: セッション内では `/effort`、起動時は `--effort <level>`、または `CLAUDE_CODE_EFFORT_LEVEL` を使用します。環境変数は両方より優先されるため、別の方法でレベルを上げる前に解除してください。`~/.claude/settings.json` の `modelSettings` にモデルごとのレベルを保存できます。以前のユーザーレベル `effortLevel` キーは Opus 5.5 以降のモデルには適用されません。
 - **トグル**: Option+T（macOS）/ Alt+T（Windows/Linux）、または設定の `alwaysThinkingEnabled`。Opus 5.5、Sonnet 5.5、Fable モデルでは思考を無効にできません。
 - **固定予算**: 適応推論モデルでは、Claude Code は正の `MAX_THINKING_TOKENS` 値を無視します。Opus 4.6 または Sonnet 4.6 では、`CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` を設定すると `MAX_THINKING_TOKENS` で固定予算を使用できます。
 - **詳細モード**: Ctrl+O で思考出力を表示
@@ -43,7 +43,7 @@ Claude Code では、適応推論によりモデルがタスクごとに思考�
 対応する制御については [Claude Code モデル設定](https://code.claude.com/docs/en/model-config#adjust-effort-level) と [環境変数](https://code.claude.com/docs/en/env-vars) を参照してください。
 
 深い推論を必要とする複雑なタスクの場合:
-1. `/effort high` など、より高い対応済みの effort レベルを選択
+1. 現在のレベルを確認し、`/effort` でサポートされるより高いレベルを選択。Opus 4.7 はすでに `xhigh` で始まるため、`high` はレベルを下げます
 2. 構造化されたアプローチのために **プランモード** を有効化
 3. 徹底的な分析のために複数の批評ラウンドを使用
 4. 多様な視点のために役割分担したサブ agent を使用
