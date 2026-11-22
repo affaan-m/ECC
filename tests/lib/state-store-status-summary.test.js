@@ -138,7 +138,7 @@ async function run() {
     } finally { fs.rmSync(directory, { recursive: true, force: true }); }
   });
 
-  console.log(`\nResults: ${passed} passed, ${failed} failed`);
+  console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   if (failed > 0) process.exitCode = 1;
 }
 
