@@ -9,6 +9,7 @@ const { trySymlink } = require('./helpers/symlink-support');
 
 const {
   MAX_DIAGNOSTICS,
+  MAX_DOCUMENT_BYTES,
   MAX_FILES,
   MAX_SCAN_BYTES,
   MEMORY_SCHEMA_VERSION,
@@ -1021,6 +1022,8 @@ test('doctor caps hostile diagnostics and reports total counts', () => {
 test('doctor enforces one aggregate scan-byte budget across a request', () => {
   const fixture = createFixture();
   const notes = path.join(fixture.roots.project, 'notes');
+  const originalReadSync = fs.readSync;
+  let bytesRead = 0;
   try {
     fs.mkdirSync(notes, { recursive: true });
     const bodyBytes = 63 * 1024;
@@ -1037,14 +1040,105 @@ test('doctor enforces one aggregate scan-byte budget across a request', () => {
         }))
       );
     }
+    fs.readSync = (...args) => {
+      const count = originalReadSync(...args);
+      bytesRead += count;
+      return count;
+    };
     const report = doctorMemoryVault({
       roots: fixture.roots,
       scopes: ['project'],
     });
     assert.strictEqual(report.truncated, true);
     assert.ok(report.scannedBytes <= MAX_SCAN_BYTES);
+    assert.strictEqual(report.scannedBytes, bytesRead);
+    assert.strictEqual(report.invalidFileCount, 0);
     assert.ok(report.memoryCount < fileTotal);
   } finally {
+    fs.readSync = originalReadSync;
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('invalid UTF-8 consumes the same scan budget across project and team vaults', () => {
+  const fixture = createFixture();
+  const originalReadSync = fs.readSync;
+  let bytesRead = 0;
+  try {
+    const damaged = Buffer.alloc(MAX_DOCUMENT_BYTES, 0xff);
+    const filesPerScope = MAX_SCAN_BYTES / MAX_DOCUMENT_BYTES / 2;
+    for (const scope of ['project', 'team']) {
+      const notes = path.join(fixture.roots[scope], 'notes');
+      fs.mkdirSync(notes, { recursive: true });
+      const fileCount = filesPerScope + (scope === 'team' ? 1 : 0);
+      for (let index = 0; index < fileCount; index += 1) {
+        fs.writeFileSync(path.join(notes, `damaged-${String(index).padStart(3, '0')}.md`), damaged);
+      }
+    }
+    fs.readSync = (...args) => {
+      const count = originalReadSync(...args);
+      bytesRead += count;
+      return count;
+    };
+    const report = doctorMemoryVault({ roots: fixture.roots, scopes: ['project', 'team'] });
+    assert.strictEqual(report.scannedBytes, MAX_SCAN_BYTES);
+    assert.strictEqual(bytesRead, MAX_SCAN_BYTES, 'invalid documents must not bypass the I/O budget');
+    assert.strictEqual(report.invalidFileCount, MAX_SCAN_BYTES / MAX_DOCUMENT_BYTES);
+    assert.strictEqual(report.truncated, true);
+    assert.strictEqual(report.ok, false);
+  } finally {
+    fs.readSync = originalReadSync;
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('scan diagnostics count bytes consumed before a read error', () => {
+  const fixture = createFixture();
+  const originalReadSync = fs.readSync;
+  let reads = 0;
+  try {
+    const notes = path.join(fixture.roots.project, 'notes');
+    fs.mkdirSync(notes, { recursive: true });
+    fs.writeFileSync(path.join(notes, 'unreadable.md'), 'partially readable document');
+    fs.readSync = (descriptor, buffer, offset, length, position) => {
+      if (reads++ > 0) throw Object.assign(new Error('synthetic read failure'), { code: 'EIO' });
+      return originalReadSync(descriptor, buffer, offset, Math.min(length, 4), position);
+    };
+    const report = doctorMemoryVault({ roots: fixture.roots, scopes: ['project'] });
+    assert.strictEqual(report.scannedBytes, 4);
+    assert.strictEqual(report.invalidFileCount, 1);
+    assert.strictEqual(report.truncated, false);
+  } finally {
+    fs.readSync = originalReadSync;
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('bounded text reads stop at the remaining budget when a file grows', () => {
+  const fixture = createFixture();
+  const target = path.join(fixture.root, 'growing.md');
+  const originalReadSync = fs.readSync;
+  let bytesRead = 0;
+  let accountedBytes = 0;
+  try {
+    fs.writeFileSync(target, 'four');
+    fs.readSync = (...args) => {
+      const count = originalReadSync(...args);
+      if (bytesRead === 0) fs.appendFileSync(target, ' more');
+      bytesRead += count;
+      return count;
+    };
+    assert.throws(() => readRegularTextFile(target, {
+      maxBytes: 32,
+      maxReadBytes: 4,
+      onReadBytes: count => { accountedBytes += count; },
+    }), { code: 'ECC_MEMORY_SCAN_LIMIT' });
+    assert.strictEqual(bytesRead, 4);
+    assert.strictEqual(accountedBytes, 4);
+    fs.readSync = originalReadSync;
+    assert.strictEqual(readRegularTextFile(target, { maxBytes: 32 }), 'four more');
+  } finally {
+    fs.readSync = originalReadSync;
     fs.rmSync(fixture.root, { recursive: true, force: true });
   }
 });

@@ -472,6 +472,37 @@ test('JSON output preserves data without applying terminal rendering rules', () 
   assert.strictEqual(JSON.parse(result.stdout).value, hostile);
 });
 
+test('routed recall and doctor report raw bytes for BOM and invalid UTF-8 documents', () => {
+  const fixture = createFixture();
+  try {
+    const saved = json(run(MEMORY_SCRIPT, [
+      'save', '--title', 'Byte accounting', '--stdin', '--json',
+    ], fixture, { input: 'Recall this durable context.' }));
+    const notes = path.join(fixture.env.ECC_MEMORY_PROJECT_ROOT, 'project', 'notes');
+    const savedPath = path.join(notes, `${saved.memory.id}.md`);
+    const encoded = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), fs.readFileSync(savedPath)]);
+    const damaged = Buffer.from([0x61, 0xc3, 0x28, 0x62]);
+    fs.writeFileSync(savedPath, encoded);
+    fs.writeFileSync(path.join(notes, 'damaged.md'), damaged);
+    const expectedBytes = encoded.length + damaged.length;
+
+    const recall = json(run(ECC_SCRIPT, ['memory', 'search', 'durable', '--json'], fixture));
+    assert.strictEqual(recall.results.length, 1);
+    assert.strictEqual(recall.results[0].memory.id, saved.memory.id);
+    assert.strictEqual(recall.diagnostics.invalidFileCount, 1);
+    assert.strictEqual(recall.diagnostics.scannedBytes, expectedBytes);
+    assert.strictEqual(recall.diagnostics.truncated, false);
+
+    const doctor = json(run(ECC_SCRIPT, ['memory', 'doctor', '--json'], fixture));
+    assert.strictEqual(doctor.scannedBytes, expectedBytes);
+    assert.strictEqual(doctor.invalidFileCount, 1);
+    assert.strictEqual(doctor.memoryCount, 1);
+    assert.strictEqual(doctor.ok, false);
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
 if (failed > 0) {
   process.exit(1);
