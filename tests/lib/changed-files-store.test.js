@@ -34,6 +34,62 @@ async function runTests() {
 
   console.log('\n=== Testing changed-files-store ===\n')
 
+  const secondInstance = await import(pathToFileURL(storePath).href + '?instance=2')
+
+  if (
+    test('store keeps worktree roots isolated', () => {
+      const otherRoot = path.join(repoRoot, 'tests')
+      initStore(worktree)
+      secondInstance.initStore(worktree)
+      clearChanges()
+      recordChange('root-a.ts', 'added')
+
+      initStore(otherRoot)
+      secondInstance.initStore(otherRoot)
+      recordChange('root-b.ts', 'modified')
+      assert.deepStrictEqual(secondInstance.getChangedPaths(), [{ path: 'root-b.ts', changeType: 'modified' }])
+
+      initStore(worktree)
+      secondInstance.initStore(worktree)
+      assert.deepStrictEqual(secondInstance.getChangedPaths(), [{ path: 'root-a.ts', changeType: 'added' }])
+      clearChanges()
+      initStore(otherRoot)
+      clearChanges()
+      initStore(worktree)
+    })
+  )
+    passed++
+  else failed++
+
+  if (
+    test('explicit root argument never reads the module default', () => {
+      const otherRoot = path.join(repoRoot, 'tests')
+      clearChanges(worktree)
+      clearChanges(otherRoot)
+      recordChange('explicit.ts', 'added', worktree)
+      assert.strictEqual(hasChanges(worktree), true)
+      assert.strictEqual(hasChanges(otherRoot), false)
+      assert.deepStrictEqual(getChangedPaths('added', worktree), [{ path: 'explicit.ts', changeType: 'added' }])
+      clearChanges(worktree)
+    })
+  )
+    passed++
+  else failed++
+
+  if (
+    test('module instances share state through globalThis', () => {
+      clearChanges()
+      initStore(worktree)
+      recordChange('shared/example.ts', 'added')
+      assert.strictEqual(secondInstance.hasChanges(), true)
+      assert.deepStrictEqual(secondInstance.getChangedPaths(), [{ path: 'shared/example.ts', changeType: 'added' }])
+      clearChanges()
+      assert.strictEqual(secondInstance.hasChanges(), false)
+    })
+  )
+    passed++
+  else failed++
+
   if (
     test('initStore and recordChange store relative path', () => {
       clearChanges()

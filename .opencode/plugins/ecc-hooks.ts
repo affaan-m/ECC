@@ -75,6 +75,7 @@ const PLUGIN_DIR = resolvePluginDir()
 // future layout double-instantiates this module. The guard applies to V2
 // domain registration only; the V1 factory stays constructible on demand
 // (tests and legacy loaders instantiate it per project).
+const ACTIVE_REGISTRATIONS_KEY = Symbol.for("ecc.hooks.active-registrations")
 const GUARD_KEY = Symbol.for("ecc.hooks.registered-directories")
 const registeredDirectories: Set<string> =
   ((globalThis as any)[GUARD_KEY] as Set<string> | undefined) ??
@@ -105,10 +106,11 @@ export const ECCHooksPluginDefinition = {
   async setup(ctx: any): Promise<() => void> {
     const directory: string = ctx?.location?.directory ?? process.cwd()
 
-    if (registeredDirectories.has(directory)) {
-      return () => {}
-    }
-    registeredDirectories.add(directory)
+    // OpenCode hot-reloads plugins on file changes. The previous generation
+    // is stopped and disposed inside the per-directory lock, right before this
+    // instance registers, so a reload never leaves a dead or duplicated set.
+    const active: Map<string, { registrations: { dispose?: () => Promise<void> | void }[]; stop: () => void }> =
+      ((globalThis as any)[ACTIVE_REGISTRATIONS_KEY] ??= new Map())
 
     const runtime = await createEccRuntime({ directory, worktree: directory }, PLUGIN_DIR)
     const { hooks, worktreePath } = runtime
@@ -165,7 +167,16 @@ export const ECCHooksPluginDefinition = {
     // All domain registrations happen inside registerDomains() so a failure
     // half-way through can be rolled back (T10): already-registered hooks are
     // disposed and the directory guard is released for a later retry.
-    const registerDomains = async (): Promise<void> => {
+    const registerDomains = async (): Promise<void> => withDirectoryLock(directory, async () => {
+    const previous = active.get(directory)
+    if (previous) {
+      previous.stop()
+      await disposeRegistrations(previous.registrations)
+      active.delete(directory)
+    }
+    registeredDirectories.delete(directory)
+    registeredDirectories.add(directory)
+
     if (typeof ctx?.tool?.hook === "function") {
       registrations.push(await ctx.tool.hook("execute.before", safe("execute.before", (event: LooseRecord) => hooks["tool.execute.before"](toToolInput(event), {}))))
       registrations.push(
@@ -248,7 +259,7 @@ export const ECCHooksPluginDefinition = {
             },
             execute: async (input: any, context: any) => {
               const mod = await loadToolModule("changed-files", PLUGIN_DIR)
-              const result = await mod.execute(input ?? {}, context ?? { directory: worktreePath, worktree: worktreePath })
+              const result = await mod.execute(input ?? {}, { ...(context ?? {}), directory: context?.directory ?? worktreePath, worktree: context?.worktree ?? worktreePath })
               return { content: String(result) }
             },
           })
@@ -267,7 +278,7 @@ export const ECCHooksPluginDefinition = {
             },
             execute: async (input: any, context: any) => {
               const mod = await loadToolModule("dependency-analyzer", PLUGIN_DIR)
-              const result = await mod.execute(input ?? {}, context ?? { directory: worktreePath, worktree: worktreePath })
+              const result = await mod.execute(input ?? {}, { ...(context ?? {}), directory: context?.directory ?? worktreePath, worktree: context?.worktree ?? worktreePath })
               return { content: String(result) }
             },
           })
@@ -323,7 +334,7 @@ export const ECCHooksPluginDefinition = {
         }
       })()
     }
-    }
+    })
 
     // T10: if any registration after the guard was taken throws, dispose the
     // registrations already made and release the directory guard so a later
@@ -337,12 +348,41 @@ export const ECCHooksPluginDefinition = {
       throw error
     }
 
+    active.set(directory, { registrations, stop: () => controller.abort() })
+
     return async () => {
       controller.abort()
       registeredDirectories.delete(directory)
+      active.delete(directory)
       await disposeRegistrations(registrations)
     }
   },
+}
+
+/**
+ * Serialize setup for one directory so overlapping loads cannot both register
+ * and orphan the earlier hook set. The caller publishes (and replaces) the
+ * active generation under this lock.
+ */
+const SETUP_QUEUES_KEY = Symbol.for("ecc.hooks.setup-queues")
+
+async function withDirectoryLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const queues: Map<string, Promise<unknown>> =
+    ((globalThis as any)[SETUP_QUEUES_KEY] ??= new Map<string, Promise<unknown>>())
+  const prior = queues.get(key) ?? Promise.resolve()
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const tail = prior.catch(() => undefined).then(() => gate)
+  queues.set(key, tail)
+  await prior.catch(() => undefined)
+  try {
+    return await fn()
+  } finally {
+    release()
+    if (queues.get(key) === tail) queues.delete(key)
+  }
 }
 
 /** Dispose every registration, awaiting promises so no rejection is unhandled. */

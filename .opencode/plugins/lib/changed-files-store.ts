@@ -2,35 +2,62 @@ import * as path from "path"
 
 export type ChangeType = "added" | "modified" | "deleted"
 
-const changes = new Map<string, ChangeType>()
+// OpenCode cache-busts the plugin entrypoint, so this module can be evaluated
+// more than once per process. Keep the state on globalThis so the plugin
+// runtime and the tool modules always observe the same change map, keyed by
+// worktree root so two projects in one process never share entries.
+const STORE_KEY = Symbol.for("ecc.changed-files-store")
+const shared: { byRoot: Map<string, Map<string, ChangeType>> } =
+  ((globalThis as any)[STORE_KEY] ??= { byRoot: new Map<string, Map<string, ChangeType>>() })
+
+// Default root for callers that use the module-level store (V1 surface and
+// tests). Runtime and tool callers pass their worktree explicitly so a module
+// instance reused by two contexts can never redirect another context's writes.
 let worktreeRoot = ""
 
-export function initStore(worktree: string): void {
-  worktreeRoot = worktree || process.cwd()
+function resolveRoot(root?: string): string {
+  const candidate = (root ?? worktreeRoot ?? "").trim()
+  return candidate ? candidate : process.cwd()
 }
 
-function toRelative(p: string): string {
+export function initStore(worktree: string): void {
+  worktreeRoot = resolveRoot(worktree)
+  changes(worktreeRoot)
+}
+
+function changes(root?: string): Map<string, ChangeType> {
+  const key = resolveRoot(root)
+  let map = shared.byRoot.get(key)
+  if (!map) {
+    map = new Map<string, ChangeType>()
+    shared.byRoot.set(key, map)
+  }
+  return map
+}
+
+function toRelative(root: string, p: string): string {
   if (!p) return ""
   const normalized = path.normalize(p)
-  if (path.isAbsolute(normalized) && worktreeRoot) {
-    const rel = path.relative(worktreeRoot, normalized)
+  if (path.isAbsolute(normalized)) {
+    const rel = path.relative(root, normalized)
     return rel.startsWith("..") ? normalized : rel
   }
   return normalized
 }
 
-export function recordChange(filePath: string, type: ChangeType): void {
-  const rel = toRelative(filePath)
+export function recordChange(filePath: string, type: ChangeType, root?: string): void {
+  const key = resolveRoot(root)
+  const rel = toRelative(key, filePath)
   if (!rel) return
-  changes.set(rel, type)
+  changes(key).set(rel, type)
 }
 
-export function getChanges(): Map<string, ChangeType> {
-  return new Map(changes)
+export function getChanges(root?: string): Map<string, ChangeType> {
+  return new Map(changes(root))
 }
 
-export function clearChanges(): void {
-  changes.clear()
+export function clearChanges(root?: string): void {
+  changes(root).clear()
 }
 
 export type TreeNode = {
@@ -63,13 +90,13 @@ function addToTree(children: TreeNode[], segs: string[], fullPath: string, chang
   addToTree(child.children, rest, fullPath, changeType)
 }
 
-export function buildTree(filter?: ChangeType): TreeNode[] {
-  const root: TreeNode[] = []
-  for (const [relPath, changeType] of changes) {
+export function buildTree(filter?: ChangeType, root?: string): TreeNode[] {
+  const tree: TreeNode[] = []
+  for (const [relPath, changeType] of changes(root)) {
     if (filter && changeType !== filter) continue
     const segs = relPath.split(path.sep).filter(Boolean)
     if (segs.length === 0) continue
-    addToTree(root, segs, relPath, changeType)
+    addToTree(tree, segs, relPath, changeType)
   }
 
   function sortNodes(nodes: TreeNode[]): TreeNode[] {
@@ -80,12 +107,12 @@ export function buildTree(filter?: ChangeType): TreeNode[] {
       return a.name.localeCompare(b.name)
     }).map((n) => ({ ...n, children: sortNodes(n.children) }))
   }
-  return sortNodes(root)
+  return sortNodes(tree)
 }
 
-export function getChangedPaths(filter?: ChangeType): Array<{ path: string; changeType: ChangeType }> {
+export function getChangedPaths(filter?: ChangeType, root?: string): Array<{ path: string; changeType: ChangeType }> {
   const list: Array<{ path: string; changeType: ChangeType }> = []
-  for (const [p, t] of changes) {
+  for (const [p, t] of changes(root)) {
     if (filter && t !== filter) continue
     list.push({ path: p, changeType: t })
   }
@@ -93,6 +120,6 @@ export function getChangedPaths(filter?: ChangeType): Array<{ path: string; chan
   return list
 }
 
-export function hasChanges(): boolean {
-  return changes.size > 0
+export function hasChanges(root?: string): boolean {
+  return changes(root).size > 0
 }

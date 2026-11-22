@@ -60,15 +60,20 @@ const changedFilesTool: ToolDefinition = tool({
       .describe("Output format: tree for terminal display, json for structured data (default: tree)"),
   },
   async execute(args, context) {
-    const { buildTree, getChangedPaths, hasChanges } = await loadChangedFilesStore()
+    const { buildTree, getChangedPaths, hasChanges, initStore } = await loadChangedFilesStore()
+    const candidate = [context?.worktree, context?.directory].find(
+      (value) => typeof value === "string" && value.trim().length > 0,
+    )
+    const root = typeof candidate === "string" ? candidate : process.cwd()
+    initStore(root)
     const filter = args.filter === "all" || !args.filter ? undefined : (args.filter as ChangeType)
     const format = args.format ?? "tree"
 
-    if (!hasChanges()) {
+    if (!hasChanges(root)) {
       return JSON.stringify({ changed: false, message: "No files changed in this session" })
     }
 
-    const paths = getChangedPaths(filter)
+    const paths = getChangedPaths(filter, root)
 
     if (format === "json") {
       return JSON.stringify(
@@ -85,7 +90,7 @@ const changedFilesTool: ToolDefinition = tool({
       )
     }
 
-    const tree = buildTree(filter)
+    const tree = buildTree(filter, root)
     const treeStr = renderTree(tree, "")
     const diffHint = paths
       .filter((p) => p.changeType !== "added")
