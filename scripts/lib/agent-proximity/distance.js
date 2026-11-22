@@ -172,6 +172,11 @@ function overlapRisk(a, b) {
   const filesA = a.files || [];
   const filesB = b.files || [];
   const byPathB = new Map(filesB.map(f => [normalizePath(f.path), f]));
+  // Legacy callers provide already-comparable ranges without a reference.
+  // Live worktrees identify the base revision: different bases cannot prove
+  // disjointness from line numbers, so keep shared files conservative.
+  const comparableLines = (!a.baseRevision && !b.baseRevision)
+    || (typeof a.baseRevision === 'string' && a.baseRevision === b.baseRevision);
   // Per shared file, the (line-precise) overlap — lineRangeOverlap returns 1 when
   // either side lacks ranges (a whole-file edit). The risk is the max across
   // shared files: even one fully-overlapping file is a collision, while the same
@@ -182,7 +187,7 @@ function overlapRisk(a, b) {
     const fb = byPathB.get(normalizePath(fa.path));
     if (fb) {
       const w = (fa.weight ?? 1) * (fb.weight ?? 1);
-      r = Math.max(r, w * lineRangeOverlap(fa.lines, fb.lines));
+      r = Math.max(r, w * (comparableLines ? lineRangeOverlap(fa.lines, fb.lines) : 1));
     }
   }
   return clamp01(r);
