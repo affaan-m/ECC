@@ -9,13 +9,15 @@ const { spawnSync } = require('child_process');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'run-all.js'), 'utf8');
 
-function run(result, filename = 'sample.test.js', actions = true, fileExists = true) {
+function run(result, filename = 'sample.test.js', actions = true, fileExists = true, processOverrides = {}) {
   const logs = [];
   const exit = {};
   let status;
   let spawns = 0;
+  let childEnv;
   const fakeProcess = {
-    env: actions ? { GITHUB_ACTIONS: 'true' } : {},
+    ...processOverrides,
+    env: { ...(actions ? { GITHUB_ACTIONS: 'true' } : {}), ...processOverrides.env },
     exit(code) { status = code; throw exit; },
     set exitCode(code) { status = code; },
   };
@@ -37,7 +39,7 @@ function run(result, filename = 'sample.test.js', actions = true, fileExists = t
         if (name === 'path') return path;
         if (name === 'perf_hooks') return require('perf_hooks');
         if (name === 'child_process') return {
-          spawnSync() { spawns += 1; return result; },
+          spawnSync(_command, _args, options) { spawns += 1; childEnv = options.env; return result; },
         };
         throw new Error(`Unexpected dependency: ${name}`);
       },
@@ -46,7 +48,7 @@ function run(result, filename = 'sample.test.js', actions = true, fileExists = t
     if (error !== exit) throw error;
   }
   assert.strictEqual(spawns, 1);
-  return { status, logs, annotations: logs.filter(line => line.startsWith('::error ')) };
+  return { status, logs, childEnv, annotations: logs.filter(line => line.startsWith('::error ')) };
 }
 
 function fixtureRun(files, options = {}) {
@@ -248,6 +250,14 @@ const tests = [
   }],
   ['developer location overrides cannot reach suite processes', () => {
     assert.deepStrictEqual(leakedKeys(LOCATION_OVERRIDES), []);
+  }],
+  ['on Windows an override is stripped whatever the case of its name; elsewhere only the exact name', () => {
+    const env = { claude_config_dir: 'x', Codex_Home: 'y', CLAUDE_CONFIG_DIR: 'z', Unrelated_Value: 'kept' };
+    const passing = { status: 0, stdout: 'Passed: 1, Failed: 0' };
+    const windows = { ...run(passing, 'sample.test.js', false, true, { platform: 'win32', env }).childEnv };
+    assert.deepStrictEqual(windows, { Unrelated_Value: 'kept' });
+    const linux = { ...run(passing, 'sample.test.js', false, true, { platform: 'linux', env }).childEnv };
+    assert.deepStrictEqual(linux, { claude_config_dir: 'x', Codex_Home: 'y', Unrelated_Value: 'kept' });
   }],
   ['every config-home or config-dir override read by scripts/ is stripped from suites', () => {
     const names = scriptLocationOverrides();
