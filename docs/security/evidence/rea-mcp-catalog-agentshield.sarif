@@ -1745,10 +1745,7 @@
       "invocations": [
         {
           "executionSuccessful": true,
-          "endTimeUtc": "2026-11-22T19:38:43.842Z",
-          "workingDirectory": {
-            "uri": "<target-path>"
-          }
+          "endTimeUtc": "2026-11-22T19:38:43.842Z"
         }
       ],
       "properties": {

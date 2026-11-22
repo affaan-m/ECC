@@ -23,8 +23,10 @@ The same root was built from `main` at `4adeee67`, saved with
 
 `rea-mcp-catalog-agentshield.sarif` is the redacted `agentshield-results.sarif`
 from the evidence pack of this branch (commit `7ef28991`). AgentShield replaced
-the scan root with `<target-path>`; it contains no local path, username,
-credential or token.
+the scan root with the placeholder `<target-path>`, which is not a valid SARIF
+URI, so the optional `invocations[].workingDirectory` object was removed; the
+findings and their repository-relative locations are unchanged. The file
+contains no local path, username, credential or token.
 
 ## Result
 
@@ -47,7 +49,7 @@ changes its count from 37 to 38 servers.
 
 | Finding | Severity | Disposition |
 | --- | --- | --- |
-| `mcp-npx-y-rea`: uses `npx -y` | low | Accepted. Matches every other npx entry in the catalog and upstream's published `mcp.json`. MCP stdio servers have no TTY, so dropping `-y` would hang on the install prompt. The supply-chain control is the exact pin `rea-agents@6.10.1`. |
+| `mcp-npx-y-rea`: uses `npx -y` | low | Accepted. Matches every other npx entry in the catalog and upstream's published `mcp.json`, and states the intent explicitly. Removing `-y` would not add a confirmation step for an MCP stdio launch: `npm exec` assumes `--yes` when stdin is not a TTY. The supply-chain control is the exact pin `rea-agents@6.10.1`. |
 | `mcp-env-inherit-rea`: no explicit `env` block | low | Accepted. Same finding exists for most catalog entries on `main`. REA may need provider paths (Ghidra, IDA, Hopper) from the environment, so an empty `env` block was not added to silence the rule. Users who enable the entry can add a scoped `env` block. |
 
 No medium, high or critical finding is introduced.
