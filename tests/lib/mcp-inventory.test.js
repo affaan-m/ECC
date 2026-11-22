@@ -309,6 +309,61 @@ test('CLI parseArgs + human report render fragmentation', () => {
   assert.ok(report.includes('x2'), 'report shows the harness count');
 });
 
+test('multiple sources in one harness do not count as cross-harness fragmentation', () => {
+  for (const projectCommand of ['npx', 'docker']) {
+    const records = [
+      normalizeServerEntry({ name: 'github', ...GITHUB_STDIO, source: { harness: 'claude-code', scope: 'user' } }),
+      normalizeServerEntry({ name: 'github', ...GITHUB_STDIO, command: projectCommand,
+        source: { harness: 'claude-code', scope: 'project' } }),
+    ];
+    const before = JSON.stringify(records);
+    const inventory = buildInventory(records);
+    assert.strictEqual(inventory.servers[0].harnessCount, 1);
+    assert.strictEqual(inventory.servers[0].sources.length, 2);
+    assert.strictEqual(inventory.servers[0].consistent, projectCommand === 'npx');
+    assert.deepStrictEqual(inventory.fragmentation, []);
+    assert.strictEqual(inventory.aggregates.duplicateServerCount, 0);
+    assert.strictEqual(inventory.aggregates.inconsistentServerCount, 0);
+    assert.ok(formatHumanReport(inventory).includes('0 configured in 2+ harnesses'));
+    assert.strictEqual(JSON.stringify(records), before);
+  }
+});
+
+test('file-backed inventory counts each harness once while retaining every source', () => {
+  const home = tmpHome();
+  try {
+    const userFile = path.join(home, '.claude.json');
+    const projectFile = path.join(home, '.mcp.json');
+    fs.writeFileSync(userFile, JSON.stringify({ mcpServers: { github: GITHUB_STDIO } }));
+    fs.writeFileSync(projectFile, JSON.stringify({ mcpServers: {
+      github: { ...GITHUB_STDIO, env: { GITHUB_TOKEN: 'test-only-secret' } },
+    } }));
+    fs.mkdirSync(path.join(home, '.codex'));
+    const codexFile = path.join(home, '.codex', 'config.toml');
+    fs.writeFileSync(codexFile, '[mcp_servers.github]\ncommand = "docker"\nargs = ["run", "github-server"]\n');
+    const inventory = collectMcpInventory({
+      readers: { 'claude-code': readClaudeCodeMcp, codex: readCodexMcp },
+      readerOptions: { 'claude-code': { homeDir: home, projectConfigPaths: [projectFile] }, codex: { homeDir: home } },
+    });
+    const output = JSON.stringify(inventory);
+    const github = JSON.parse(output).servers[0];
+    assert.strictEqual(github.harnessCount, 2);
+    assert.deepStrictEqual(github.sources.map(source => source.configPath), [userFile, projectFile, codexFile]);
+    assert.strictEqual(github.consistent, false);
+    assert.strictEqual(github.hasSecrets, true);
+    assert.ok(!output.includes('test-only-secret'));
+    assert.deepStrictEqual(inventory.fragmentation[0], {
+      name: 'github', harnessCount: 2, harnesses: ['claude-code', 'codex'], consistent: false,
+    });
+    assert.strictEqual(inventory.aggregates.harnessCount, 2);
+    assert.strictEqual(inventory.aggregates.duplicateServerCount, 1);
+    assert.strictEqual(inventory.aggregates.inconsistentServerCount, 1);
+    assert.ok(formatHumanReport(inventory, { fragmentedOnly: true }).includes('github  x2  [claude-code, codex]  DRIFT'));
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 
 // --- branch/error coverage: readers degrade gracefully, CLI main(), collect skips ---
 

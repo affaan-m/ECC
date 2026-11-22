@@ -222,7 +222,8 @@ function mergeServers(serverRecords) {
     const { signatures: _signatures, ...rest } = server;
     return {
       ...rest,
-      harnessCount: server.sources.length,
+      // User and project scopes remain separate sources within one harness.
+      harnessCount: new Set(server.sources.map(source => source.harness)).size,
       consistent: uniqueSignatures.length <= 1
     };
   });
@@ -234,7 +235,7 @@ function buildFragmentation(mergedServers) {
     .map(server => ({
       name: server.name,
       harnessCount: server.harnessCount,
-      harnesses: server.sources.map(source => source.harness),
+      harnesses: Array.from(new Set(server.sources.map(source => source.harness))),
       consistent: server.consistent
     }))
     .sort((a, b) => b.harnessCount - a.harnessCount || a.name.localeCompare(b.name));
