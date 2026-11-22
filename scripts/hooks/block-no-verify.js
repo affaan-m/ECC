@@ -1417,16 +1417,16 @@ function applyDeclaration(current, key, equals, declaration) {
 
 function getShellIfs(state) {
   if (!state?.variables?.has('IFS')) {
-    return { regex: /\s+/, isDefault: true };
+    return { chars: null, isDefault: true };
   }
   const ifs = state.variables.get('IFS');
   if (ifs === '') return null;
   const isDefault = ifs === ' \t\n' || ifs === ' ';
-  return { regex: isDefault ? /\s+/ : new RegExp(`[${escapeRegex(ifs)}]+`), isDefault };
+  return { chars: isDefault ? null : new Set(ifs), isDefault };
 }
 
 function markIfsDelimiters(val, ifsInfo) {
-  if (!ifsInfo || !ifsInfo.regex.test(val)) return val;
+  if (!ifsInfo || typeof val !== 'string' || val.length === 0) return val;
   if (ifsInfo.isDefault) {
     const hasLeading = /^\s/.test(val);
     const hasTrailing = /\s$/.test(val);
@@ -1435,7 +1435,20 @@ function markIfsDelimiters(val, ifsInfo) {
     if (hasTrailing) marked = marked + '\u001F';
     return marked;
   }
-  return val.replace(new RegExp(ifsInfo.regex.source, 'g'), '\u001F');
+  let res = '';
+  let inDelim = false;
+  for (let i = 0; i < val.length; i++) {
+    if (ifsInfo.chars.has(val[i])) {
+      if (!inDelim) {
+        res += '\u001F';
+        inDelim = true;
+      }
+    } else {
+      res += val[i];
+      inDelim = false;
+    }
+  }
+  return res;
 }
 
 function scanSingleQuote(raw, start) {
@@ -1499,17 +1512,18 @@ function resolveWordRaw(raw, state, ifsInfo, budget) {
     if (ch === "'") {
       hadQuotes = true;
       const res = scanSingleQuote(raw, i);
-      resolvedWord += res.text;
+      resolvedWord += res.text.replace(/\u001F/g, '\u001E_');
       i = res.end;
     } else if (ch === '$' && raw[i + 1] === "'") {
       hadQuotes = true;
       const res = scanAnsiQuote(raw, i);
-      resolvedWord += res.text;
+      resolvedWord += res.text.replace(/\u001F/g, '\u001E_');
       i = res.end;
     } else if (ch === '"') {
       hadQuotes = true;
       const res = scanDoubleQuote(raw, i);
-      resolvedWord += resolveShellSource(res.inner, state, budget);
+      const innerResolved = resolveShellSource(res.inner, state, budget);
+      resolvedWord += innerResolved.replace(/\u001F/g, '\u001E_');
       i = res.end;
     } else if (ch === '$' && (/[A-Za-z0-9_@{]/.test(raw[i + 1] || ''))) {
       const unquoted = scanUnquotedParam(raw, i);
@@ -1518,10 +1532,10 @@ function resolveWordRaw(raw, state, ifsInfo, budget) {
       i = unquoted.end;
     } else {
       if (ch === '\\' && i + 1 < len) {
-        resolvedWord += raw[i + 1];
+        resolvedWord += (raw[i + 1] === '\u001F' ? '\u001E_' : raw[i + 1]);
         i += 2;
       } else {
-        resolvedWord += ch;
+        resolvedWord += (ch === '\u001F' ? '\u001E_' : ch);
         i++;
       }
     }
@@ -1544,17 +1558,19 @@ function resolveWordTokens(word, state, ifsInfo, budget) {
   if (resolvedWord.includes('\u001F')) {
     const parts = resolvedWord.split('\u001F').filter(p => p.length > 0 || hadQuotes);
     return parts.map(part => {
-      const partDynamic = hasCmdSub || part.includes('\u0000') || /\$(?:[A-Za-z0-9_@{]|\()/.test(part);
+      const unescaped = part.replace(/\u001E_/g, '\u001F');
+      const partDynamic = hasCmdSub || unescaped.includes('\u0000') || /\$(?:[A-Za-z0-9_@{]|\()/.test(unescaped);
       return {
-        value: part,
+        value: unescaped,
         dynamic: Boolean(word.dynamic && partDynamic),
         quoted: false
       };
     });
   }
 
+  const finalVal = resolvedWord.replace(/\u001E_/g, '\u001F');
   return [{
-    value: resolvedWord,
+    value: finalVal,
     dynamic: Boolean(word.dynamic && stillDynamic),
     quoted: Boolean(hadQuotes || word.quoted)
   }];
