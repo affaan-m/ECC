@@ -28,15 +28,13 @@ bash ./install.sh --target kimi --profile minimal
 
 ## User-level project-agnostic install
 
-The local `kimi-home` adapter installs the selected ECC profile into `~/.kimi-code/` for the current user. It uses the same managed install-state and preflight lifecycle as the project adapter, maps directly discoverable skills into `skills/`, and does not create or modify global MCP configuration. Existing conflicting user-owned files stop installation.
+The `kimi-home` adapter installs the selected ECC profile into `~/.kimi-code/` for the current user. It uses the same managed install-state and preflight lifecycle as the project adapter, maps directly discoverable skills into `skills/`, and does not create or modify global MCP configuration. Existing conflicting user-owned files stop installation.
 
 ```bash
 bash ./install.sh --target kimi-home --profile minimal --dry-run
 bash ./install.sh --target kimi-home --profile minimal
 node scripts/ecc.js doctor --target kimi-home
 ```
-
-This home-target adapter is a locally disclosed extension of canonical ECC v2.2.3, not a claim that the upstream v2.2.3 release already includes it.
 
 ## Self-hosted model compute
 
