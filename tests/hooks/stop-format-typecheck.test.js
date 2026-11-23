@@ -257,7 +257,7 @@ if (test('matches a diagnostic by the file it names, not by a substring of the l
   assert.strictEqual(diagnosticMatchesFile("  Type 'string' is not assignable to type 'number'.", utils), false);
 })) passed++; else failed++;
 
-if (test('stop hook reports a tsc diagnostic only under the file it names', () => {
+if (test('Stop reports a diagnostic only for its edited file and forwards it through the lifecycle runner', () => {
   const { spawnSync } = require('child_process');
   const projectDir = fs.mkdtempSync(path.join(accumulatorTempRoot, 'ts-project-'));
   const binDir = path.join(projectDir, 'bin');
@@ -277,20 +277,42 @@ if (test('stop hook reports a tsc diagnostic only under the file it names', () =
   }
   const pathKey = Object.keys(process.env).find(key => key.toLowerCase() === 'path') || 'PATH';
   const stopScript = path.resolve(__dirname, '../../scripts/hooks/stop-format-typecheck.js');
-  const stopStderr = editedFile => {
-    fs.writeFileSync(getAccumFile(), `${editedFile}\n`);
-    return spawnSync('node', [stopScript], {
-      input: '{}',
-      env: { ...process.env, CLAUDE_SESSION_ID: TEST_SESSION_ID, [pathKey]: `${binDir}${path.delimiter}${process.env[pathKey]}` },
+  const runStop = (editedFile, input = '{}', args = [stopScript]) => {
+    fs.writeFileSync(getAccumFile(), editedFile + '\n');
+    return spawnSync(process.execPath, args, {
+      input,
+      env: {
+        ...process.env,
+        CLAUDE_SESSION_ID: TEST_SESSION_ID,
+        CLAUDE_PLUGIN_ROOT: path.resolve(__dirname, '../..'),
+        ECC_HOOKS_ENABLED: 'true',
+        ECC_HOOK_PROFILE: 'standard',
+        ECC_DISABLED_HOOKS: '',
+        ECC_DRY_RUN: '',
+        ECC_STOP_BUILD_FIX: '1',
+        [pathKey]: binDir + path.delimiter + process.env[pathKey],
+      },
       encoding: 'utf8',
-      timeout: 10000
-    }).stderr;
+      timeout: 10000,
+    });
   };
   try {
-    const rootStderr = stopStderr(path.join(projectDir, 'index.ts'));
-    assert.ok(!rootStderr.includes('TypeScript errors'), `root index.ts must not get src/index.ts errors:\n${rootStderr}`);
-    const nestedStderr = stopStderr(path.join(projectDir, 'src', 'index.ts'));
-    assert.ok(nestedStderr.includes(`TypeScript errors in index.ts:\n${diagnostic}`), nestedStderr);
+    const root = runStop(path.join(projectDir, 'index.ts'));
+    assert.ok(!root.stderr.includes('TypeScript errors'), root.stderr);
+    const editedFile = path.join(projectDir, 'src', 'index.ts');
+    const nested = runStop(editedFile);
+    assert.ok(nested.stderr.includes('TypeScript errors in index.ts:\n' + diagnostic), nested.stderr);
+
+    const input = JSON.stringify({ session_id: TEST_SESSION_ID, hook_event_name: 'Stop', stop_hook_active: false });
+    const bootstrap = path.join(path.dirname(stopScript), 'lifecycle-hook-bootstrap.js');
+    const result = runStop(editedFile, input, [
+      bootstrap, 'stop:format-typecheck', 'scripts/hooks/stop-format-typecheck.js', 'standard,strict', '10000',
+    ]);
+    assert.strictEqual(result.status, 0, result.error?.message || result.stderr);
+    const decision = JSON.parse(result.stdout);
+    assert.strictEqual(decision.decision, 'block');
+    assert.ok(decision.reason.includes('/build-fix'));
+    assert.ok(decision.reason.endsWith(diagnostic));
   } finally {
     cleanAccumFile();
     fs.rmSync(projectDir, { recursive: true, force: true });

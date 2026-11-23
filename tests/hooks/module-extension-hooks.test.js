@@ -35,6 +35,7 @@ function invokeHook(name, root, input, options = {}) {
   const execute = (bin, args, spawnOptions) => {
     calls.push({ bin, args: Array.from(args), cwd: spawnOptions.cwd });
     if (args[0] === 'tsc') {
+      if (options.compilerResult) return options.compilerResult;
       const stdout = extensions.map(extension => `source.${extension}(1,1): error TS2322: Module diagnostic`).join('\n');
       throw Object.assign(new Error('Type check failed'), { stdout, stderr: '' });
     }
@@ -45,9 +46,15 @@ function invokeHook(name, root, input, options = {}) {
     if (request === 'child_process') return {
       execFileSync: execute,
       spawnSync: (...args) => {
-        try { execute(...args); return { status: 0 }; }
+        try {
+          const result = execute(...args);
+          return args[1][0] === 'tsc' && options.compilerResult ? result : { status: 0 };
+        }
         catch (error) { return { status: 2, stdout: error.stdout, stderr: error.stderr }; }
       },
+    };
+    if (request === 'fs' && options.accumulatorUnlinkError) return {
+      ...fs, unlinkSync: () => { throw options.accumulatorUnlinkError; },
     };
     if (request === 'os') return { ...os, tmpdir: () => root, homedir: () => path.join(root, 'home') };
     if (request === '../lib/resolve-formatter' && options.platform === 'win32') return {
@@ -83,7 +90,7 @@ function invokeHook(name, root, input, options = {}) {
     assert.strictEqual(decision.reason.includes('/build-fix'), options.buildFix === '1');
     assert.ok(decision.reason.includes('source.mts(1,1): error TS2322'));
   } else assert.strictEqual(output, input, `${name} preserves its input`);
-  return { calls, diagnostics };
+  return { calls, diagnostics, output };
 }
 
 function test(name, run) {
@@ -201,6 +208,96 @@ test('opt-in Stop requests one scoped build-fix attempt', ({ root, files }) => {
       session_id: 'optin', hook_event_name: 'Stop', stop_hook_active: active,
     }), { buildFix: '1', expectBlock: !active });
   }
+});
+
+test('duplicate Stop without new edits has no repair request, but a later turn can request it again', ({ root, files }) => {
+  const file = files.find(candidate => candidate.endsWith('.mts'));
+  const input = JSON.stringify({ session_id: 'repeat', hook_event_name: 'Stop', stop_hook_active: false });
+  const accum = path.join(root, 'ecc-edited-repeat.txt');
+  fs.writeFileSync(accum, file);
+  invokeHook('stop-format-typecheck', root, input, { buildFix: '1', expectBlock: true });
+  const duplicate = invokeHook('stop-format-typecheck', root, input, { buildFix: '1' });
+  assert.strictEqual(duplicate.calls.length, 0);
+  fs.writeFileSync(accum, file);
+  invokeHook('stop-format-typecheck', root, input, { buildFix: '1', expectBlock: true });
+});
+
+test('a Stop that cannot consume the accumulator leaves it for a retry', ({ root, files }) => {
+  const accum = path.join(root, 'ecc-edited-claim.txt');
+  fs.writeFileSync(accum, files.find(candidate => candidate.endsWith('.mts')));
+  const input = JSON.stringify({ session_id: 'claim', hook_event_name: 'Stop', stop_hook_active: false });
+  const accumulatorUnlinkError = Object.assign(new Error('Access denied'), { code: 'EACCES' });
+  const blockedRead = invokeHook('stop-format-typecheck', root, input, { buildFix: '1', accumulatorUnlinkError });
+  assert.strictEqual(blockedRead.calls.length, 0);
+  assert.ok(fs.existsSync(accum));
+  invokeHook('stop-format-typecheck', root, input, { buildFix: '1', expectBlock: true });
+});
+
+test('Stop allows missing, malformed, successful, and interrupted compiler results', ({ root, files }) => {
+  const file = files.find(candidate => candidate.endsWith('.mts'));
+  const diagnostic = 'source.mts(1,1): error TS2322: Test error';
+  const cases = [
+    { status: 0, stdout: diagnostic },
+    { status: 2, stdout: '', stderr: '' },
+    { status: 2, stdout: { error: diagnostic }, stderr: null },
+    { status: 2, stdout: 'source.mts(1,1): unexpected output' },
+    { status: 2, stdout: 'source.mts(1,1): warning TS2322: Test warning' },
+    { status: 2, stdout: 'source.mts(1,1): error TS2322:' },
+    { status: 2, stdout: 'untracked.mts(1,1): error TS2322: Test error' },
+    { status: null, signal: 'SIGTERM', stdout: diagnostic },
+    { status: null, error: { code: 'ETIMEDOUT' }, stdout: diagnostic },
+    { status: null, error: { code: 'ENOENT' }, stdout: '' },
+  ];
+  for (const platform of ['win32', 'linux']) {
+    for (const compilerResult of cases) {
+      fs.writeFileSync(path.join(root, 'ecc-edited-compiler.txt'), file);
+      const input = JSON.stringify({ session_id: 'compiler', hook_event_name: 'Stop', stop_hook_active: false });
+      const { diagnostics } = invokeHook('stop-format-typecheck', root, input, {
+        platform, buildFix: '1', compilerResult,
+      });
+      assert.ok(!diagnostics.includes('TypeScript errors in'));
+    }
+  }
+});
+
+test('Stop keeps compiler streams separate and caps the total across projects', ({ root, files }) => {
+  const secondRoot = path.join(root, 'second');
+  fs.mkdirSync(secondRoot);
+  fs.writeFileSync(path.join(secondRoot, 'tsconfig.json'), '{}');
+  const secondFile = path.join(secondRoot, 'source.cts');
+  fs.writeFileSync(secondFile, 'export {};');
+  const firstLines = Array.from({ length: 6 }, (_, index) =>
+    'source.mts(' + (index + 1) + ',1): error TS2322: First project');
+  const secondLines = Array.from({ length: 6 }, (_, index) =>
+    'source.cts(' + (index + 1) + ',1): error TS2322: Second project');
+  const compilerResult = {
+    status: 2,
+    stdout: ['untracked.ts(1,1): error TS2322: Ignore', ...firstLines].join('\r\n'),
+    stderr: secondLines.join('\n'),
+  };
+  const filesToCheck = [files.find(file => file.endsWith('.mts')), secondFile];
+  fs.writeFileSync(path.join(root, 'ecc-edited-caps.txt'), filesToCheck.join('\n'));
+  const input = JSON.stringify({ session_id: 'caps', hook_event_name: 'Stop', stop_hook_active: false });
+  const { output, diagnostics } = invokeHook('stop-format-typecheck', root, input, { expectBlock: true, compilerResult });
+  assert.deepStrictEqual(JSON.parse(output).reason.split('\n'), [...firstLines, ...secondLines.slice(0, 4)]);
+  assert.ok(diagnostics.includes(secondLines[5]), 'stderr retains per-file diagnostics');
+});
+
+test('Stop caps the complete reason with and without repair guidance', ({ root, files }) => {
+  const file = files.find(candidate => candidate.endsWith('.mts'));
+  const compilerResult = { status: 2, stdout: 'source.mts(1,1): error TS2322: ' + 'x'.repeat(4_100) };
+  const input = JSON.stringify({ session_id: 'length', hook_event_name: 'Stop', stop_hook_active: false });
+  for (const buildFix of ['', 'true', '1']) {
+    fs.writeFileSync(path.join(root, 'ecc-edited-length.txt'), file);
+    const { output } = invokeHook('stop-format-typecheck', root, input, { compilerResult, buildFix, expectBlock: true });
+    assert.strictEqual(JSON.parse(output).reason.length, 4_000);
+  }
+});
+
+test('malformed stop_hook_active values do not trigger a repair request', ({ root, files }) => {
+  const input = JSON.stringify({ session_id: 'malformed', hook_event_name: 'Stop', stop_hook_active: 0 });
+  fs.writeFileSync(path.join(root, 'ecc-edited-malformed.txt'), files.find(candidate => candidate.endsWith('.mts')));
+  invokeHook('stop-format-typecheck', root, input, { buildFix: '1' });
 });
 
 console.log(`\nPassed: ${passed}, Failed: ${failed}`);

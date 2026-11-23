@@ -26,6 +26,8 @@ const { findProjectRoot, detectFormatter, resolveFormatterBin } = require('../li
 const { resolveHookSessionId } = require('../lib/hook-session');
 
 const MAX_STDIN = 1024 * 1024;
+const MAX_DIAGNOSTICS = 10;
+const MAX_STOP_REASON_LENGTH = 4_000;
 // Total ms budget reserved for all batches (leaves headroom below the 300s Stop timeout)
 const DEFAULT_TOTAL_BUDGET_MS = 270_000;
 const MAX_TOTAL_BUDGET_MS = 270_000;
@@ -142,50 +144,40 @@ function diagnosticMatchesFile(line, paths) {
   return false;
 }
 
-function typecheckBatch(tsConfigDir, editedFiles, timeoutMs, diagnostics) {
+function typecheckBatch(tsConfigDir, editedFiles, timeoutMs) {
   const isWin = process.platform === 'win32';
   const npxBin = isWin ? 'npx.cmd' : 'npx';
   const args = ['tsc', '--noEmit', '--pretty', 'false'];
-  const opts = { cwd: tsConfigDir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: timeoutMs };
+  const result = spawnSync(npxBin, args, {
+    cwd: tsConfigDir,
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+    timeout: timeoutMs,
+    shell: isWin,
+  });
 
-  let stdout = '';
-  let stderr = '';
-  let failed = false;
+  // Only a completed compiler failure can produce actionable diagnostics.
+  if (result.error || result.signal || !Number.isInteger(result.status) || result.status <= 0) return [];
 
-  try {
-    if (isWin) {
-      // .cmd files require shell: true on Windows
-      const result = spawnSync(npxBin, args, { ...opts, shell: true });
-      if (result.error) return; // timed out or not found — non-blocking
-      if (result.status !== 0) {
-        stdout = result.stdout || '';
-        stderr = result.stderr || '';
-        failed = true;
-      }
-    } else {
-      execFileSync(npxBin, args, opts);
-    }
-  } catch (err) {
-    stdout = err.stdout || '';
-    stderr = err.stderr || '';
-    failed = true;
-  }
+  const lines = [result.stdout, result.stderr]
+    .filter(stream => typeof stream === 'string')
+    .flatMap(stream => stream.split(/\r\n?|[\n\u2028\u2029]/))
+    .filter(line => /^.+?\(\d+,\d+\): error TS\d+:\s+\S/.test(line));
 
-  if (!failed) return;
-
-  const lines = (stdout + stderr).split('\n');
+  let diagnostics = [];
   for (const filePath of editedFiles) {
     const relPath = path.relative(tsConfigDir, filePath);
     const candidates = new Set([filePath, relPath]);
     const relevantLines = lines
       .filter(line => diagnosticMatchesFile(line, candidates))
-      .slice(0, 10);
+      .slice(0, MAX_DIAGNOSTICS);
     if (relevantLines.length > 0) {
       process.stderr.write(`[Hook] TypeScript errors in ${path.basename(filePath)}:\n`);
-      diagnostics.push(...relevantLines.slice(0, 10 - diagnostics.length));
       relevantLines.forEach(line => process.stderr.write(line + '\n'));
+      diagnostics = diagnostics.concat(relevantLines).slice(0, MAX_DIAGNOSTICS);
     }
   }
+  return diagnostics;
 }
 
 function main(sessionId) {
@@ -194,11 +186,11 @@ function main(sessionId) {
   let raw;
   try {
     raw = fs.readFileSync(accumFile, 'utf8');
-  } catch {
-    return; // No accumulator — nothing edited this response
+    fs.unlinkSync(accumFile);
+  } catch (err) {
+    if (err.code !== 'ENOENT') process.stderr.write('[Hook] Could not consume the edit accumulator\n');
+    return;
   }
-
-  try { fs.unlinkSync(accumFile); } catch { /* best-effort */ }
 
   const files = parseAccumulator(raw);
   if (files.length === 0) return;
@@ -233,8 +225,10 @@ function main(sessionId) {
   const perBatchMs = getPerBatchBudgetMs(totalBudgetMs, totalBatches);
 
   for (const [root, batch] of byProjectRoot) formatBatch(root, batch, perBatchMs);
-  const diagnostics = [];
-  for (const [tsDir, batch] of byTsConfigDir) typecheckBatch(tsDir, batch, perBatchMs, diagnostics);
+  let diagnostics = [];
+  for (const [tsDir, batch] of byTsConfigDir) {
+    diagnostics = diagnostics.concat(typecheckBatch(tsDir, batch, perBatchMs)).slice(0, MAX_DIAGNOSTICS);
+  }
   return diagnostics;
 }
 
@@ -250,12 +244,13 @@ function run(rawInput) {
     const diagnostics = main(resolveHookSessionId(rawInput));
     if (diagnostics && diagnostics.length) {
       const event = JSON.parse(rawInput);
-      if (event && event.hook_event_name === 'Stop' && !event.stop_hook_active) {
+      const active = event?.stop_hook_active;
+      if (event?.hook_event_name === 'Stop' && (active === false || active === undefined)) {
         const guidance = process.env.ECC_STOP_BUILD_FIX === '1'
           ? 'Use the /build-fix workflow for one repair attempt limited to the reported edited files. ' +
             'Re-run the project typecheck. Report remaining errors if the fix fails or requires broader changes.\n\n'
           : '';
-        const reason = (guidance + diagnostics.join('\n')).slice(0, 4000);
+        const reason = (guidance + diagnostics.join('\n')).slice(0, MAX_STOP_REASON_LENGTH);
         return JSON.stringify({ decision: 'block', reason });
       }
     }

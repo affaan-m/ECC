@@ -324,4 +324,23 @@ Hook logic is implemented in Node.js scripts for cross-platform behavior on Wind
 
 ### Opt-in TypeScript repair on Stop
 
-Set `ECC_STOP_BUILD_FIX=1` in the Claude Code environment to ask the current agent to use the `/build-fix` workflow when the Stop hook finds TypeScript errors in edited files. The request limits repair to one attempt in those files and asks the agent to rerun the project typecheck. The agent uses its existing editing permissions. A follow-up Stop with `stop_hook_active` set can finish. Diagnostics can include errors that already existed in an edited file.
+The Stop hook can report TypeScript errors in edited files to Claude Code. Set
+`ECC_STOP_BUILD_FIX=1` in the Claude Code environment to also request one
+`/build-fix` attempt for the reported files, followed by another project
+typecheck. With the variable unset or set to another value, the Stop response
+contains only the diagnostics. The agent handles edits and rechecking under its
+current permissions.
+
+The hook consumes its edit list before processing it. Claude Code sets
+`stop_hook_active` on a follow-up Stop, so the hook lets that Stop finish even
+if more edits were made or errors persist. A later turn that edits a file can
+request repair again, including for a pre-existing error in that file.
+
+The Stop response includes up to 10 matching diagnostics across all checked
+projects and up to 4,000 characters including any repair guidance. A successful
+compiler run, a timeout, a launch failure, or a result without a matching
+TypeScript error allows Stop to finish.
+
+Regression tests exercise the Stop response, compiler result handling, output
+limits, and follow-up guard. They use simulated compiler output. A live Claude
+Code repair and successful recompilation remain unverified.
