@@ -61,7 +61,7 @@ function invokeHook(name, root, input, options = {}) {
   const stdin = new EventEmitter();
   stdin.setEncoding = () => {};
   const hookProcess = {
-    ...process, platform: options.platform || process.platform, cwd: () => root, stdin,
+    ...process, env: { ...process.env, ECC_STOP_BUILD_FIX: options.buildFix || '' }, platform: options.platform || process.platform, cwd: () => root, stdin,
     stdout: { write: (text, done) => { output += text; if (done) done(); } },
     stderr: { write: text => { diagnostics += text; } },
     exit: () => {},
@@ -80,6 +80,7 @@ function invokeHook(name, root, input, options = {}) {
   if (options.expectBlock) {
     const decision = JSON.parse(output);
     assert.strictEqual(decision.decision, 'block');
+    assert.strictEqual(decision.reason.includes('/build-fix'), options.buildFix === '1');
     assert.ok(decision.reason.includes('source.mts(1,1): error TS2322'));
   } else assert.strictEqual(output, input, `${name} preserves its input`);
   return { calls, diagnostics };
@@ -190,6 +191,15 @@ test('Claude Stop returns edited-file errors once', ({ root, files }) => {
     invokeHook('stop-format-typecheck', root, JSON.stringify({
       session_id: 'feedback', hook_event_name: 'Stop', stop_hook_active: active,
     }), { expectBlock: !active });
+  }
+});
+
+test('opt-in Stop requests one scoped build-fix attempt', ({ root, files }) => {
+  for (const active of [false, true]) {
+    fs.writeFileSync(path.join(root, 'ecc-edited-optin.txt'), files.find(file => file.endsWith('.mts')));
+    invokeHook('stop-format-typecheck', root, JSON.stringify({
+      session_id: 'optin', hook_event_name: 'Stop', stop_hook_active: active,
+    }), { buildFix: '1', expectBlock: !active });
   }
 });
 

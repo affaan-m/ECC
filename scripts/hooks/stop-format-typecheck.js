@@ -251,7 +251,12 @@ function run(rawInput) {
     if (diagnostics && diagnostics.length) {
       const event = JSON.parse(rawInput);
       if (event && event.hook_event_name === 'Stop' && !event.stop_hook_active) {
-        return JSON.stringify({ decision: 'block', reason: diagnostics.join('\n').slice(0, 4000) });
+        const guidance = process.env.ECC_STOP_BUILD_FIX === '1'
+          ? 'Use the /build-fix workflow for one repair attempt limited to the reported edited files. ' +
+            'Re-run the project typecheck. Report remaining errors if the fix fails or requires broader changes.\n\n'
+          : '';
+        const reason = (guidance + diagnostics.join('\n')).slice(0, 4000);
+        return JSON.stringify({ decision: 'block', reason });
       }
     }
   } catch (err) {

@@ -321,3 +321,7 @@ Hook logic is implemented in Node.js scripts for cross-platform behavior on Wind
 - [rules/common/hooks.md](../rules/common/hooks.md) — Hook architecture guidelines
 - [skills/strategic-compact/](../skills/strategic-compact/) — Strategic compaction skill
 - [scripts/hooks/](../scripts/hooks/) — Hook script implementations
+
+### Opt-in TypeScript repair on Stop
+
+Set `ECC_STOP_BUILD_FIX=1` in the Claude Code environment to ask the current agent to use the `/build-fix` workflow when the Stop hook finds TypeScript errors in edited files. The request limits repair to one attempt in those files and asks the agent to rerun the project typecheck. The agent uses its existing editing permissions. A follow-up Stop with `stop_hook_active` set can finish. Diagnostics can include errors that already existed in an edited file.
