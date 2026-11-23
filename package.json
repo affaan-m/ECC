@@ -577,7 +577,7 @@
     "@iarna/toml": "2.2.5",
     "ajv": "8.20.0",
     "js-yaml": "5.5.0",
-    "sql.js": "1.16.0",
+    "sql.js": "1.17.0",
     "zod": "4.6.7"
   },
   "pi": {
@@ -593,7 +593,7 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",
-    "@opencode-ai/plugin": "1.4.3",
+    "@opencode-ai/plugin": "1.4.17",
     "@types/node": "26.6.6",
     "@x402/core": "2.31.0",
     "@x402/evm": "2.31.0",
