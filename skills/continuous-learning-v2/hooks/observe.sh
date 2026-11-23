@@ -13,19 +13,18 @@
 set -e
 
 # Hook phase from CLI argument: "pre" (PreToolUse) or "post" (PostToolUse).
-# Manual settings.json installs can call this script without the plugin
-# wrapper's positional phase argument, but Claude Code still exposes the hook
-# event name in CLAUDE_HOOK_EVENT_NAME.  Fall back to that env var before
-# defaulting to post so manually registered PreToolUse hooks are recorded as
-# tool_start instead of being silently misclassified as tool_complete.
+# Manual settings.json installs call this script without the plugin wrapper's
+# positional phase argument. Claude Code sends the event as hook_event_name in
+# the stdin JSON (it does not export CLAUDE_HOOK_EVENT_NAME), so the parser
+# below reads it from the payload; the env var is only a fallback for callers
+# that set it. Without this, a manual PreToolUse hook is recorded as
+# tool_complete and its tool input is never captured.
 HOOK_PHASE="${1:-}"
-if [ -z "$HOOK_PHASE" ]; then
-  case "${CLAUDE_HOOK_EVENT_NAME:-}" in
-    PreToolUse|pretooluse|pre_tool_use|pre) HOOK_PHASE="pre" ;;
-    PostToolUse|posttooluse|post_tool_use|post) HOOK_PHASE="post" ;;
-    *) HOOK_PHASE="post" ;;
-  esac
-fi
+HOOK_PHASE_FALLBACK=""
+case "${CLAUDE_HOOK_EVENT_NAME:-}" in
+  PreToolUse|pretooluse|pre_tool_use|pre) HOOK_PHASE_FALLBACK="pre" ;;
+  PostToolUse|posttooluse|post_tool_use|post) HOOK_PHASE_FALLBACK="post" ;;
+esac
 
 # ─────────────────────────────────────────────
 # Read stdin first (before project detection)
@@ -457,15 +456,16 @@ fi
 # Parse, scrub and write the observation in one interpreter start
 # ─────────────────────────────────────────────
 #
-# HOOK_PHASE goes in via env var since Claude Code does not include the hook
-# type in stdin JSON. Exit status 3 means the payload could not be parsed; the
+# HOOK_PHASE (the positional argument) and HOOK_PHASE_FALLBACK go in via env
+# vars; with no argument the phase comes from the payload's hook_event_name.
+# Exit status 3 means the payload could not be parsed; the
 # shell then records a scrubbed parse_error instead (block below).
 export PROJECT_ID_ENV="$PROJECT_ID"
 export PROJECT_NAME_ENV="$PROJECT_NAME"
 export OBSERVATION_CWD_ENV="$STDIN_CWD"
 
 _CLV2_WRITE_RC=0
-HOOK_PHASE="$HOOK_PHASE" "$PYTHON_CMD" -c '
+HOOK_PHASE="$HOOK_PHASE" HOOK_PHASE_FALLBACK="$HOOK_PHASE_FALLBACK" "$PYTHON_CMD" -c '
 import json, sys, os, re
 import signal
 
@@ -482,10 +482,10 @@ import time
 try:
     data = json.loads(sys.stdin.read())
 
-    # Determine event type from CLI argument passed via env var.
-    # Claude Code does NOT include a "hook_type" field in the stdin JSON,
-    # so we rely on the shell argument ("pre" or "post") instead.
-    hook_phase = os.environ.get("HOOK_PHASE", "post")
+    # Event type: the shell argument ("pre" or "post") when the plugin wrapper
+    # passes one, else the payload hook_event_name, else the env fallback.
+    payload_phase = {"PreToolUse": "pre", "PostToolUse": "post"}.get(data.get("hook_event_name"))
+    hook_phase = os.environ.get("HOOK_PHASE") or payload_phase or os.environ.get("HOOK_PHASE_FALLBACK") or "post"
     event = "tool_start" if hook_phase == "pre" else "tool_complete"
 
     # Extract fields - Claude Code hook format
