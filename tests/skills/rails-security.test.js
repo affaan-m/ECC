@@ -1,8 +1,9 @@
 'use strict';
 
-// Tests for the rails-security skill: the SKILL.md upload guidance must match what Rails
-// actually does. Assert the document's claims, then run the real Active Storage fixture so
-// the published example and its verified behavior share one source.
+// Tests for the rails-security skill: the upload guidance must match what Rails actually
+// does. Assert the documented claims in the reference, keep the SKILL.md summary honest,
+// then run the real Active Storage fixture so the published example and its verified
+// behavior share one source.
 
 const assert = require('assert');
 const fs = require('fs');
@@ -11,8 +12,16 @@ const { spawnSync } = require('child_process');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const skillPath = path.join(repoRoot, 'skills', 'rails-security', 'SKILL.md');
+const uploadReferencePath = path.join(
+  repoRoot,
+  'skills',
+  'rails-security',
+  'references',
+  'file-uploads.md'
+);
 const fixturePath = path.join(repoRoot, 'tests', 'fixtures', 'rails-security', 'uploads.rb');
 const skill = fs.readFileSync(skillPath, 'utf8');
+const uploadGuide = fs.readFileSync(uploadReferencePath, 'utf8');
 
 let passed = 0;
 let failed = 0;
@@ -40,24 +49,24 @@ console.log('\n=== Rails security skill tests ===\n');
 // ---- Skill document claims ---------------------------------------------
 
 test('upload guidance does not treat blob.content_type as byte evidence', () => {
-  assert.doesNotMatch(skill, /ALLOWED\.include\?\(\s*(file\.)?blob\.content_type\s*\)/);
-  assert.doesNotMatch(skill, /identify unless .*identified\?/);
-  assert.match(skill, /download_chunk\(blob\.key, 0\.\.\.8\)/);
+  assert.doesNotMatch(uploadGuide, /ALLOWED\.include\?\(\s*(file\.)?blob\.content_type\s*\)/);
+  assert.doesNotMatch(uploadGuide, /identify unless .*identified\?/);
+  assert.match(uploadGuide, /download_chunk\(blob\.key, 0\.\.\.8\)/);
 });
 
 test('upload guidance states the declared-type fallback', () => {
-  assert.match(skill, /Marcel::MimeType\.for/);
-  assert.match(skill, /bytes match nothing known/);
+  assert.match(uploadGuide, /Marcel::MimeType\.for/);
+  assert.match(uploadGuide, /bytes match nothing known/);
 });
 
 test('upload guidance fails closed on an unavailable object', () => {
-  assert.match(skill, /blob\.service\.exist\?\(blob\.key\)/);
-  assert.match(skill, /could not be verified/);
+  assert.match(uploadGuide, /blob\.service\.exist\?\(blob\.key\)/);
+  assert.match(uploadGuide, /could not be verified/);
 });
 
 test('upload guidance names both upload entry points', () => {
-  assert.match(skill, /ActiveStorage::Blob\.create_and_upload!/);
-  assert.match(skill, /ActiveStorage::Blob\.find_signed!/);
+  assert.match(uploadGuide, /ActiveStorage::Blob\.create_and_upload!/);
+  assert.match(uploadGuide, /ActiveStorage::Blob\.find_signed!/);
 });
 
 test('verification checklist matches the byte-level guidance', () => {
@@ -74,7 +83,7 @@ function uploadsModule(source) {
 }
 
 test('fixture verifier has not drifted from the published example', () => {
-  const documented = uploadsModule(skill);
+  const documented = uploadsModule(uploadGuide);
   const fixture = uploadsModule(fs.readFileSync(fixturePath, 'utf8'));
   assert.strictEqual(fixture, documented, 'fixture drifted from the skill');
 });
