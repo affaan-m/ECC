@@ -6,7 +6,7 @@ const os = require('os');
 const assert = require('assert');
 const { spawnSync } = require('child_process');
 const { resolveWindowsBashCandidates } = require('../../scripts/lib/windows-bash');
-const { INLINE_RESOLVE } = require('../../scripts/lib/resolve-ecc-root');
+const { INLINE_RESOLVE, buildInlineResolve } = require('../../scripts/lib/resolve-ecc-root');
 
 // Sentinel ECC skill that resolveEccRoot() requires alongside the script tree
 // before accepting a root; kept in sync with the module's DEFAULT_SKILL_PROBE.
@@ -72,6 +72,71 @@ test('auto-update command probes for the script it runs, not just scripts/lib', 
       doc.includes("resolveEccRoot({probe:p.join('scripts','auto-update.js')})"),
       `${docPath} should probe for scripts/auto-update.js`
     );
+  }
+});
+
+const commandCases = [
+  ['commands/harness-audit.md', 'harness-audit', ['repo', '--format', 'json']],
+  ['.opencode/commands/harness-audit.md', 'harness-audit', ['repo', '--format', 'json']],
+  ...['claim', 'decompose', 'publish', 'review', 'sync', 'unblock', 'validate'].map(action => {
+    const args = [action];
+    if (action !== 'sync' && action !== 'unblock') args.push('7');
+    args.push('--repo', 'example/project');
+    if (action === 'claim') args.push('--actor', 'tester');
+    if (action === 'review') args.push('--review', 'approved');
+    return [`commands/epic-${action}.md`, 'github-coordination', args];
+  }),
+];
+
+test('audit and epic command blocks run installed scripts from the current project', () => {
+  const repo = path.resolve(__dirname, '../..');
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-installed-command-'));
+  try {
+    const plugin = path.join(temp, "plugin's root (test)");
+    const config = path.join(temp, 'manual install');
+    const checkout = path.join(temp, 'ecc checkout');
+    const project = path.join(temp, 'user project');
+    fs.mkdirSync(project);
+    for (const root of [plugin, config, checkout]) {
+      fs.mkdirSync(path.join(root, 'scripts', 'lib'), { recursive: true });
+      fs.copyFileSync(path.join(repo, 'scripts', 'lib', 'resolve-ecc-root.js'),
+        path.join(root, 'scripts', 'lib', 'resolve-ecc-root.js'));
+      for (const script of ['harness-audit', 'github-coordination']) {
+        fs.writeFileSync(path.join(root, 'scripts', `${script}.js`),
+          'console.log(JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }));\n');
+      }
+    }
+    fs.mkdirSync(path.join(checkout, '.claude-plugin'));
+    fs.writeFileSync(path.join(checkout, '.claude-plugin', 'plugin.json'), '{"name":"ecc"}\n');
+    const unknown = path.join(temp, 'empty config');
+    const env = { ...process.env, CLAUDE_PLUGIN_ROOT: '', CLAUDE_CONFIG_DIR: unknown };
+    const [windowsBash] = resolveWindowsBashCandidates(['bash.exe', 'bash'], { env });
+    const shell = process.platform === 'win32' ? windowsBash : 'bash';
+    assert.ok(shell, 'A native Git Bash executable is required');
+
+    for (const [command, script, args] of commandCases) {
+      const doc = fs.readFileSync(path.join(repo, command), 'utf8');
+      const blocks = [...doc.matchAll(/```bash\r?\n([\s\S]*?)```/g)].map(match => match[1]);
+      const block = blocks.find(text => text.includes(`scripts/${script}.js`));
+      assert.ok(block, command);
+      const input = block.replace(/\r\n/g, '\n')
+        .replace('<scope>', 'repo').replace('<text|json>', 'json').replace(' [--root <path>]', '')
+        .replace('<issue-number>', '7').replace('<owner/repo>', 'example/project').replace('<login>', 'tester');
+      const cases = [
+        [project, env, input.replace('${CLAUDE_PLUGIN_ROOT}', () => plugin.replace(/\\/g, '/'))],
+        [project, { ...env, CLAUDE_PLUGIN_ROOT: plugin }, input],
+        [project, { ...env, CLAUDE_CONFIG_DIR: config }, input],
+        [checkout, env, input],
+      ];
+      for (const [cwd, runEnv, program] of cases) {
+        const result = spawnSync(shell, ['-s'], { input: program, env: runEnv, cwd, encoding: 'utf8' });
+        assert.strictEqual(result.status, 0, `${command}: ${result.stderr}`);
+        assert.deepStrictEqual(JSON.parse(result.stdout), { cwd, args }, command);
+      }
+      assert.ok(block.includes(buildInlineResolve({ probe: `scripts/${script}.js` })), command);
+    }
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
   }
 });
 
@@ -235,7 +300,6 @@ test('codex-hooks.json inline resolver includes WSL path conversion for CLAUDE_C
 });
 
 test('inline resolver copies in commands and hooks match canonical buildInlineResolve', () => {
-  const { INLINE_RESOLVE, buildInlineResolve } = require('../../scripts/lib/resolve-ecc-root');
   const { INLINE_WSL_CONVERSION } = require('../../scripts/lib/install-targets/helpers');
   assert.ok(
     INLINE_RESOLVE.includes(INLINE_WSL_CONVERSION),
@@ -285,7 +349,6 @@ test('inline resolver copies in commands and hooks match canonical buildInlineRe
 // `/\\/g` then becomes `/\/g` and every hook fails with a SyntaxError (#3746). The inline
 // resolver must therefore contain no backslash at all.
 test('inline resolver and hook node -e programs contain no backslashes', () => {
-  const { buildInlineResolve } = require('../../scripts/lib/resolve-ecc-root');
   assert.ok(!INLINE_RESOLVE.includes('\\'), 'INLINE_RESOLVE must not contain a backslash');
   assert.ok(
     !buildInlineResolve({ probe: 'scripts/auto-update.js' }).includes('\\'),
