@@ -54,10 +54,16 @@ function runObserve(homeDir, { event, args = [], extraEnv = {} }) {
     cwd,
   };
   if (event) payload.hook_event_name = event;
+  // Storage resolves CLV2_HOMUNCULUS_DIR, then XDG_DATA_HOME, then HOME, so pin
+  // it here: an inherited path would send these records to the real store.
+  const configPath = path.join(homeDir, 'clv2-config.json');
+  fs.writeFileSync(configPath, JSON.stringify({ observer: { enabled: false } }));
   const env = {
     ...process.env,
     HOME: homeDir,
     USERPROFILE: homeDir,
+    CLV2_HOMUNCULUS_DIR: path.join(homeDir, 'homunculus'),
+    CLV2_CONFIG: configPath,
     CLAUDE_PROJECT_DIR: '',
     CLAUDE_CODE_ENTRYPOINT: 'cli',
     ECC_HOOK_PROFILE: 'standard',
