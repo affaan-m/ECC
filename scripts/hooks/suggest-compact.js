@@ -41,6 +41,7 @@ const {
   formatWindowLabel
 } = require('../lib/transcript-context');
 const { isGateActive, gateOwnsTranscript } = require('../lib/context-gate-state');
+const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 
 const COUNTER_FILE_PREFIX = 'claude-tool-count-';
 const CONTEXT_BUCKET_FILE_PREFIX = 'claude-context-bucket-';
@@ -207,17 +208,41 @@ function buildContextSuggestion(transcriptPath, bucketFile, env) {
   }
 }
 
-async function main() {
+/**
+ * Secondary signal: tool-call count at threshold, then every 25 calls.
+ * Also silenced while the context-gate is active — the gate check reads
+ * the transcript, so it only runs when a count message would fire.
+ */
+function buildCountSuggestion(count, threshold, transcriptPath) {
+  const countWouldFire = count === threshold || (count > threshold && (count - threshold) % 25 === 0);
+  if (!countWouldFire || gateOwnsTranscript(transcriptPath, process.env)) return null;
+  if (count === threshold) {
+    return `[StrategicCompact] ${threshold} tool calls reached - consider /compact if transitioning phases`;
+  }
+  return `[StrategicCompact] ${count} tool calls - good checkpoint for /compact if context is stale`;
+}
+
+function parseHookInput(inputOrRaw) {
+  if (inputOrRaw && typeof inputOrRaw === 'object') return inputOrRaw;
+  if (typeof inputOrRaw !== 'string' || !inputOrRaw.trim()) return {};
+  try {
+    return JSON.parse(inputOrRaw);
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Exportable run() for in-process execution via run-with-flags.js, which
+ * skips the second Node process a stdin-only hook costs on every Edit/Write.
+ * Accepts the raw stdin string or a parsed payload.
+ */
+function run(inputOrRaw) {
   // Claude Code passes hook input via stdin JSON; session_id is the
   // canonical field (legacy env var, then 'default', as fallbacks) and
   // transcript_path points at the session transcript JSONL used by the
   // context-size signal.
-  let input = {};
-  try {
-    input = await readStdinJson({ timeoutMs: 1000 });
-  } catch {
-    input = {};
-  }
+  const input = parseHookInput(inputOrRaw);
 
   const rawSessionId = (input && typeof input.session_id === 'string' && input.session_id)
     ? input.session_id
@@ -250,41 +275,38 @@ async function main() {
     messages.push(contextSuggestion);
   }
 
-  // Secondary signal: tool-call count at threshold, then every 25 calls.
-  // Also silenced while the context-gate is active — the gate check reads
-  // the transcript, so it only runs when a count message would fire.
-  const countWouldFire = count === threshold || (count > threshold && (count - threshold) % 25 === 0);
-  if (countWouldFire && !gateOwnsTranscript(transcriptPath, process.env)) {
-    if (count === threshold) {
-      messages.push(`[StrategicCompact] ${threshold} tool calls reached - consider /compact if transitioning phases`);
-    } else {
-      messages.push(`[StrategicCompact] ${count} tool calls - good checkpoint for /compact if context is stale`);
-    }
+  const countSuggestion = buildCountSuggestion(count, threshold, transcriptPath);
+  if (countSuggestion) {
+    messages.push(countSuggestion);
   }
 
-  // log() writes to stderr (debug log). Per the Claude Code hooks guide,
-  // non-blocking PreToolUse stderr (exit 0) is only written to the debug log;
-  // it does not reach the model. To inject a user-facing suggestion without
-  // blocking the tool call, emit structured JSON to stdout with
-  // hookSpecificOutput.additionalContext — the documented mechanism for
-  // PreToolUse hooks to add context to the next model turn. Hooks must emit
-  // at most one stdout JSON payload per run, so both signals share it.
-  if (messages.length > 0) {
-    for (const msg of messages) {
-      log(msg);
-    }
-    output({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        additionalContext: messages.join('\n')
-      }
-    });
-  }
+  // Non-blocking PreToolUse stderr only reaches the debug log, so the
+  // suggestion is returned as hookSpecificOutput.additionalContext, the
+  // documented way to add context to the next model turn. Both signals share
+  // the one stdout payload a hook may emit.
+  if (messages.length === 0) return { exitCode: 0 };
+  return { exitCode: 0, stderr: messages.join('\n'), additionalContext: messages };
+}
 
+async function main() {
+  let input = {};
+  try {
+    input = await readStdinJson({ timeoutMs: 1000 });
+  } catch {
+    input = {};
+  }
+  const result = run(input);
+  if (result.stderr) log(result.stderr);
+  const stdout = buildPreToolUseAdditionalContext(result.additionalContext);
+  if (stdout) output(stdout);
   process.exit(0);
 }
 
-main().catch(err => {
-  console.error('[StrategicCompact] Error:', err.message);
-  process.exit(0);
-});
+if (require.main === module) {
+  main().catch(err => {
+    console.error('[StrategicCompact] Error:', err.message);
+    process.exit(0);
+  });
+}
+
+module.exports = { run };
