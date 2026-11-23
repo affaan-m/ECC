@@ -396,6 +396,7 @@ function exportBundle(dir, outDir) {
 }
 
 module.exports = {
+  APPEND_LOCK_FILE,
   Capsule,
   CapsuleError,
   JOURNAL_FILE,

@@ -10,6 +10,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawn } = require('child_process');
 
 const {
   buildRecord,
@@ -19,7 +20,7 @@ const {
   recordEvent,
   resolveCapsuleRoot,
 } = require('../../scripts/lib/capsule-recording');
-const { verify, readCapsule } = require('../../scripts/lib/eval-harness/capsule');
+const { Capsule, CapsuleError, verify, readCapsule } = require('../../scripts/lib/eval-harness/capsule');
 
 const SESSION = '0b6f3c1e-7d2a-4c55-9a41-2f8e6d0c9b13';
 const tempRoots = [];
@@ -93,6 +94,51 @@ tests.push(['effect classes: read-only SE0, edits inside the work root SE1, ever
   }
 }]);
 
+/** Create a symlink, or return false where the platform refuses (unprivileged Windows). */
+function linkOrSkip(target, linkPath) {
+  try {
+    fs.symlinkSync(target, linkPath);
+    return true;
+  } catch (error) {
+    if (process.platform === 'win32' && error.code === 'EPERM') return false;
+    throw error;
+  }
+}
+
+tests.push(['effect classes resolve symbolic links before declaring an edit SE1', () => {
+  const cwd = makeTempDir();
+  const outside = makeTempDir();
+  fs.writeFileSync(path.join(outside, 'target.js'), '');
+  if (!linkOrSkip(outside, path.join(cwd, 'linked'))) return;
+  linkOrSkip(path.join(outside, 'target.js'), path.join(cwd, 'file-link.js'));
+  linkOrSkip(path.join(outside, 'missing.js'), path.join(cwd, 'dangling.js'));
+  assert.strictEqual(classifyEffect('Edit', { file_path: 'linked/a.js' }, cwd), 'SE4', 'directory link out of cwd');
+  assert.strictEqual(classifyEffect('Edit', { file_path: 'file-link.js' }, cwd), 'SE4', 'file link out of cwd');
+  assert.strictEqual(classifyEffect('Write', { file_path: 'dangling.js' }, cwd), 'SE4', 'dangling link cannot be checked');
+  const cwdAlias = path.join(outside, 'cwd-alias');
+  linkOrSkip(cwd, cwdAlias);
+  assert.strictEqual(classifyEffect('Edit', { file_path: path.join(cwd, 'a.js') }, cwdAlias), 'SE1', 'cwd reached through a link');
+  assert.strictEqual(classifyEffect('Write', { file_path: 'src/new/b.js' }, cwd), 'SE1', 'a target that does not exist yet');
+}]);
+
+tests.push(['a name that starts with two dots is not a parent segment', () => {
+  const cwd = makeTempDir();
+  assert.strictEqual(classifyEffect('Write', { file_path: '..cache/a.js' }, cwd), 'SE1');
+  assert.strictEqual(classifyEffect('Write', { file_path: '...js' }, cwd), 'SE1');
+  assert.strictEqual(classifyEffect('Write', { file_path: '..' }, cwd), 'SE4');
+  assert.strictEqual(classifyEffect('Write', { file_path: path.join('..', 'a.js') }, cwd), 'SE4');
+}]);
+
+tests.push(['MultiEdit is SE1 only when every edits[].file_path is inside cwd too', () => {
+  const cwd = makeTempDir();
+  const outside = makeTempDir();
+  const edit = (file_path) => ({ file_path, old_string: 'a', new_string: 'b' });
+  assert.strictEqual(classifyEffect('MultiEdit', { file_path: 'a.js', edits: [edit(path.join(outside, 'x.js'))] }, cwd), 'SE4');
+  assert.strictEqual(classifyEffect('MultiEdit', { edits: [edit('a.js'), edit(path.join(outside, 'x.js'))] }, cwd), 'SE4');
+  assert.strictEqual(classifyEffect('MultiEdit', { edits: [edit('a.js'), edit('src/b.js')] }, cwd), 'SE1');
+  assert.strictEqual(classifyEffect('MultiEdit', { file_path: 'a.js', edits: [{ old_string: 'a', new_string: 'b' }] }, cwd), 'SE1');
+}]);
+
 tests.push(['tool calls carry only the tool name, call id, digests and status', () => {
   const entry = buildRecord(toolEvent(), makeTempDir());
   assert.strictEqual(entry.lineage, 'interaction');
@@ -159,6 +205,74 @@ tests.push(['the journal size cap stops appends and says so', () => {
   const journal = path.join(root, SESSION, 'journal.ndjson');
   const before = fs.readFileSync(journal);
   assert.match(recordEvent(toolEvent({ tool_use_id: 'toolu_02' }), env, root), /ECC_CAPSULE_MAX_BYTES \(1\)/);
+  assert.deepStrictEqual(fs.readFileSync(journal), before);
+}]);
+
+tests.push(['the cap is checked again after waiting for a sibling that crossed it', () => {
+  const root = makeTempDir();
+  assert.strictEqual(recordEvent(toolEvent(), recordingEnv(root), root), '');
+  const dir = path.join(root, SESSION);
+  const journal = path.join(dir, 'journal.ndjson');
+  const env = recordingEnv(root, { ECC_CAPSULE_MAX_BYTES: String(fs.statSync(journal).size + 1) });
+  const realAppend = Capsule.prototype.append;
+  let siblingAppended = false;
+  Capsule.prototype.append = function appendAfterSibling(...args) {
+    if (!siblingAppended) {
+      siblingAppended = true;
+      realAppend.call(Capsule.open(dir), 'interaction', 'tool.call', { tool: 'Bash', tool_call_id: 'toolu_sibling', status: 'ok' }, { effect_class: 'SE4' });
+      throw new CapsuleError('capsule.busy', 'capsule append lock is already held');
+    }
+    return realAppend.apply(this, args);
+  };
+  let diagnostic;
+  try {
+    diagnostic = recordEvent(toolEvent({ tool_use_id: 'toolu_queued' }), env, root);
+  } finally {
+    Capsule.prototype.append = realAppend;
+  }
+  assert.ok(siblingAppended, 'the contention path was not exercised');
+  assert.match(diagnostic, /ECC_CAPSULE_MAX_BYTES/);
+  assert.deepStrictEqual(readCapsule(dir).entries.map(entry => entry.payload.tool_call_id), ['toolu_01', 'toolu_sibling']);
+}]);
+
+/** A capsule with one entry, plus the exact bytes of a valid second entry. */
+function capsuleWithNextLine() {
+  const root = makeTempDir();
+  assert.strictEqual(recordEvent(toolEvent(), recordingEnv(root), root), '');
+  const copy = makeTempDir();
+  fs.cpSync(path.join(root, SESSION), path.join(copy, SESSION), { recursive: true });
+  assert.strictEqual(recordEvent(toolEvent({ tool_use_id: 'toolu_02' }), recordingEnv(copy), copy), '');
+  const lines = fs.readFileSync(path.join(copy, SESSION, 'journal.ndjson'), 'utf8').split(/(?<=\n)/);
+  return { root, dir: path.join(root, SESSION), nextLine: lines[1] };
+}
+
+tests.push(['opening while a sibling append is mid-write waits for it instead of refusing the journal', () => {
+  const { root, dir, nextLine } = capsuleWithNextLine();
+  const journal = path.join(dir, 'journal.ndjson');
+  const lock = path.join(dir, '.append.lock');
+  const half = Math.floor(nextLine.length / 2);
+  fs.writeFileSync(lock, '');
+  fs.appendFileSync(journal, nextLine.slice(0, half));
+  const finisher = spawn(process.execPath, ['-e',
+    'const fs=require("fs");const [j,l,rest]=process.argv.slice(1);'
+    + 'setTimeout(()=>{fs.appendFileSync(j,rest);fs.rmSync(l)},150);',
+    journal, lock, nextLine.slice(half)], { stdio: 'ignore' });
+  try {
+    assert.strictEqual(recordEvent(toolEvent({ tool_use_id: 'toolu_03' }), recordingEnv(root), root), '');
+  } finally {
+    finisher.kill();
+  }
+  assert.strictEqual(verify(dir).ok, true);
+  assert.deepStrictEqual(readCapsule(dir).entries.map(entry => entry.payload.tool_call_id), ['toolu_01', 'toolu_02', 'toolu_03']);
+}]);
+
+tests.push(['a truncated tail with no append in flight is still refused', () => {
+  const { root, dir, nextLine } = capsuleWithNextLine();
+  const journal = path.join(dir, 'journal.ndjson');
+  fs.appendFileSync(journal, nextLine.slice(0, 20));
+  const before = fs.readFileSync(journal);
+  assert.throws(() => recordEvent(toolEvent({ tool_use_id: 'toolu_03' }), recordingEnv(root), root),
+    error => error.code === 'capsule.truncated_tail');
   assert.deepStrictEqual(fs.readFileSync(journal), before);
 }]);
 

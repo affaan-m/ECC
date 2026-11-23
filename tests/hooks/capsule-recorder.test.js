@@ -47,7 +47,10 @@ const COMMANDS = {
 
 function hookEnv(home, extra = {}) {
   const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_PLUGIN_ROOT: REPO_ROOT, ...extra };
-  for (const key of ['ECC_DISABLED_HOOKS', 'ECC_HOOK_PROFILE', 'ECC_HOOKS_ENABLED', 'CLAUDE_CONFIG_DIR', 'ECC_CAPSULE_TASK_FAMILY']) {
+  for (const key of [
+    'ECC_DISABLED_HOOKS', 'ECC_HOOK_PROFILE', 'ECC_HOOKS_ENABLED', 'ECC_DRY_RUN', 'ECC_HOOK_CONFIG', 'CLAUDE_CONFIG_DIR',
+    'ECC_CAPSULE_RECORDING', 'ECC_CAPSULE_DIR', 'ECC_CAPSULE_MAX_BYTES', 'ECC_CAPSULE_TASK_FAMILY',
+  ]) {
     if (!(key in extra)) delete env[key];
   }
   return env;

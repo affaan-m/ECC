@@ -400,17 +400,20 @@ receipts and groups with the commands above.
 
 Effect classes are declared from the tool name: `Read`, `Grep`, `Glob`, `LS` and
 notebook/todo reads are SE0; `Edit`, `Write`, `MultiEdit` and `NotebookEdit`
-are SE1 only when every target path is inside the session `cwd`. Every other
-tool, including `Bash`, MCP tools and web fetches, is declared SE4, the upper
-bound, because the hook cannot see what a command did. Replay refuses those.
+are SE1 only when every target path, including each `edits[].file_path`, is
+inside the session `cwd` once symbolic links are resolved; a target that cannot
+be resolved is SE4. Every other tool, including `Bash`, MCP tools and web
+fetches, is declared SE4, the upper bound, because the hook cannot see what a
+command did. Replay refuses those.
 
 Each append re-verifies the whole journal. Measured through the dispatcher on
 Node 18: +8 ms per call on a new capsule, +55 ms at 1,000 entries, +170 ms at
 4,000, which is why the tool-call hook runs in the async phase. Appends stop at
-`ECC_CAPSULE_MAX_BYTES` (default 2 MiB, about 3,000 calls). A concurrent sibling
-holding the append lock is retried for up to 500 ms; the first capsule of a
-session is staged and renamed into place so concurrent first events cannot
-overwrite each other. Every refusal (cap, lock, damaged journal, non-id session
+`ECC_CAPSULE_MAX_BYTES` (default 2 MiB, about 3,000 calls), checked again after
+each wait for the lock. A concurrent sibling holding the append lock is retried
+for up to 500 ms, as is an open that sees that sibling's entry half-written. The
+first capsule of a session is staged and renamed into place so concurrent first
+events cannot overwrite each other. Every refusal (cap, lock, damaged journal, non-id session
 id) is a `[CapsuleRecorder]` stderr line; the hook always exits 0.
 
 Not recorded: failed tool calls (`PostToolUseFailure`), prompts, model output,

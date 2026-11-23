@@ -12,7 +12,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { Capsule, CapsuleError, META_FILE, JOURNAL_FILE } = require('./eval-harness/capsule');
+const { APPEND_LOCK_FILE, Capsule, CapsuleError, META_FILE, JOURNAL_FILE } = require('./eval-harness/capsule');
 const { hashValue } = require('./eval-harness/canonical');
 const { ID_PATTERN } = require('./eval-harness/envelope');
 const { getClaudeDir } = require('./utils');
@@ -70,17 +70,55 @@ function resolveSessionId(input) {
   return ID_PATTERN.test(id) ? id : null;
 }
 
+function isDanglingLink(target) {
+  try {
+    return fs.lstatSync(target).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve symbolic links in the longest existing prefix of an absolute path.
+ * Returns null when that prefix cannot be checked (a dangling link, a
+ * permission error), so the caller declares the SE4 upper bound.
+ */
+function realpathOrNull(target) {
+  const missing = [];
+  for (let current = target; ;) {
+    try {
+      return path.join(fs.realpathSync(current), ...missing);
+    } catch (error) {
+      const parent = path.dirname(current);
+      if (error.code !== 'ENOENT' || isDanglingLink(current) || parent === current) return null;
+      missing.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
 function isInside(root, candidate) {
-  const relative = path.relative(root, path.resolve(root, candidate));
-  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+  const realRoot = realpathOrNull(path.resolve(root));
+  const realTarget = realpathOrNull(path.resolve(root, candidate));
+  if (!realRoot || !realTarget) return false;
+  const relative = path.relative(realRoot, realTarget);
+  return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+/** Every path an edit tool names: top-level keys plus MultiEdit-style edits[].file_path. */
+function editTargets(toolInput) {
+  if (!toolInput || typeof toolInput !== 'object') return [];
+  const edits = Array.isArray(toolInput.edits) ? toolInput.edits : [];
+  return [
+    ...FILE_PATH_KEYS.map(key => toolInput[key]),
+    ...edits.map(edit => (edit && typeof edit === 'object' ? edit.file_path : undefined)),
+  ].filter(value => typeof value === 'string' && value.length > 0);
 }
 
 function classifyEffect(toolName, toolInput, cwd) {
   if (READ_ONLY_TOOLS.has(toolName)) return 'SE0';
   if (!FILE_EDIT_TOOLS.has(toolName)) return 'SE4';
-  const paths = FILE_PATH_KEYS
-    .map(key => toolInput && toolInput[key])
-    .filter(value => typeof value === 'string' && value.length > 0);
+  const paths = editTargets(toolInput);
   return paths.length > 0 && paths.every(value => isInside(cwd, value)) ? 'SE1' : 'SE4';
 }
 
@@ -120,12 +158,34 @@ function buildRecord(input, cwd) {
   return { ...event, payload: word ? { [key]: word } : {}, effect_class: 'SE0' };
 }
 
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Capsule.open reads without the append lock, so it can see a sibling's entry
+ * mid-write as a truncated tail. Retry while that sibling still holds the lock;
+ * a tail that is still truncated once the lock is gone is real damage.
+ */
+function openSettled(dir) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return Capsule.open(dir);
+    } catch (error) {
+      const appendInFlight = error instanceof CapsuleError && error.code === 'capsule.truncated_tail'
+        && fs.existsSync(path.join(dir, APPEND_LOCK_FILE));
+      if (!appendInFlight || attempt >= BUSY_RETRIES) throw error;
+      sleep(BUSY_WAIT_MS);
+    }
+  }
+}
+
 /**
  * Create the capsule in a sibling staging directory and rename it into place,
  * so two first events of one session cannot interleave metadata writes.
  */
 function openOrCreateCapsule(dir, meta) {
-  if (fs.existsSync(path.join(dir, META_FILE))) return Capsule.open(dir);
+  if (fs.existsSync(path.join(dir, META_FILE))) return openSettled(dir);
   fs.mkdirSync(path.dirname(dir), { recursive: true });
   const staging = fs.mkdtempSync(path.join(path.dirname(dir), `.${path.basename(dir)}-`));
   try {
@@ -135,18 +195,27 @@ function openOrCreateCapsule(dir, meta) {
     fs.rmSync(staging, { recursive: true, force: true });
     if (!fs.existsSync(path.join(dir, META_FILE))) throw error;
   }
-  return Capsule.open(dir);
+  return openSettled(dir);
 }
 
-function sleep(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+function capDiagnostic(dir, maxBytes) {
+  return journalBytes(dir) >= maxBytes
+    ? `[CapsuleRecorder] skipped: journal reached ECC_CAPSULE_MAX_BYTES (${maxBytes})`
+    : '';
 }
 
-/** The capsule lock fails fast by design; a sibling hook holding it is normal, so wait briefly. */
-function appendWithRetry(capsule, record) {
+/**
+ * The capsule lock fails fast by design; a sibling hook holding it is normal, so
+ * wait briefly. The cap is checked again before each attempt, because a sibling
+ * that held the lock may have crossed it. Returns a skip diagnostic or ''.
+ */
+function appendWithRetry(capsule, record, dir, maxBytes) {
   for (let attempt = 0; ; attempt += 1) {
+    const capped = capDiagnostic(dir, maxBytes);
+    if (capped) return capped;
     try {
-      return capsule.append(record.lineage, record.kind, record.payload, { effect_class: record.effect_class });
+      capsule.append(record.lineage, record.kind, record.payload, { effect_class: record.effect_class });
+      return '';
     } catch (error) {
       if (!(error instanceof CapsuleError) || error.code !== 'capsule.busy' || attempt >= BUSY_RETRIES) throw error;
       sleep(BUSY_WAIT_MS);
@@ -171,17 +240,15 @@ function recordEvent(input, env, cwd) {
   if (!sessionId) return '[CapsuleRecorder] skipped: session_id is missing or not a capsule id';
   const dir = path.join(resolveCapsuleRoot(env), sessionId);
   const maxBytes = resolveMaxBytes(env);
-  if (journalBytes(dir) >= maxBytes) {
-    return `[CapsuleRecorder] skipped: journal reached ECC_CAPSULE_MAX_BYTES (${maxBytes})`;
-  }
+  const capped = capDiagnostic(dir, maxBytes);
+  if (capped) return capped;
   const capsule = openOrCreateCapsule(dir, {
     run_id: sessionId,
     capsule_id: sessionId,
     harness_version: harnessVersion(),
     task_family: resolveTaskFamily(env),
   });
-  appendWithRetry(capsule, entry);
-  return '';
+  return appendWithRetry(capsule, entry, dir, maxBytes);
 }
 
 module.exports = {
