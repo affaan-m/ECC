@@ -48,6 +48,7 @@ Targets:
   zed          - Install project settings, commands, agents, skills, and flattened rules into ./.zed/
   hermes       - Install shared rules/skills/commands into ~/.hermes/
   kimi         - Install Kimi Code project instructions, skills, and MCP config into ./.kimi-code/ (ECC hooks not configured)
+  kimi-home    - Install ECC into ~/.kimi-code/ for the current user (no global MCP or ECC hooks)
   grok         - Install through the canonical plan/apply/receipt lifecycle into ~/.grok/plugins/ecc/
   openclaw     - Install shared rules/skills/commands into ~/.openclaw/
   adal         - Install shared rules/skills/commands into ./.adal/

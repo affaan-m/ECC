@@ -33,12 +33,12 @@ function runTests() {
   let passed = 0;
   let failed = 0;
 
-  if (test('represents all 19 registered targets exactly once across 17 harnesses', () => {
+  if (test('represents all 20 registered targets exactly once across 17 harnesses', () => {
     const catalogTargetIds = HARNESS_CAPABILITIES.flatMap(harness => harness.targetIds);
     const adapterTargetIds = listInstallTargetAdapters().map(adapter => adapter.target);
 
     assert.strictEqual(HARNESS_CAPABILITIES.length, 17);
-    assert.strictEqual(new Set(catalogTargetIds).size, 19);
+    assert.strictEqual(new Set(catalogTargetIds).size, 20);
     assert.deepStrictEqual([...catalogTargetIds].sort(), [...SUPPORTED_INSTALL_TARGETS].sort());
     assert.deepStrictEqual([...catalogTargetIds].sort(), [...adapterTargetIds].sort());
   })) passed++; else failed++;
@@ -76,12 +76,13 @@ function runTests() {
     ]);
 
     const kimi = getHarnessCapability('kimi');
-    assert.deepStrictEqual(kimi.targetIds, ['kimi']);
+    assert.deepStrictEqual(kimi.targetIds, ['kimi', 'kimi-home']);
     assert.strictEqual(kimi.channel, 'managed-project');
     assert.strictEqual(kimi.installMode, 'managed-project');
-    assert.strictEqual(kimi.destination, './.kimi-code');
+    assert.strictEqual(kimi.destination, './.kimi-code or ~/.kimi-code');
     assert.deepStrictEqual(kimi.scopes, [
       { id: 'project', targetId: 'kimi', root: './.kimi-code' },
+      { id: 'user', targetId: 'kimi-home', root: '~/.kimi-code' },
     ]);
 
     const antigravity = getHarnessCapability('antigravity');
@@ -197,6 +198,7 @@ function runTests() {
     assert.throws(() => normalizeHarnessSelection('all,codex'), /cannot be combined/i);
     assert.throws(() => normalizeHarnessSelection('cursor'), /advanced.*not guided-ready/i);
     assert.throws(() => normalizeHarnessSelection('grok'), /advanced.*not guided-ready/i);
+    assert.throws(() => normalizeHarnessSelection('kimi-home'), /--target kimi-home/);
   })) passed++; else failed++;
 
   if (test('exports deeply frozen records while list helpers return safe array copies', () => {

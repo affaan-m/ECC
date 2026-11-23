@@ -239,6 +239,34 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('plans project-agnostic Kimi home installation without global MCP', () => {
+    const repoRoot = path.join(__dirname, '..', '..');
+    const homeDir = '/workspace/home';
+    const plan = planInstallTargetScaffold({
+      target: 'kimi-home',
+      repoRoot,
+      homeDir,
+      projectRoot: '/workspace/ignored-project',
+      modules: [
+        { id: 'agents-core', paths: ['.agents', 'agents', 'AGENTS.md'] },
+        { id: 'platform-configs', paths: ['.kimi', '.kimi-code', '.cursor', 'mcp-configs'] },
+        { id: 'workflow-quality', paths: ['skills/tdd-workflow'] },
+      ],
+    });
+
+    assert.strictEqual(plan.adapter.id, 'kimi-home');
+    assert.strictEqual(plan.adapter.kind, 'home');
+    assert.strictEqual(plan.targetRoot, path.join(homeDir, '.kimi-code'));
+    assert.strictEqual(plan.installStatePath, path.join(homeDir, '.kimi-code', 'ecc-install-state.json'));
+    assert.ok(plan.operations.some(operation => operation.sourceRelativePath === '.agents/skills' && operation.destinationPath === path.join(plan.targetRoot, 'skills')));
+    assert.ok(plan.operations.some(operation => operation.sourceRelativePath === 'AGENTS.md' && operation.destinationPath === path.join(plan.targetRoot, 'AGENTS.md')));
+    assert.ok(plan.operations.some(operation => operation.sourceRelativePath === 'skills/tdd-workflow' && operation.destinationPath === path.join(plan.targetRoot, 'skills', 'tdd-workflow')));
+    assert.ok(plan.operations.some(operation => operation.sourceRelativePath === '.kimi' && operation.destinationPath === plan.targetRoot && operation.strategy === 'sync-root-children'));
+    assert.ok(plan.operations.every(operation => operation.sourceRelativePath !== '.cursor'));
+    assert.ok(plan.operations.every(operation => operation.sourceRelativePath !== 'mcp-configs' && operation.sourceRelativePath !== '.mcp.json'));
+    assert.ok(plan.operations.every(operation => operation.destinationPath === plan.targetRoot || operation.destinationPath.startsWith(`${plan.targetRoot}${path.sep}`)));
+  })) passed++; else failed++;
+
   if (test('Kimi MCP planning requires an explicit ECC source root', () => {
     assert.throws(
       () => planInstallTargetScaffold({

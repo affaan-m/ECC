@@ -70,13 +70,16 @@ const HARNESS_CAPABILITIES = deepFreeze([
   {
     id: 'kimi',
     label: 'Kimi Code',
-    targetIds: ['kimi'],
+    targetIds: ['kimi', 'kimi-home'],
     channel: 'managed-project',
     installMode: 'managed-project',
     guidedReady: true,
     availability: 'guided',
-    destination: './.kimi-code',
-    scopes: [scope('project', 'kimi', './.kimi-code')],
+    destination: './.kimi-code or ~/.kimi-code',
+    scopes: [
+      scope('project', 'kimi', './.kimi-code'),
+      scope('user', 'kimi-home', '~/.kimi-code'),
+    ],
     hooks: hooks(
       'not-configured',
       false,
@@ -401,6 +404,9 @@ function normalizeHarnessSelection(selection) {
   const selected = new Set();
   for (const token of tokens) {
     const normalizedToken = normalizeLookupToken(token);
+    if (normalizedToken === 'kimi-home') {
+      throw new Error('Kimi user-home installation is available through --target kimi-home, not guided --harness selection');
+    }
     const menuIndex = /^\d+$/.test(normalizedToken) ? Number(normalizedToken) - 1 : -1;
     const harness = menuIndex >= 0
       ? listGuidedHarnesses()[menuIndex] || null

@@ -22,6 +22,7 @@
         "hermes",
         "openclaw",
         "kimi",
+        "kimi-home",
         "adal"
       ],
       "dependencies": [],
@@ -53,6 +54,7 @@
         "hermes",
         "openclaw",
         "kimi",
+        "kimi-home",
         "adal"
       ],
       "dependencies": [],
@@ -90,6 +92,7 @@
         "hermes",
         "openclaw",
         "kimi",
+        "kimi-home",
         "adal"
       ],
       "dependencies": [
@@ -178,6 +181,7 @@
         "hermes",
         "openclaw",
         "kimi",
+        "kimi-home",
         "adal"
       ],
       "dependencies": [
@@ -357,6 +361,7 @@
         "hermes",
         "openclaw",
         "kimi",
+        "kimi-home",
         "adal"
       ],
       "dependencies": [
@@ -388,6 +393,7 @@
         "hermes",
         "openclaw",
         "kimi",
+        "kimi-home",
         "adal"
       ],
       "dependencies": [
@@ -472,6 +478,7 @@
         "hermes",
         "openclaw",
         "kimi",
+        "kimi-home",
         "adal"
       ],
       "dependencies": [
@@ -503,6 +510,7 @@
         "hermes",
         "openclaw",
         "kimi",
+        "kimi-home",
         "adal"
       ],
       "dependencies": [
@@ -789,7 +797,7 @@
     {
       "id": "ito-compute",
       "kind": "skills",
-      "description": "Authenticated Itô GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
+      "description": "Authenticated It\u00f4 GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
       "paths": [
         "skills/ito-compute",
         "skills/ito-inference",
@@ -812,6 +820,7 @@
         "hermes",
         "openclaw",
         "kimi",
+        "kimi-home",
         "adal"
       ],
       "dependencies": [
@@ -844,7 +853,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "kimi-home"
       ],
       "dependencies": [
         "platform-configs"
@@ -1444,6 +1454,7 @@
         "hermes",
         "openclaw",
         "kimi",
+        "kimi-home",
         "adal"
       ],
       "dependencies": [
@@ -1505,6 +1516,7 @@
         "hermes",
         "openclaw",
         "kimi",
+        "kimi-home",
         "adal"
       ],
       "dependencies": [
@@ -1536,6 +1548,7 @@
         "hermes",
         "openclaw",
         "kimi",
+        "kimi-home",
         "adal"
       ],
       "dependencies": [],
@@ -1567,6 +1580,7 @@
         "hermes",
         "openclaw",
         "kimi",
+        "kimi-home",
         "adal",
         "codex",
         "gemini"
