@@ -48,6 +48,7 @@ const SCRUBBED = [
   'CLAUDE_HOOK_EVENT_NAME', 'CLAUDE_CONFIG_DIR', 'ECC_HOOK_PROFILE', 'ECC_DISABLED_HOOKS',
   'ECC_HOOKS_ENABLED', 'ECC_GOVERNANCE_CAPTURE', 'ECC_SESSION_ID', 'ECC_MCP_RECONNECT_COMMAND',
   'ECC_MCP_RECONNECT_ALLOW', 'ECC_MCP_HEALTH_FAIL_OPEN', 'ECC_MCP_CONFIG_PATH', 'ECC_MCP_HEALTH_STATE_PATH',
+  'ECC_MCP_HEALTH_TTL_MS', 'ECC_MCP_RECONNECT_TIMEOUT_MS', 'ECC_MCP_ALLOW_WORKSPACE_PROBE',
 ];
 
 function hookEnv(home, extra = {}) {
@@ -83,6 +84,8 @@ function mcpFixture() {
     ECC_MCP_CONFIG_PATH: configPath,
     ECC_MCP_HEALTH_STATE_PATH: statePath,
     ECC_MCP_HEALTH_TIMEOUT_MS: '1000',
+    // A zero backoff would make the failed server due for a probe at once.
+    ECC_MCP_HEALTH_BACKOFF_MS: '60000',
   });
   const fire = (command, payload, extraEnv = {}) => runCommand(command, { ...env, ...extraEnv }, {
     session_id: 'native-event-session',
@@ -101,13 +104,13 @@ function governanceEvents(stderr) {
     .map(line => JSON.parse(line.slice('[governance] '.length)));
 }
 
-function bashPayload(event) {
+function bashPayload(event, command = 'sudo ls /root') {
   return {
     session_id: 'native-event-session',
     hook_event_name: event,
     tool_name: 'Bash',
     tool_use_id: 'toolu_sudo',
-    tool_input: { command: 'sudo ls /root' },
+    tool_input: { command },
     tool_response: { stdout: '', stderr: '' },
   };
 }
@@ -167,9 +170,12 @@ tests.push(['mcp-health-check: payloads without hook_event_name keep the CLAUDE_
 tests.push(['governance-capture: a native PreToolUse is labelled pre and defers the elevated-command finding', () => {
   const home = makeTempDir();
   const env = hookEnv(home, { ECC_GOVERNANCE_CAPTURE: '1' });
-  const result = runCommand(GOVERNANCE_PRE, env, bashPayload('PreToolUse'), home);
+  const payload = bashPayload('PreToolUse', 'sudo git push --force origin main');
+  const result = runCommand(GOVERNANCE_PRE, env, payload, home);
   assert.strictEqual(result.code, 0, result.stderr);
   const events = governanceEvents(result.stderr);
+  const approvals = events.filter(event => event.eventType === 'approval_requested');
+  assert.strictEqual(approvals.length, 1, `expected one approval_requested event, got ${JSON.stringify(events)}`);
   assert.deepStrictEqual(events.map(event => event.payload.hookPhase), events.map(() => 'pre'));
   assert.ok(!events.some(event => event.payload.reason === 'elevated_privilege_command'),
     'the elevated-command finding belongs to the post phase');
