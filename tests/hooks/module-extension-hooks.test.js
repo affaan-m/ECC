@@ -77,7 +77,11 @@ function invokeHook(name, root, input, options = {}) {
   } else {
     output = module.exports.run(input);
   }
-  assert.strictEqual(output, input, `${name} preserves its input`);
+  if (options.expectBlock) {
+    const decision = JSON.parse(output);
+    assert.strictEqual(decision.decision, 'block');
+    assert.ok(decision.reason.includes('source.mts(1,1): error TS2322'));
+  } else assert.strictEqual(output, input, `${name} preserves its input`);
   return { calls, diagnostics };
 }
 
@@ -177,6 +181,16 @@ test('module extensions retain Windows formatter guards and batch diagnostic han
   assertBatchCalls(checked, typed, 'win32');
   assert.ok(checked.diagnostics.includes('TypeScript errors in source.mts:'));
   assert.ok(checked.diagnostics.includes('TypeScript errors in source.cts:'));
+});
+
+test('Claude Stop returns edited-file errors once', ({ root, files }) => {
+  const file = files.find(candidate => candidate.endsWith('.mts'));
+  for (const active of [false, true]) {
+    fs.writeFileSync(path.join(root, 'ecc-edited-feedback.txt'), file);
+    invokeHook('stop-format-typecheck', root, JSON.stringify({
+      session_id: 'feedback', hook_event_name: 'Stop', stop_hook_active: active,
+    }), { expectBlock: !active });
+  }
 });
 
 console.log(`\nPassed: ${passed}, Failed: ${failed}`);

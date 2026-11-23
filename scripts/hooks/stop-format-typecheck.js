@@ -142,7 +142,7 @@ function diagnosticMatchesFile(line, paths) {
   return false;
 }
 
-function typecheckBatch(tsConfigDir, editedFiles, timeoutMs) {
+function typecheckBatch(tsConfigDir, editedFiles, timeoutMs, diagnostics) {
   const isWin = process.platform === 'win32';
   const npxBin = isWin ? 'npx.cmd' : 'npx';
   const args = ['tsc', '--noEmit', '--pretty', 'false'];
@@ -182,6 +182,7 @@ function typecheckBatch(tsConfigDir, editedFiles, timeoutMs) {
       .slice(0, 10);
     if (relevantLines.length > 0) {
       process.stderr.write(`[Hook] TypeScript errors in ${path.basename(filePath)}:\n`);
+      diagnostics.push(...relevantLines.slice(0, 10 - diagnostics.length));
       relevantLines.forEach(line => process.stderr.write(line + '\n'));
     }
   }
@@ -232,7 +233,9 @@ function main(sessionId) {
   const perBatchMs = getPerBatchBudgetMs(totalBudgetMs, totalBatches);
 
   for (const [root, batch] of byProjectRoot) formatBatch(root, batch, perBatchMs);
-  for (const [tsDir, batch] of byTsConfigDir) typecheckBatch(tsDir, batch, perBatchMs);
+  const diagnostics = [];
+  for (const [tsDir, batch] of byTsConfigDir) typecheckBatch(tsDir, batch, perBatchMs, diagnostics);
+  return diagnostics;
 }
 
 /**
@@ -240,11 +243,17 @@ function main(sessionId) {
  * letting the 300s hooks.json timeout govern the full batch.
  *
  * @param {string} rawInput - Raw JSON string from stdin (Stop event payload)
- * @returns {string} The original input (pass-through)
+ * @returns {string} Stop decision for edited-file errors, otherwise the original input
  */
 function run(rawInput) {
   try {
-    main(resolveHookSessionId(rawInput));
+    const diagnostics = main(resolveHookSessionId(rawInput));
+    if (diagnostics && diagnostics.length) {
+      const event = JSON.parse(rawInput);
+      if (event && event.hook_event_name === 'Stop' && !event.stop_hook_active) {
+        return JSON.stringify({ decision: 'block', reason: diagnostics.join('\n').slice(0, 4000) });
+      }
+    }
   } catch (err) {
     process.stderr.write(`[Hook] stop-format-typecheck error: ${err.message}\n`);
   }
