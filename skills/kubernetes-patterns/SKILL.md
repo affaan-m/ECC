@@ -9,6 +9,15 @@ metadata:
 
 Production-grade Kubernetes patterns for deploying, managing, and debugging workloads reliably.
 
+Long manifests and command lists live in `references/`, so this file stays under the 500-line skill limit. Read only the reference you need:
+
+- [references/deployment-template.md](references/deployment-template.md) - full production Deployment manifest
+- [references/rbac.md](references/rbac.md) - least-privilege ServiceAccount, Role, and RoleBinding
+- [references/autoscaling.md](references/autoscaling.md) - HPA and PodDisruptionBudget
+- [references/networking.md](references/networking.md) - Service types and TLS Ingress
+- [references/configmaps-and-secrets.md](references/configmaps-and-secrets.md) - ConfigMap, Secret, and external secret handling
+- [references/kubectl-debugging.md](references/kubectl-debugging.md) - kubectl cheatsheet, common errors, pod churn triage
+
 ## When to Activate
 
 - Writing Kubernetes manifests (Deployments, Services, Ingress, Jobs)
@@ -28,16 +37,16 @@ Production-grade Kubernetes patterns for deploying, managing, and debugging work
 
 This skill provides **copy-pasteable, production-grade YAML patterns** and **kubectl debugging commands** organized by task:
 
-1. **Deployment template** — A fully configured production `Deployment` with security context, rolling update strategy, all three probe types, resource limits, and environment injection from ConfigMap/Secret.
-2. **Probes** — Decision table for startup vs liveness vs readiness, with correct `failureThreshold × periodSeconds` math.
-3. **Services & Ingress** — ClusterIP, LoadBalancer, and TLS Ingress patterns with cert-manager annotations.
-4. **ConfigMaps & Secrets** — `envFrom`, file-mount, and external secrets guidance.
-5. **Resource management** — Requests vs limits rules of thumb by workload type (web API, JVM, worker, sidecar).
-6. **RBAC** — Least-privilege ServiceAccount → Role → RoleBinding chain.
-7. **HPA & PDB** — Autoscaling and node-drain safety configurations.
-8. **Jobs & CronJobs** — One-off and scheduled workload patterns with correct `restartPolicy`.
-9. **kubectl cheatsheet** — Logs, exec, rollback, port-forward, dry-run, common error diagnosis, and pod churn (eviction) triage.
-10. **Anti-patterns & checklist** — What NOT to do, and a security/reliability/observability checklist.
+1. **Deployment skeleton** - A minimal production `Deployment` with security context, rolling update strategy, all three probe types, resource limits, and environment injection from ConfigMap/Secret. The full manifest is in `references/deployment-template.md`.
+2. **Probes** - Decision table for startup vs liveness vs readiness, with correct `failureThreshold × periodSeconds` math.
+3. **Services & Ingress** - ClusterIP, LoadBalancer, and TLS Ingress patterns with cert-manager annotations (`references/networking.md`).
+4. **ConfigMaps & Secrets** - `envFrom`, file-mount, and external secrets guidance (`references/configmaps-and-secrets.md`).
+5. **Resource management** - Requests vs limits rules of thumb by workload type (web API, JVM, worker, sidecar).
+6. **RBAC** - Least-privilege ServiceAccount → Role → RoleBinding chain (`references/rbac.md`).
+7. **HPA & PDB** - Autoscaling and node-drain safety configurations (`references/autoscaling.md`).
+8. **Jobs & CronJobs** - One-off and scheduled workload patterns with correct `restartPolicy`.
+9. **kubectl cheatsheet** - Logs, exec, rollback, port-forward, dry-run, common error diagnosis, and pod churn (eviction) triage (`references/kubectl-debugging.md`).
+10. **Anti-patterns & checklist** - What NOT to do, and a security/reliability/observability checklist.
 
 ## Examples
 
@@ -45,18 +54,30 @@ See the sections below for complete, runnable examples. Quick references:
 
 | Task | Jump to |
 |------|---------|
-| Full production Deployment YAML | [Core Workload Patterns](#core-workload-patterns) |
+| Minimal production Deployment | [Core Workload Patterns](#core-workload-patterns) |
+| Full production Deployment manifest | [deployment-template.md](references/deployment-template.md) |
 | Probe configuration | [Probes](#probes--liveness-readiness-startup) |
-| RBAC least-privilege setup | [RBAC](#rbac--roles-and-serviceaccounts) |
-| Debug a CrashLoopBackOff | [kubectl Debugging Cheatsheet](#kubectl-debugging-cheatsheet) |
-| Pods replaced with zero restarts | [Pod churn triage](#pods-replaced-with-zero-restarts-churn) |
-| Autoscaling | [HPA](#horizontal-pod-autoscaler-hpa) |
+| Service and Ingress manifests | [networking.md](references/networking.md) |
+| ConfigMaps and Secrets | [configmaps-and-secrets.md](references/configmaps-and-secrets.md) |
+| RBAC least-privilege setup | [rbac.md](references/rbac.md) |
+| Autoscaling and PDBs | [autoscaling.md](references/autoscaling.md) |
+| Debug a CrashLoopBackOff | [kubectl-debugging.md](references/kubectl-debugging.md) |
+| Pods replaced with zero restarts | [kubectl-debugging.md](references/kubectl-debugging.md#pods-replaced-with-zero-restarts-churn) |
 
 ---
 
 ## Core Workload Patterns
 
-### Deployment — Production Template
+### Deployment - Production Skeleton
+
+Minimum production shape. The full manifest, with every section commented, is in
+[references/deployment-template.md](references/deployment-template.md).
+
+Workloads that call the Kubernetes API (operators, controllers, config watchers)
+need a token. Follow Pattern B in [references/rbac.md](references/rbac.md), which
+sets `automountServiceAccountToken: true` on the Pod spec. The Pod-level value
+overrides the ServiceAccount setting, so the `false` below must be changed for
+those workloads.
 
 ```yaml
 apiVersion: apps/v1
@@ -64,44 +85,33 @@ kind: Deployment
 metadata:
   name: my-app
   namespace: my-namespace
-  labels:
-    app: my-app
-    version: "1.0.0"
 spec:
   replicas: 3
-  selector:
-    matchLabels:
-      app: my-app
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1          # Allow 1 extra pod during update
-      maxUnavailable: 0    # Never reduce below desired count
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: my-app
   template:
     metadata:
       labels:
         app: my-app
-        version: "1.0.0"
     spec:
-      # Security context at pod level
+      serviceAccountName: my-app-sa
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1001
         fsGroup: 1001
-
-      # Graceful shutdown
       terminationGracePeriodSeconds: 30
-
       containers:
         - name: my-app
-          image: ghcr.io/org/my-app:1.0.0   # Never use :latest
-          imagePullPolicy: IfNotPresent
-
+          image: ghcr.io/org/my-app:1.0.0
           ports:
             - containerPort: 8080
-              protocol: TCP
-
-          # Resource requests AND limits are both required
           resources:
             requests:
               cpu: "100m"
@@ -109,16 +119,11 @@ spec:
             limits:
               cpu: "500m"
               memory: "256Mi"
-
-          # Container security context
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
-              drop:
-                - ALL
-
-          # Probes (see Probes section below)
+              drop: [ALL]
           startupProbe:
             httpGet:
               path: /health
@@ -129,33 +134,20 @@ spec:
             httpGet:
               path: /health
               port: 8080
-            initialDelaySeconds: 0
             periodSeconds: 30
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /ready
               port: 8080
-            initialDelaySeconds: 5
             periodSeconds: 10
             failureThreshold: 2
-
-          # Environment from ConfigMap and Secret
           envFrom:
             - configMapRef:
                 name: my-app-config
-          env:
-            - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: my-app-secrets
-                  key: db-password
-
-          # Writable tmp directory when readOnlyRootFilesystem: true
           volumeMounts:
             - name: tmp
               mountPath: /tmp
-
       volumes:
         - name: tmp
           emptyDir: {}
@@ -212,125 +204,17 @@ livenessProbe:
 
 ## Services and Ingress
 
-### Service Types
+**ClusterIP** is the default and stays internal. **LoadBalancer** exposes the service externally on cloud providers. **Ingress** terminates TLS and routes by host and path, so set `ingressClassName` and point `cert-manager.io/cluster-issuer` at your issuer.
 
-```yaml
-# ClusterIP (default) — internal-only
-apiVersion: v1
-kind: Service
-metadata:
-  name: my-app
-  namespace: my-namespace
-spec:
-  selector:
-    app: my-app
-  ports:
-    - port: 80
-      targetPort: 8080
-      protocol: TCP
-  type: ClusterIP
-```
-
-```yaml
-# LoadBalancer — external traffic (cloud providers)
-spec:
-  type: LoadBalancer
-  ports:
-    - port: 443
-      targetPort: 8080
-```
-
-### Ingress with TLS
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: my-app
-  namespace: my-namespace
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-spec:
-  ingressClassName: nginx
-  tls:
-    - hosts:
-        - myapp.example.com
-      secretName: my-app-tls
-  rules:
-    - host: myapp.example.com
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: my-app
-                port:
-                  number: 80
-```
+Field-level manifests for all three are in [references/networking.md](references/networking.md).
 
 ---
 
 ## ConfigMaps and Secrets
 
-### ConfigMap — Non-sensitive configuration
+Use `envFrom` or a file mount for non-sensitive configuration. Raw `Secret` values are only base64-encoded, not encrypted. Sealed Secrets and the External Secrets Operator protect the source manifest, but the resulting Secret still needs cluster encryption at rest in production.
 
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: my-app-config
-  namespace: my-namespace
-data:
-  LOG_LEVEL: "info"
-  APP_ENV: "production"
-  MAX_CONNECTIONS: "100"
-  # Mount as a file for complex config
-  app.yaml: |
-    server:
-      port: 8080
-      timeout: 30s
-```
-
-```yaml
-# Mount ConfigMap as a file
-volumes:
-  - name: config
-    configMap:
-      name: my-app-config
-      items:
-        - key: app.yaml
-          path: app.yaml
-volumeMounts:
-  - name: config
-    mountPath: /etc/app
-    readOnly: true
-```
-
-### Secrets — Sensitive data
-
-```bash
-# Create secret from literal (CLI, then store in Vault/SOPS)
-kubectl create secret generic my-app-secrets \
-  --from-literal=db-password='s3cr3t' \
-  --namespace=my-namespace \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: my-app-secrets
-  namespace: my-namespace
-type: Opaque
-# Values are base64-encoded (NOT encrypted — use Sealed Secrets or ESO for real encryption)
-data:
-  db-password: czNjcjN0  # base64 of 's3cr3t'
-```
-
-> **Important:** Raw Kubernetes Secrets are only base64-encoded, not encrypted at rest unless your cluster has encryption configured. Use [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets) or [External Secrets Operator](https://external-secrets.io) for production.
+Manifests and CLI examples are in [references/configmaps-and-secrets.md](references/configmaps-and-secrets.md).
 
 ---
 
@@ -372,144 +256,19 @@ resources:
 
 ---
 
-## RBAC — Roles and ServiceAccounts
+## RBAC - Roles and ServiceAccounts
 
-### Principle of Least Privilege
+Most apps should run under a dedicated ServiceAccount with `automountServiceAccountToken: false` and no Role at all. When the app does call the Kubernetes API, bind a namespace-scoped `Role` that grants only the required verbs, and restrict Secret access with `resourceNames`.
 
-**Two patterns depending on whether the app calls the Kubernetes API:**
-
-#### Pattern A — App does NOT need the Kubernetes API (most apps)
-
-Disable token automounting on the ServiceAccount. The Role/RoleBinding are not needed.
-
-```yaml
-# ServiceAccount with token disabled — safest default
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: my-app-sa
-  namespace: my-namespace
-automountServiceAccountToken: false   # No K8s API token injected into pods
-```
-
-```yaml
-# Reference in Deployment — no token, no API access
-spec:
-  template:
-    spec:
-      serviceAccountName: my-app-sa
-      automountServiceAccountToken: false   # Belt-and-suspenders: also set at pod level
-```
-
-#### Pattern B — App DOES need the Kubernetes API (operators, controllers, config watchers)
-
-Enable the token and grant only the permissions actually required.
-
-```yaml
-# 1. ServiceAccount — enable token for this SA
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: my-app-sa
-  namespace: my-namespace
-automountServiceAccountToken: true    # Token required: app calls K8s API
-```
-
-```yaml
-# 2. Role — grant only what the app needs (namespace-scoped)
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: my-app-role
-  namespace: my-namespace
-rules:
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["get", "list", "watch"]    # Read-only, specific resource
-  - apiGroups: [""]
-    resources: ["secrets"]
-    resourceNames: ["my-app-secrets"]  # Restrict to specific secret by name
-    verbs: ["get"]
-```
-
-```yaml
-# 3. Bind Role to ServiceAccount
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: my-app-rolebinding
-  namespace: my-namespace
-subjects:
-  - kind: ServiceAccount
-    name: my-app-sa
-    namespace: my-namespace
-roleRef:
-  kind: Role
-  apiGroup: rbac.authorization.k8s.io
-  name: my-app-role
-```
-
-```yaml
-# 4. Reference SA in Deployment
-spec:
-  template:
-    spec:
-      serviceAccountName: my-app-sa
-      # automountServiceAccountToken defaults to true from SA — token is injected
-```
+The full least-privilege chain is in [references/rbac.md](references/rbac.md).
 
 ---
 
-## Horizontal Pod Autoscaler (HPA)
+## Autoscaling (HPA and PDB)
 
-```yaml
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: my-app-hpa
-  namespace: my-namespace
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: my-app
-  minReplicas: 2      # Always at least 2 for HA
-  maxReplicas: 10
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 70    # Scale up when avg CPU > 70%
-    - type: Resource
-      resource:
-        name: memory
-        target:
-          type: Utilization
-          averageUtilization: 80
-```
+HPA scales on the utilization of `resources.requests`, so requests must be set on every container. Use `minReplicas: 2` or higher for production. A PodDisruptionBudget keeps enough replicas available during node drains and other voluntary evictions; it does not limit rolling updates, which the Deployment strategy controls. Never set `minAvailable: 0`.
 
-> HPA requires `resources.requests` to be set on all containers — it calculates utilization as `current / request`.
-
----
-
-## PodDisruptionBudget (PDB)
-
-Prevent too many pods going down during node drains or rolling updates:
-
-```yaml
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: my-app-pdb
-  namespace: my-namespace
-spec:
-  minAvailable: 2           # OR use maxUnavailable: 1
-  selector:
-    matchLabels:
-      app: my-app
-```
+Both configurations are in [references/autoscaling.md](references/autoscaling.md).
 
 ---
 
@@ -591,85 +350,11 @@ spec:
 
 ---
 
-## kubectl Debugging Cheatsheet
+## Debugging
 
-```bash
-# --- Pod status and logs ---
-kubectl get pods -n my-namespace
-kubectl get pods -n my-namespace -o wide          # Show node assignment
-kubectl describe pod <pod-name> -n my-namespace   # Events and state details
-kubectl logs <pod-name> -n my-namespace           # Current logs
-kubectl logs <pod-name> -n my-namespace --previous  # Logs from crashed container
-kubectl logs <pod-name> -n my-namespace -c <container>  # Multi-container pod
+Start with `kubectl describe pod` and `kubectl logs --previous`, then check `kubectl get events`. CrashLoopBackOff, ImagePullBackOff, pending pods, and OOMKilled each have a distinct signature, listed with the exact commands in [references/kubectl-debugging.md](references/kubectl-debugging.md).
 
-# --- Execute into a running container ---
-kubectl exec -it <pod-name> -n my-namespace -- sh
-kubectl exec -it <pod-name> -n my-namespace -- bash
-
-# --- Check resource usage ---
-kubectl top pods -n my-namespace
-kubectl top nodes
-
-# --- Deployment operations ---
-kubectl rollout status deployment/my-app -n my-namespace
-kubectl rollout history deployment/my-app -n my-namespace
-kubectl rollout undo deployment/my-app -n my-namespace      # Rollback
-kubectl rollout undo deployment/my-app --to-revision=2 -n my-namespace
-
-# --- Scale manually ---
-kubectl scale deployment my-app --replicas=5 -n my-namespace
-
-# --- Inspect events (cluster-wide issues) ---
-kubectl get events -n my-namespace --sort-by='.lastTimestamp'
-
-# --- Port-forward for local debugging ---
-kubectl port-forward pod/<pod-name> 8080:8080 -n my-namespace
-kubectl port-forward svc/my-app 8080:80 -n my-namespace
-
-# --- Dry-run to validate YAML ---
-kubectl apply -f deployment.yaml --dry-run=client
-kubectl apply -f deployment.yaml --dry-run=server   # Validates against live cluster
-```
-
-### Diagnosing Common Errors
-
-```bash
-# CrashLoopBackOff: container keeps crashing
-kubectl logs <pod-name> --previous -n my-namespace  # Check crash logs
-kubectl describe pod <pod-name> -n my-namespace     # Check exit code & OOMKilled
-
-# ImagePullBackOff: can't pull image
-kubectl describe pod <pod-name> -n my-namespace     # Check Events section
-# Causes: wrong image tag, missing imagePullSecret, private registry
-
-# Pending pod: not scheduled
-kubectl describe pod <pod-name> -n my-namespace
-# Causes: insufficient resources, no matching node selector, taint/toleration mismatch
-
-# OOMKilled: out of memory
-# Increase memory limits, check for memory leaks
-kubectl describe pod <pod-name> -n my-namespace | grep -A5 "Last State"
-```
-
-### Pods Replaced With Zero Restarts (Churn)
-
-A young pod with `RESTARTS 0` may be a new replica or a replacement. Compare its Pod UID and `creationTimestamp` with a prior observation; a changed UID confirms replacement, while the restart count alone does not prove deletion. `kubectl get events` often shows nothing, because events expire after one hour by default and a descheduler without RBAC on `events.k8s.io` emits none. Node-pressure evictions by the kubelet are different: they skip the Eviction API and leave the old pod listed as `Evicted`.
-
-| Signal | Likely cause | Confirm with |
-|--------|--------------|--------------|
-| New ReplicaSet whose only template change is `kubectl.kubernetes.io/restartedAt` | `kubectl rollout restart` | Audit log: deployment `patch` and who sent it |
-| Same ReplicaSet, same nodes | API-initiated eviction (descheduler, `kubectl drain`) | Audit log: `pods/eviction` `create` |
-| Same ReplicaSet, a node was added or removed | Node reclaim or replacement (spot/preemptible, autoscaler, upgrade) | `kubectl get nodes` (AGE), cloud provider logs |
-
-```bash
-# Who evicted what: API server audit log, objectRef.subresource=eviction, verb=create
-# GKE example (Cloud Logging):
-gcloud logging read 'protoPayload.methodName="io.k8s.core.v1.pods.eviction.create"' --freshness=4h \
-  --format='value(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.resourceName)'
-
-# A descheduler CronJob logs the plugin behind each eviction
-kubectl logs -n kube-system job/<descheduler-job> | grep "Evicted pod"
-```
+Pods replaced with zero restarts are a separate failure class: compare Pod UID and `creationTimestamp`, then confirm with the audit log or node age. The triage table and log queries are in the same reference file.
 
 ---
 
