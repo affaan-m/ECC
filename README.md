@@ -763,7 +763,7 @@ Slash forms below are shown where they remain part of the maintained command sur
 ```
 /ecc:plan "Add user authentication with OAuth"
                                               -> planner creates implementation blueprint
-tdd-workflow skill                            -> write and run a failing test before implementation
+tdd-workflow skill                            -> confirm RED before implementation: a test fails for the expected reason, or compilation fails because the test references missing functionality
 /code-review                                  -> run the in-session review checklist
 ```
 
