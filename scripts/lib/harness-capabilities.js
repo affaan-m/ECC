@@ -404,6 +404,9 @@ function normalizeHarnessSelection(selection) {
   const selected = new Set();
   for (const token of tokens) {
     const normalizedToken = normalizeLookupToken(token);
+    if (normalizedToken === 'kimi-home') {
+      throw new Error('Kimi user-home installation is available through --target kimi-home, not guided --harness selection');
+    }
     const menuIndex = /^\d+$/.test(normalizedToken) ? Number(normalizedToken) - 1 : -1;
     const harness = menuIndex >= 0
       ? listGuidedHarnesses()[menuIndex] || null

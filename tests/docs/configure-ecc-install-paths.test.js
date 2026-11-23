@@ -149,6 +149,13 @@ test('Kimi docs scope hooks and compatibility to the verified adapter', () => {
   assert.ok(!content.includes('Kimi Code 0.31.x does not expose'));
 });
 
+test('Kimi home docs describe skip-and-warn conflict behavior', () => {
+  const content = readConfigureEccDoc('.kimi/README.md');
+
+  assert.ok(content.includes('preserved and skipped with warnings'));
+  assert.ok(!content.includes('Existing conflicting user-owned files stop installation'));
+});
+
 test('Turkish agent instructions report the live catalog counts', () => {
   const content = readConfigureEccDoc('docs/tr/AGENTS.md');
   const agentCount = countEntries('agents', entry => entry.isFile() && entry.name.endsWith('.md'));

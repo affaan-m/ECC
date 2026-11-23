@@ -25,7 +25,9 @@ module.exports = createInstallTargetAdapter({
     return modules.flatMap(module => {
       const paths = Array.isArray(module.paths) ? module.paths : [];
       return paths
-        .filter(sourceRelativePath => !isForeignPlatformPath(sourceRelativePath, adapter.target))
+        .filter(sourceRelativePath => sourceRelativePath === '.kimi'
+          || sourceRelativePath === '.kimi-code'
+          || !isForeignPlatformPath(sourceRelativePath, adapter.target))
         .flatMap(sourceRelativePath => {
           if (sourceRelativePath === 'mcp-configs') return [];
           if (sourceRelativePath === '.kimi') {

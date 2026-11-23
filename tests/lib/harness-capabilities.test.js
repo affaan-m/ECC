@@ -198,6 +198,7 @@ function runTests() {
     assert.throws(() => normalizeHarnessSelection('all,codex'), /cannot be combined/i);
     assert.throws(() => normalizeHarnessSelection('cursor'), /advanced.*not guided-ready/i);
     assert.throws(() => normalizeHarnessSelection('grok'), /advanced.*not guided-ready/i);
+    assert.throws(() => normalizeHarnessSelection('kimi-home'), /--target kimi-home/);
   })) passed++; else failed++;
 
   if (test('exports deeply frozen records while list helpers return safe array copies', () => {

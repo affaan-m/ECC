@@ -376,6 +376,13 @@ function runTests() {
     assert.ok(homePlan.operations.length > 0);
   })) passed++; else failed++;
 
+  if (test('keeps kimi-home target declarations unique across the manifest', () => {
+    const manifests = loadInstallManifests();
+    for (const module of manifests.modules) {
+      assert.ok(module.targets.filter(target => target === 'kimi-home').length <= 1, module.id);
+    }
+  })) passed++; else failed++;
+
   if (test('resolves Qwen minimal profile while leaving hooks out', () => {
     const homeDir = '/Users/example';
     const plan = resolveInstallPlan({

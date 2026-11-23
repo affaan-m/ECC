@@ -28,7 +28,7 @@ bash ./install.sh --target kimi --profile minimal
 
 ## User-level project-agnostic install
 
-The `kimi-home` adapter installs the selected ECC profile into `~/.kimi-code/` for the current user. It uses the same managed install-state and preflight lifecycle as the project adapter, maps directly discoverable skills into `skills/`, and does not create or modify global MCP configuration. Existing conflicting user-owned files stop installation.
+The `kimi-home` adapter installs the selected ECC profile into `~/.kimi-code/` for the current user. It uses the same managed install-state and preflight lifecycle as the project adapter, maps directly discoverable skills into `skills/`, and does not create or modify global MCP configuration. Existing conflicting user-owned files are preserved and skipped with warnings by the direct installer; review the reported plan and warnings before continuing.
 
 ```bash
 bash ./install.sh --target kimi-home --profile minimal --dry-run

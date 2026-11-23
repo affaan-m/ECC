@@ -249,7 +249,7 @@ function runTests() {
       projectRoot: '/workspace/ignored-project',
       modules: [
         { id: 'agents-core', paths: ['.agents', 'agents', 'AGENTS.md'] },
-        { id: 'platform-configs', paths: ['.kimi', '.kimi-code', 'mcp-configs'] },
+        { id: 'platform-configs', paths: ['.kimi', '.kimi-code', '.cursor', 'mcp-configs'] },
         { id: 'workflow-quality', paths: ['skills/tdd-workflow'] },
       ],
     });
@@ -261,6 +261,8 @@ function runTests() {
     assert.ok(plan.operations.some(operation => operation.sourceRelativePath === '.agents/skills' && operation.destinationPath === path.join(plan.targetRoot, 'skills')));
     assert.ok(plan.operations.some(operation => operation.sourceRelativePath === 'AGENTS.md' && operation.destinationPath === path.join(plan.targetRoot, 'AGENTS.md')));
     assert.ok(plan.operations.some(operation => operation.sourceRelativePath === 'skills/tdd-workflow' && operation.destinationPath === path.join(plan.targetRoot, 'skills', 'tdd-workflow')));
+    assert.ok(plan.operations.some(operation => operation.sourceRelativePath === '.kimi' && operation.destinationPath === plan.targetRoot && operation.strategy === 'sync-root-children'));
+    assert.ok(plan.operations.every(operation => operation.sourceRelativePath !== '.cursor'));
     assert.ok(plan.operations.every(operation => operation.sourceRelativePath !== 'mcp-configs' && operation.sourceRelativePath !== '.mcp.json'));
     assert.ok(plan.operations.every(operation => operation.destinationPath === plan.targetRoot || operation.destinationPath.startsWith(`${plan.targetRoot}${path.sep}`)));
   })) passed++; else failed++;
