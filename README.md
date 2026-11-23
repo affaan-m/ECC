@@ -695,7 +695,8 @@ Start with the workflow you need, not the full catalog.
 |---|---|
 | Building a feature | `/ecc:plan "describe the feature"`, then `tdd-workflow` |
 | Fixing a bug | Reproduce it with a failing test, then use `tdd-workflow` |
-| Reviewing new code | `/code-review` for a fresh-context review |
+| Reviewing new code | `/code-review` for an in-session checklist review |
+| Reviewing a pull request | `/review-pr` for a review by specialized agents |
 | Triaging a GitHub issue | `/ecc:issue-review <number>` (plugin) or `/issue-review <number>` (manual install) to verify it against the code and draft a reply |
 | Repairing a build | `/build-fix` |
 | Cleaning a codebase | `/refactor-clean` |
@@ -731,12 +732,12 @@ Skills are the primary workflow surface. Commands remain convenient entry points
 
 Skills are the canonical workflow surface; maintained slash entries stay available for command-first workflows.
 
-| I want to... | Use this surface | Agent used |
+| I want to... | Use this surface | Agent or behavior |
 |--------------|-----------------|------------|
 | Plan a new feature | `/ecc:plan "Add auth"` | planner |
 | Design system architecture | `/ecc:plan` + architect agent | architect |
-| Write code with tests first | `tdd-workflow` skill | tdd-guide |
-| Review code I just wrote | `/code-review` | code-reviewer |
+| Write code with tests first | `tdd-workflow` skill | Guides the test-first workflow |
+| Review code I just wrote | `/code-review` | Runs the in-session checklist |
 | Review a GitHub issue | `/ecc:issue-review` (plugin), `/issue-review` (manual install) | — (issue-review skill) |
 | Fix a failing build | `/build-fix` | build-error-resolver |
 | Run end-to-end tests | `e2e-testing` skill | e2e-runner |
@@ -762,15 +763,15 @@ Slash forms below are shown where they remain part of the maintained command sur
 ```
 /ecc:plan "Add user authentication with OAuth"
                                               -> planner creates implementation blueprint
-tdd-workflow skill                            -> tdd-guide enforces write-tests-first
-/code-review                                  -> code-reviewer checks your work
+tdd-workflow skill                            -> write and run a failing test before implementation
+/code-review                                  -> run the in-session review checklist
 ```
 
 **Fixing a bug:**
 ```
-tdd-workflow skill                            -> tdd-guide: write a failing test that reproduces it
+tdd-workflow skill                            -> write a failing test that reproduces the bug
                                               -> implement the fix, verify test passes
-/code-review                                  -> code-reviewer: catch regressions
+/code-review                                  -> review the fix with the in-session checklist
 ```
 
 **Preparing for production:**
@@ -1230,8 +1231,8 @@ This repo is the raw code. The guides explain everything.
 | Without a system                                        | With ECC                                                              |
 | ------------------------------------------------------- | --------------------------------------------------------------------- |
 | Plans disappear into chat history                       | Plans become editable artifacts before implementation starts          |
-| "Please use TDD" is an instruction the model may forget | TDD becomes a gated RED -> GREEN -> REFACTOR workflow with evidence   |
-| The same context writes and reviews the code            | A fresh-context reviewer looks for regressions and blind spots        |
+| "Please use TDD" is an instruction the model may forget | `tdd-workflow` guides you to record evidence for RED, GREEN, and REFACTOR |
+| The same context writes and reviews the code            | `/review-pr` brings in specialized reviewers for a separate PR review |
 | Memory means saving an enormous transcript              | Sessions are distilled into summaries, instincts, and reusable skills |
 | Quality checks depend on reminders                      | Hooks can enforce deterministic checks outside the prompt             |
 | Agent configuration is trusted by default               | AgentShield scans the harness itself as an attack surface             |
