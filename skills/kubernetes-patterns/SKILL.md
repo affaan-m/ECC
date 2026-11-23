@@ -73,6 +73,12 @@ See the sections below for complete, runnable examples. Quick references:
 Minimum production shape. The full manifest, with every section commented, is in
 [references/deployment-template.md](references/deployment-template.md).
 
+Workloads that call the Kubernetes API (operators, controllers, config watchers)
+need a token. Follow Pattern B in [references/rbac.md](references/rbac.md), which
+sets `automountServiceAccountToken: true` on the Pod spec. The Pod-level value
+overrides the ServiceAccount setting, so the `false` below must be changed for
+those workloads.
+
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -206,7 +212,7 @@ Field-level manifests for all three are in [references/networking.md](references
 
 ## ConfigMaps and Secrets
 
-Use `envFrom` or a file mount for non-sensitive configuration. Raw `Secret` values are only base64-encoded, not encrypted, so production clusters should use Sealed Secrets or the External Secrets Operator.
+Use `envFrom` or a file mount for non-sensitive configuration. Raw `Secret` values are only base64-encoded, not encrypted. Sealed Secrets and the External Secrets Operator protect the source manifest, but the resulting Secret still needs cluster encryption at rest in production.
 
 Manifests and CLI examples are in [references/configmaps-and-secrets.md](references/configmaps-and-secrets.md).
 
@@ -260,7 +266,7 @@ The full least-privilege chain is in [references/rbac.md](references/rbac.md).
 
 ## Autoscaling (HPA and PDB)
 
-HPA scales on the utilization of `resources.requests`, so requests must be set on every container. Use `minReplicas: 2` or higher for production. A PodDisruptionBudget keeps enough replicas available during node drains; never set `minAvailable: 0`.
+HPA scales on the utilization of `resources.requests`, so requests must be set on every container. Use `minReplicas: 2` or higher for production. A PodDisruptionBudget keeps enough replicas available during node drains and other voluntary evictions; it does not limit rolling updates, which the Deployment strategy controls. Never set `minAvailable: 0`.
 
 Both configurations are in [references/autoscaling.md](references/autoscaling.md).
 

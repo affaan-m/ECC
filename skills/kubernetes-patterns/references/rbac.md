@@ -83,5 +83,12 @@ spec:
   template:
     spec:
       serviceAccountName: my-app-sa
-      # automountServiceAccountToken defaults to true from SA - token is injected
+      # The pod-level field takes precedence over the ServiceAccount setting,
+      # so it must be true here when the Pod spec also disables automounting.
+      automountServiceAccountToken: true
 ```
+
+If you copy the Deployment skeleton from [SKILL.md](../SKILL.md), which sets
+`automountServiceAccountToken: false` at the pod level, change it to `true` for
+this pattern. The pod-level value wins over the ServiceAccount value, so leaving
+it `false` leaves the app with no API token.

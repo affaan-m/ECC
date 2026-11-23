@@ -4,6 +4,10 @@ Full production `Deployment` manifest for the `kubernetes-patterns` skill. It in
 
 Copy it and adjust names, namespaces, images, ports, and resource values.
 
+The manifest uses the dedicated `my-app-sa` ServiceAccount with token
+automounting disabled. Create it first with Pattern A in [rbac.md](rbac.md); a
+workload that calls the Kubernetes API needs Pattern B instead.
+
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -29,6 +33,10 @@ spec:
         app: my-app
         version: "1.0.0"
     spec:
+      # Dedicated ServiceAccount without an API token (see rbac.md, Pattern A)
+      serviceAccountName: my-app-sa
+      automountServiceAccountToken: false
+
       # Security context at pod level
       securityContext:
         runAsNonRoot: true

@@ -36,7 +36,7 @@ spec:
 
 ## PodDisruptionBudget (PDB)
 
-Prevent too many pods going down during node drains or rolling updates:
+Protect availability during voluntary, eviction-based disruptions such as node drains. A PDB does not constrain rolling updates: the Deployment `strategy.rollingUpdate` fields control availability during a rollout.
 
 ```yaml
 apiVersion: policy/v1
@@ -45,7 +45,9 @@ metadata:
   name: my-app-pdb
   namespace: my-namespace
 spec:
-  minAvailable: 2           # OR use maxUnavailable: 1
+  # HPA can scale down to 2 replicas, so allow one healthy pod to be evicted.
+  # maxUnavailable: 1 is equivalent here.
+  minAvailable: 1
   selector:
     matchLabels:
       app: my-app

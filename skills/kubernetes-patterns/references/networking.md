@@ -23,12 +23,24 @@ spec:
 
 ```yaml
 # LoadBalancer - external traffic (cloud providers)
+# Separate Service, so the ClusterIP service above keeps port 80 for Ingress.
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app-lb
+  namespace: my-namespace
 spec:
-  type: LoadBalancer
+  selector:
+    app: my-app
   ports:
     - port: 443
       targetPort: 8080
+      protocol: TCP
+  type: LoadBalancer
 ```
+
+Use the LoadBalancer or the Ingress as the external entry point, not both. The
+Ingress below routes to the `my-app` ClusterIP Service on port 80.
 
 ## Ingress with TLS
 

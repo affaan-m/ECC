@@ -39,9 +39,11 @@ volumeMounts:
 ## Secrets - Sensitive data
 
 ```bash
-# Create secret from literal (CLI, then store in Vault/SOPS)
+# Dummy-only example. Never put a real password in a command argument: it stays
+# in shell history and process listings. For production, pull the value from a
+# secret manager or a mounted file and pass it on stdin.
 kubectl create secret generic my-app-secrets \
-  --from-literal=db-password='s3cr3t' \
+  --from-file=db-password=./db-password.txt \
   --namespace=my-namespace \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
@@ -53,9 +55,15 @@ metadata:
   name: my-app-secrets
   namespace: my-namespace
 type: Opaque
-# Values are base64-encoded (NOT encrypted - use Sealed Secrets or ESO for real encryption)
+# Placeholder value only. Base64 is NOT encryption.
 data:
-  db-password: czNjcjN0  # base64 of 's3cr3t'
+  db-password: PHJlcGxhY2Utd2l0aC1yZWFsLXNlY3JldD4=  # base64 of a placeholder
 ```
 
-> **Important:** Raw Kubernetes Secrets are only base64-encoded, not encrypted at rest unless your cluster has encryption configured. Use [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets) or [External Secrets Operator](https://external-secrets.io) for production.
+> **Important:** Raw Kubernetes Secrets are only base64-encoded, not encrypted.
+> Sealed Secrets and the External Secrets Operator protect the source manifest:
+> they still produce a standard Secret, which is stored unencrypted at rest
+> unless the cluster has encryption at rest configured on the API server.
+> Prefer [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets)
+> or [External Secrets Operator](https://external-secrets.io) for production,
+> and turn on at-rest encryption for the cluster.
