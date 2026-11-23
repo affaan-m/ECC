@@ -70,13 +70,16 @@ const HARNESS_CAPABILITIES = deepFreeze([
   {
     id: 'kimi',
     label: 'Kimi Code',
-    targetIds: ['kimi'],
+    targetIds: ['kimi', 'kimi-home'],
     channel: 'managed-project',
     installMode: 'managed-project',
     guidedReady: true,
     availability: 'guided',
-    destination: './.kimi-code',
-    scopes: [scope('project', 'kimi', './.kimi-code')],
+    destination: './.kimi-code or ~/.kimi-code',
+    scopes: [
+      scope('project', 'kimi', './.kimi-code'),
+      scope('user', 'kimi-home', '~/.kimi-code'),
+    ],
     hooks: hooks(
       'not-configured',
       false,

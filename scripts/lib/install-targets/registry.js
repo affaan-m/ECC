@@ -12,6 +12,7 @@ const grokHome = require('./grok-home');
 const hermesHome = require('./hermes-home');
 const joycodeProject = require('./joycode-project');
 const kimiProject = require('./kimi-project');
+const kimiHome = require('./kimi-home');
 const mistralVibeProject = require('./mistral-vibe-project');
 const openclawHome = require('./openclaw-home');
 const opencodeHome = require('./opencode-home');
@@ -35,6 +36,7 @@ const ADAPTERS = Object.freeze([
   codebuddyProject,
   joycodeProject,
   kimiProject,
+  kimiHome,
   mistralVibeProject,
   qwenHome,
   zedProject,

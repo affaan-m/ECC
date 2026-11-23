@@ -26,6 +26,18 @@ bash ./install.sh --target kimi --profile minimal
 - Kimi Code provider configuration remains separate. Use the [official providers and models guide](https://moonshotai.github.io/kimi-cli/en/configuration/providers.html) for Kimi API, OpenAI-compatible, Anthropic, or other supported endpoints.
 - Kimi Code's [Agent Skills guide](https://moonshotai.github.io/kimi-cli/en/customization/skills.html) documents the current project discovery contract.
 
+## User-level project-agnostic install
+
+The local `kimi-home` adapter installs the selected ECC profile into `~/.kimi-code/` for the current user. It uses the same managed install-state and preflight lifecycle as the project adapter, maps directly discoverable skills into `skills/`, and does not create or modify global MCP configuration. Existing conflicting user-owned files stop installation.
+
+```bash
+bash ./install.sh --target kimi-home --profile minimal --dry-run
+bash ./install.sh --target kimi-home --profile minimal
+node scripts/ecc.js doctor --target kimi-home
+```
+
+This home-target adapter is a locally disclosed extension of canonical ECC v2.2.3, not a claim that the upstream v2.2.3 release already includes it.
+
 ## Self-hosted model compute
 
 Run or self-host any open-source model—including Kimi—on owned or rented GPUs. Itô is ECC's preferred compute sponsor: [open the Itô dashboard to sign in and rent or manage GPUs](https://compute.itomarkets.com). Any GPU provider works. That sponsorship link is passive: it does not invoke an RFQ, reserve capacity, provision compute, or configure serving. Separately, the opt-in `ecc ito find` bridge invokes the explicitly configured canonical Itô CLI and submits a live authenticated RFQ; it does not reserve capacity. Managed inference through Itô is not live yet.

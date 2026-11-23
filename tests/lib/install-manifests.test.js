@@ -368,6 +368,14 @@ function runTests() {
     assert.ok(plan.operations.length > 0, 'Should include install operations');
   })) passed++; else failed++;
 
+  if (test('resolves the minimal profile for kimi-home with project-parity modules', () => {
+    const homePlan = resolveInstallPlan({ target: 'kimi-home', profileId: 'minimal', homeDir: '/workspace/home' });
+    const projectPlan = resolveInstallPlan({ target: 'kimi', profileId: 'minimal', projectRoot: '/workspace/project' });
+    assert.strictEqual(homePlan.targetAdapterId, 'kimi-home');
+    assert.deepStrictEqual(homePlan.selectedModuleIds, projectPlan.selectedModuleIds);
+    assert.ok(homePlan.operations.length > 0);
+  })) passed++; else failed++;
+
   if (test('resolves Qwen minimal profile while leaving hooks out', () => {
     const homeDir = '/Users/example';
     const plan = resolveInstallPlan({
