@@ -19,6 +19,7 @@ const path = require('path');
 const http = require('http');
 const https = require('https');
 const { spawn, spawnSync } = require('child_process');
+const { getHookEventName } = require('./hook-input');
 
 const MAX_STDIN = 1024 * 1024;
 const DEFAULT_TTL_MS = 2 * 60 * 1000;
@@ -882,7 +883,7 @@ async function main() {
     return;
   }
 
-  const eventName = process.env.CLAUDE_HOOK_EVENT_NAME || 'PreToolUse';
+  const eventName = getHookEventName(input, rawInput) || 'PreToolUse';
   const now = Date.now();
   const statePathValue = stateFilePath();
 

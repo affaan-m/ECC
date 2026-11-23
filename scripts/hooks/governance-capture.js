@@ -20,7 +20,7 @@
 
 const crypto = require('crypto');
 const { isElevatedPowerShellCommand } = require('../lib/powershell-destructive-command');
-const { getToolResultText } = require('./hook-input');
+const { getHookEventName, getToolResultText } = require('./hook-input');
 
 const MAX_STDIN = 1024 * 1024;
 let destructiveCommandClassifier = null;
@@ -297,7 +297,13 @@ function run(rawInput, options = {}) {
   }
 
   const sessionId = process.env.ECC_SESSION_ID || null;
-  const hookPhase = process.env.CLAUDE_HOOK_EVENT_NAME || 'unknown';
+  let input = null;
+  try {
+    input = JSON.parse(rawInput);
+  } catch {
+    input = null;
+  }
+  const hookPhase = getHookEventName(input, rawInput) || options.hookEventName || 'unknown';
 
   if (options.truncated) {
     emitGovernanceEvent({
@@ -314,9 +320,8 @@ function run(rawInput, options = {}) {
     });
   }
 
+  if (!input) return rawInput;
   try {
-    const input = JSON.parse(rawInput);
-
     const events = analyzeForGovernanceEvents(input, {
       sessionId,
       hookPhase: hookPhase.startsWith('Pre') ? 'pre' : 'post',
@@ -328,7 +333,7 @@ function run(rawInput, options = {}) {
       }
     }
   } catch {
-    // Silently ignore parse errors — never block the tool pipeline.
+    // Never block the tool pipeline.
   }
 
   return rawInput;

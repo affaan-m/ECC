@@ -10,6 +10,7 @@ const { spawn } = require('child_process');
 const { PassThrough } = require('stream');
 const {
   DEFAULT_STDIN_IDLE_TIMEOUT_MS,
+  getHookEventName,
   getToolResult,
   getToolResultText,
   readStdinRaw,
@@ -367,6 +368,26 @@ async function runTests() {
       assert.strictEqual(stdout, '');
       assert.match(stderr, /--no-verify flag is not allowed/);
       assert.doesNotMatch(stderr, /incomplete stdin/);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await test('getHookEventName reads the payload event and falls back to CLAUDE_HOOK_EVENT_NAME', () => {
+      const env = { CLAUDE_HOOK_EVENT_NAME: 'PreToolUse' };
+      assert.strictEqual(getHookEventName({ hook_event_name: 'PostToolUseFailure' }, '', env), 'PostToolUseFailure');
+      assert.strictEqual(getHookEventName({ tool_name: 'Bash' }, '', env), 'PreToolUse');
+      assert.strictEqual(getHookEventName({ hook_event_name: '' }, '', env), 'PreToolUse');
+      assert.strictEqual(getHookEventName({ tool_name: 'Bash' }, '', {}), '');
+      // A parsed payload is never scanned, so an argument that mentions the key cannot pose as the event.
+      const nested = { tool_name: 'Write', tool_input: { content: '{"hook_event_name":"PostToolUse"}' } };
+      assert.strictEqual(getHookEventName(nested, JSON.stringify(nested), {}), '');
+      // A truncated payload that no longer parses still names its event in the raw text.
+      assert.strictEqual(getHookEventName(null, '{"hook_event_name":"PreToolUse","tool_input":{"command":"x', env), 'PreToolUse');
+      assert.strictEqual(getHookEventName(null, '{"hook_event_name":"PostToolUse","tool_inp', {}), 'PostToolUse');
+      assert.strictEqual(getHookEventName(null, '{"tool_name":"Bash"', env), 'PreToolUse');
+      assert.strictEqual(getHookEventName(null, undefined, {}), '');
     })
   )
     passed++;

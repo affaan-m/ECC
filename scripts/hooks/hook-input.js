@@ -167,9 +167,27 @@ function getToolResultText(input) {
   return [result.stdout, result.stderr].filter(part => typeof part === 'string' && part !== '').join('\n');
 }
 
+/**
+ * The hook event a payload was sent for. Claude Code sends it as
+ * `hook_event_name` in the stdin JSON and exports no event variable to the
+ * hook process, so CLAUDE_HOOK_EVENT_NAME is only a fallback for callers that
+ * set it. A truncated payload that no longer parses (`input` is null) can
+ * still name its event in its raw text. Returns '' when nothing names the event.
+ */
+function getHookEventName(input, raw = '', env = process.env) {
+  const fallback = typeof env.CLAUDE_HOOK_EVENT_NAME === 'string' ? env.CLAUDE_HOOK_EVENT_NAME : '';
+  if (input && typeof input === 'object' && !Array.isArray(input)) {
+    return typeof input.hook_event_name === 'string' && input.hook_event_name ? input.hook_event_name : fallback;
+  }
+  // Only an unparsed payload is scanned: in a parsed one, a nested key could match.
+  const prefix = typeof raw === 'string' ? raw.match(/"hook_event_name"\s*:\s*"([A-Za-z]+)"/) : null;
+  return prefix ? prefix[1] : fallback;
+}
+
 module.exports = {
   DEFAULT_MAX_STDIN,
   DEFAULT_STDIN_IDLE_TIMEOUT_MS,
+  getHookEventName,
   getToolResult,
   getToolResultText,
   readStdinRaw,
