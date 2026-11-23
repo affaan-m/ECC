@@ -1124,10 +1124,12 @@ function runTests() {
       TEMP: suiteTempDir,
       CLAUDE_PLUGIN_ROOT: repoRoot,
       ECC_HOOK_PROFILE: 'standard',
+      ECC_HOOKS_ENABLED: 'true',
       NODE_OPTIONS: `--require ${JSON.stringify(processTracer)}`,
       ...envOverrides,
     };
-    delete env.ECC_DISABLED_HOOKS;
+    // The developer's own hook gating must not skip the hook under test.
+    for (const key of ['ECC_DISABLED_HOOKS', 'ECC_DRY_RUN', 'ECC_HOOK_CONFIG', 'ECC_PLUGIN_ROOT']) delete env[key];
     const result = spawnSync(shippedCommand, {
       shell: true, cwd: repoRoot, env, input: JSON.stringify(payload), encoding: 'utf8', timeout: 30000,
     });
