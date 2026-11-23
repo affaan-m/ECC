@@ -32,19 +32,21 @@ Tareas con menor sensibilidad al contexto:
 
 ## Extended Thinking + Modo Plan
 
-El extended thinking está habilitado por defecto, reservando hasta 31,999 tokens para razonamiento interno.
+En Claude Code, el razonamiento adaptativo permite que el modelo decida cuánto pensar en cada tarea. Para los modelos Fable, Sonnet 5 y posteriores, y Opus 4.7 y posteriores, usa el effort para controlar el razonamiento en lugar de un presupuesto fijo de tokens. Los niveles disponibles dependen del modelo.
 
-Controlar el extended thinking mediante:
-- **Toggle**: Option+T (macOS) / Alt+T (Windows/Linux)
-- **Config**: Establecer `alwaysThinkingEnabled` en `~/.claude/settings.json`
-- **Límite de presupuesto**: `export MAX_THINKING_TOKENS=10000`
+Controla el extended thinking mediante:
+- **Effort**: Usa `/effort` dentro de una sesión, `--effort <level>` al iniciar, o `CLAUDE_CODE_EFFORT_LEVEL`; la variable de entorno tiene prioridad sobre ambos, así que quítala de donde esté definida, elimínala también del shell desde el que inicias Claude Code (o abre un shell nuevo) y reinicia Claude Code antes de usar otro control. Guarda un nivel por modelo en `modelSettings` dentro de `~/.claude/settings.json`; la clave anterior `effortLevel` del usuario no se aplica a Opus 5.5 ni a modelos más nuevos.
+- **Toggle**: Option+T (macOS) / Alt+T (Windows/Linux), o `alwaysThinkingEnabled` en la configuración. Estas opciones no pueden desactivar el pensamiento en Opus 5.5, Sonnet 5.5 ni en los modelos Fable.
+- **Presupuesto fijo**: Claude Code ignora los valores positivos de `MAX_THINKING_TOKENS` en modelos con razonamiento adaptativo. En Opus 4.6 o Sonnet 4.6, establece `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` para usar un presupuesto fijo con `MAX_THINKING_TOKENS`.
 - **Modo verbose**: Ctrl+O para ver la salida del pensamiento
 
+Consulta la [configuración de modelos de Claude Code](https://code.claude.com/docs/en/model-config#adjust-effort-level) y las [variables de entorno](https://code.claude.com/docs/en/env-vars) para los controles admitidos.
+
 Para tareas complejas que requieren razonamiento profundo:
-1. Asegurarse de que el extended thinking esté habilitado (activado por defecto)
-2. Habilitar el **Modo Plan** para un enfoque estructurado
-3. Usar múltiples rondas de crítica para un análisis exhaustivo
-4. Usar sub-agentes con roles divididos para perspectivas diversas
+1. Comprueba el nivel actual y elige uno más alto con `/effort`; Opus 4.7 ya empieza en `xhigh`, así que `high` lo reduciría
+2. Habilita el **Modo Plan** para un enfoque estructurado
+3. Usa múltiples rondas de crítica para un análisis exhaustivo
+4. Usa sub-agentes con roles divididos para perspectivas diversas
 
 ## Solución de Problemas de Build
 
