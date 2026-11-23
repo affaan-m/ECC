@@ -200,6 +200,9 @@ function getMatchingSessionCandidates(normalizedSessionId, matchBy) {
 
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith('.tmp')) continue;
+      // Every supported ID, prefix and filename/date alias occurs literally
+      // in its filename. Avoid parsing dates for unrelated session history.
+      if (!entry.name.includes(normalizedSessionId)) continue;
 
       const metadata = parseSessionFilename(entry.name);
       if (!metadata || !sessionMatchesId(metadata, normalizedSessionId, false, matchBy)) {
