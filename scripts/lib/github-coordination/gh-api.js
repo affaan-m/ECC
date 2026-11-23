@@ -38,6 +38,7 @@ function runCommand(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd,
     env: options.env || process.env,
+    input: options.input,
     encoding: 'utf8',
     maxBuffer: 10 * 1024 * 1024,
   });
@@ -69,7 +70,7 @@ function runGh(args, options = {}) {
     delete env.GITHUB_TOKEN;
   }
 
-  return runCommand(command, commandArgs, { cwd: options.cwd, env });
+  return runCommand(command, commandArgs, { cwd: options.cwd, env, input: options.input });
 }
 
 function runGhJson(args, options = {}) {
@@ -131,7 +132,8 @@ function editIssue(repo, issueNumber, options = {}) {
   ];
 
   if (options.body !== undefined) {
-    args.push('--body', options.body);
+    // Body text can exceed the OS argument limit, especially with UTF-8 prose.
+    args.push('--body-file', '-');
   }
 
   for (const label of options.addLabels || []) {
@@ -150,7 +152,7 @@ function editIssue(repo, issueNumber, options = {}) {
     args.push('--add-assignee', options.assignee);
   }
 
-  return runGh(args, options);
+  return runGh(args, options.body === undefined ? options : { ...options, input: String(options.body) });
 }
 
 function commentIssue(repo, issueNumber, body, options = {}) {
@@ -161,9 +163,9 @@ function commentIssue(repo, issueNumber, body, options = {}) {
     String(issueNumber),
     '--repo',
     `${owner}/${name}`,
-    '--body',
-    body,
-  ], options);
+    '--body-file',
+    '-',
+  ], { ...options, input: String(body) });
 }
 
 module.exports = {
