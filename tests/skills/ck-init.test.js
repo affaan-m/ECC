@@ -101,6 +101,38 @@ test('initializing a registered project under a new name keeps its context direc
   assert.deepStrictEqual(fs.readdirSync(contextsDir), []);
 });
 
+test('initializing with an unreadable project registry preserves the registry and saved context', home => {
+  const project = path.join(home, 'app');
+  const other = path.join(home, 'other');
+  for (const dir of [project, other]) {
+    fs.mkdirSync(dir);
+    runOk(home, dir, 'save.mjs', ['--init'], { name: path.basename(dir), path: dir });
+  }
+  runOk(home, project, 'save.mjs', [], { summary: 'built the parser' });
+
+  const ckDir = path.join(home, '.claude', 'ck');
+  const registryFile = path.join(ckDir, 'projects.json');
+  const registry = fs.readFileSync(registryFile, 'utf8');
+  const contextDir = path.join(ckDir, 'contexts', 'app');
+  const savedContext = fs.readFileSync(path.join(contextDir, 'context.json'));
+  const savedMarkdown = fs.readFileSync(path.join(contextDir, 'CONTEXT.md'));
+  const invalidRegistries = [
+    registry.trimEnd().slice(0, -1),
+    `\uFEFF${registry}`,
+    '[]',
+    JSON.stringify({ ...JSON.parse(registry), [other]: {} }),
+  ];
+  for (const invalid of invalidRegistries) {
+    fs.writeFileSync(registryFile, invalid);
+    const result = run(home, project, 'save.mjs', ['--init'], JSON.stringify({ name: 'app', path: project }));
+    assert.strictEqual(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout + result.stderr, /projects\.json/);
+    assert.strictEqual(fs.readFileSync(registryFile, 'utf8'), invalid);
+    assert.deepStrictEqual(fs.readFileSync(path.join(contextDir, 'context.json')), savedContext);
+    assert.deepStrictEqual(fs.readFileSync(path.join(contextDir, 'CONTEXT.md')), savedMarkdown);
+  }
+});
+
 test('initializing a registered project whose context cannot be read changes nothing', home => {
   const project = path.join(home, 'app');
   fs.mkdirSync(project);

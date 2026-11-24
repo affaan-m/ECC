@@ -5,7 +5,7 @@
  * No external dependencies. Node.js stdlib only.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, lstatSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
@@ -22,9 +22,9 @@ export const SKILL_FILE       = resolve(dirname(fileURLToPath(import.meta.url)),
 
 // ─── JSON I/O ─────────────────────────────────────────────────────────────────
 
-export function readJson(filePath) {
+export function readJson(filePath, missingValue = null) {
   try {
-    if (!existsSync(filePath)) return null;
+    if (!lstatSync(filePath, { throwIfNoEntry: false })) return missingValue;
     return JSON.parse(readFileSync(filePath, 'utf8'));
   } catch {
     return null;
