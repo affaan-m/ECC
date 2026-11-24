@@ -22,19 +22,19 @@ origin: ECC
 각 프로토콜은 외부 의존성의 한 가지 책임만 맡습니다.
 
 ```swift
-// File system access
+// 파일 시스템 접근
 public protocol FileSystemProviding: Sendable {
     func containerURL(for purpose: Purpose) -> URL?
 }
 
-// File read/write operations
+// 파일 읽기와 쓰기
 public protocol FileAccessorProviding: Sendable {
     func read(from url: URL) throws -> Data
     func write(_ data: Data, to url: URL) throws
     func fileExists(at url: URL) -> Bool
 }
 
-// Bookmark storage (e.g., for sandboxed apps)
+// 북마크 저장(예: 샌드박스 앱에서 사용)
 public protocol BookmarkStorageProviding: Sendable {
     func saveBookmark(_ data: Data, for key: String) throws
     func loadBookmark(for key: String) throws -> Data?
@@ -122,7 +122,7 @@ public actor SyncManager {
         let data = try fileAccessor.read(
             from: containerURL.appendingPathComponent("data.json")
         )
-        // Process data...
+        // 여기서 데이터를 처리합니다.
     }
 }
 ```
