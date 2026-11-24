@@ -113,11 +113,14 @@ class OAuthTokenProvider:
     def _refresh_form(self) -> dict[str, str]:
         values = self.credentials
         if values.provider == "tiktok":
+            refresh_token = values.refresh_token
+            if not refresh_token:
+                raise OAuthError("TikTok refresh token is required")
             return {
                 "client_key": values.client_id,
                 "client_secret": values.client_secret,
                 "grant_type": "refresh_token",
-                "refresh_token": values.refresh_token,
+                "refresh_token": refresh_token,
             }
         if values.provider == "dailymotion":
             return {
