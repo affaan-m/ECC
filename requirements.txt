@@ -1,0 +1,3 @@
+httpx==0.28.1
+Pillow==11.3.0
+PyYAML==6.0.3
