@@ -418,7 +418,7 @@ jobs:
         run: python -m mypy src skills/ecc-contribution-review/scripts/compile_contribution_review.py
 
       - name: Run Python tests
-        run: python -m pytest tests/test_*.py skills/ecc-contribution-review/tests/ -m "not integration"
+        run: python -m pytest tests/test_*.py tests/examples/test_xauusd_paper_trader.py skills/ecc-contribution-review/tests/ -m "not integration"
 
       - name: Test minimum supported OpenAI SDK
         run: |

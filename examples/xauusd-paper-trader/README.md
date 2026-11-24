@@ -55,5 +55,5 @@ unrealized intrabar and open-position drawdown.
 ## Tests
 
 ```sh
-python3 -m unittest discover -s tests/examples -p 'test_xauusd_paper_trader.py'
+python3 -m pytest tests/examples/test_xauusd_paper_trader.py -q
 ```

@@ -172,7 +172,10 @@ def _close_position(
 
 def _create_position(bar: Bar, balance: float, config: BacktestConfig) -> Position:
     risk_budget = balance * config.risk_per_trade
-    risk_quantity = risk_budget / (bar.open * config.stop_loss_percent)
+    stop_distance = bar.open * config.stop_loss_percent
+    if not math.isfinite(stop_distance) or stop_distance <= 0:
+        raise ValueError("computed stop distance must be finite and greater than zero")
+    risk_quantity = risk_budget / stop_distance
     quantity = min(risk_quantity, balance / bar.open)
     return Position(
         entry_timestamp=bar.timestamp,
@@ -331,21 +334,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     try:
         result = backtest(load_bars(arguments.csv), config)
+        report = {
+            "mode": "paper_simulation",
+            "instrument": "XAUUSD",
+            "initial_balance_usd": result.initial_balance,
+            "final_balance_usd": result.final_balance,
+            "return_percent": (result.final_balance / result.initial_balance - 1) * 100,
+            "realized_trade_max_drawdown_percent": result.realized_trade_max_drawdown_percent,
+            "closed_trades": len(result.trades),
+            "trades": [asdict(trade) for trade in result.trades],
+            "notice": "Simulation only; no broker connection or live orders are supported.",
+        }
+        output = json.dumps(report, indent=2, allow_nan=False)
     except (OSError, ValueError) as error:
         parser.error(str(error))
 
-    report = {
-        "mode": "paper_simulation",
-        "instrument": "XAUUSD",
-        "initial_balance_usd": result.initial_balance,
-        "final_balance_usd": result.final_balance,
-        "return_percent": (result.final_balance / result.initial_balance - 1) * 100,
-        "realized_trade_max_drawdown_percent": result.realized_trade_max_drawdown_percent,
-        "closed_trades": len(result.trades),
-        "trades": [asdict(trade) for trade in result.trades],
-        "notice": "Simulation only; no broker connection or live orders are supported.",
-    }
-    print(json.dumps(report, indent=2))
+    print(output)
     return 0
 
 
