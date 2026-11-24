@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Optional, Sequence, Tuple
 
 
+_AVERAGE_RELATIVE_TOLERANCE = 1e-12
+
+
 @dataclass(frozen=True)
 class Bar:
     timestamp: str
@@ -218,6 +221,17 @@ def _protective_exit(position: Position, bar: Bar) -> Optional[Tuple[float, str]
     return None
 
 
+def _compare_averages(first: float, second: float) -> int:
+    if math.isclose(
+        first,
+        second,
+        rel_tol=_AVERAGE_RELATIVE_TOLERANCE,
+        abs_tol=0.0,
+    ):
+        return 0
+    return 1 if first > second else -1
+
+
 def _crossover_signal(
     closes: Sequence[float],
     index: int,
@@ -235,9 +249,11 @@ def _crossover_signal(
     ) / config.slow_window
     current_fast = fast_sum / config.fast_window
     current_slow = slow_sum / config.slow_window
-    if previous_fast <= previous_slow and current_fast > current_slow:
+    previous_relation = _compare_averages(previous_fast, previous_slow)
+    current_relation = _compare_averages(current_fast, current_slow)
+    if previous_relation <= 0 and current_relation > 0:
         return "enter"
-    if previous_fast >= previous_slow and current_fast < current_slow:
+    if previous_relation >= 0 and current_relation < 0:
         return "exit"
     return None
 

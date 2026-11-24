@@ -116,6 +116,31 @@ def test_downward_crossover_exits_at_the_next_bar_open():
     assert result.final_balance == pytest.approx(996.0396039604)
 
 
+def test_equal_moving_averages_do_not_trigger_rolling_sum_exit():
+    closes = [0.2, 0.1, 0.2, 0.3, 0.3, 0.31]
+    rows = [
+        (
+            f"2026-01-01T00:0{index}:00Z",
+            close,
+            close + 0.001,
+            close - 0.001,
+            close,
+        )
+        for index, close in enumerate(closes)
+    ]
+    settings = paper_trader.BacktestConfig(
+        fast_window=1,
+        slow_window=2,
+        stop_loss_percent=0.1,
+        take_profit_percent=0.5,
+    )
+
+    result = paper_trader.backtest(bars_from_rows(rows), settings)
+
+    assert len(result.trades) == 1
+    assert result.trades[0].exit_reason == "end_of_data"
+
+
 def test_gap_below_stop_exits_at_the_opening_price():
     rows = [
         ("2026-01-01T00:00:00Z", 10.0, 10.1, 9.9, 10.0),
