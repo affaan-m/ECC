@@ -41,44 +41,49 @@ def generate_daily_episode(
         landscape, vertical = (processor or FFmpegProcessor()).process(
             storyboard, output_directory
         )
-    except Exception:
-        try:
-            _restore_episode_outputs(output_directory, backups)
-        except Exception as restore_error:
-            raise RuntimeError(
-                "Episode generation failed and previous outputs could not be "
-                f"restored; recovery copies retained at {backup_directory}"
-            ) from restore_error
-        shutil.rmtree(backup_directory, ignore_errors=True)
-        raise
-    episode = Episode(
-        episode_id=day.isoformat(),
-        title=storyboard.title,
-        description=storyboard.description,
-        story=storyboard.beats,
-        episode_date=day,
-        landscape_path=landscape,
-        vertical_path=vertical,
-        audience_min_age=policy.minimum_age,
-        audience_max_age=policy.maximum_age,
-        made_for_kids=True,
-        original=True,
-        rights_cleared=True,
-        safety_reviewed=True,
-        contains_personal_data=False,
-    )
-    try:
+        episode = Episode(
+            episode_id=day.isoformat(),
+            title=storyboard.title,
+            description=storyboard.description,
+            story=storyboard.beats,
+            episode_date=day,
+            landscape_path=landscape,
+            vertical_path=vertical,
+            audience_min_age=policy.minimum_age,
+            audience_max_age=policy.maximum_age,
+            made_for_kids=True,
+            original=True,
+            rights_cleared=True,
+            safety_reviewed=True,
+            contains_personal_data=False,
+        )
         result = save_episode(episode, output_directory)
-    except Exception:
-        try:
-            _restore_episode_outputs(output_directory, backups)
-        except Exception as restore_error:
-            raise RuntimeError(
-                "Episode generation failed and previous outputs could not be "
-                f"restored; recovery copies retained at {backup_directory}"
-            ) from restore_error
+    except Exception as generation_error:
+        _restore_or_report_failure(
+            output_directory, backups, backup_directory, generation_error
+        )
         shutil.rmtree(backup_directory, ignore_errors=True)
         raise
+    _cleanup_backups(backup_directory)
+    return result
+
+
+def _restore_or_report_failure(
+    output_directory: Path,
+    backups: dict[str, Path | None],
+    backup_directory: Path,
+    generation_error: Exception,
+) -> None:
+    try:
+        _restore_episode_outputs(output_directory, backups)
+    except Exception as restore_error:
+        raise RuntimeError(
+            f"Episode generation failed ({generation_error}) and previous outputs "
+            f"could not be restored; recovery copies retained at {backup_directory}"
+        ) from restore_error
+
+
+def _cleanup_backups(backup_directory: Path) -> None:
     try:
         shutil.rmtree(backup_directory)
     except OSError:
@@ -87,7 +92,6 @@ def generate_daily_episode(
             RuntimeWarning,
             stacklevel=2,
         )
-    return result
 
 
 def _backup_episode_outputs(
