@@ -31,8 +31,8 @@ Strategic compaction at logical boundaries:
 ## How It Works
 
 1. At a natural phase boundary, capture the goal, scope, decisions, active files or revision, completed checks, blockers, and next action.
-2. Put the checkpoint in the task's plan file or agreed project note when it needs to survive the session. For an in-session checkpoint, summarize the same details in chat. Keep credentials and raw transcripts out of the checkpoint.
-3. Use the client's manual compaction action if available. Otherwise, continue from the checkpoint or use it for a handoff.
+2. Save the details needed to resume in the task's plan file or another authorized local note, even when continuing in the same session. Reuse an existing checkpoint if it already contains those details. Keep credentials and raw transcripts out of the checkpoint.
+3. If the details needed to resume cannot be saved in an authorized location, defer manual compaction and continue from the current context. Otherwise, use the client's manual compaction action if available, or continue from the checkpoint and use it for a handoff if needed.
 
 ## Compaction Decision Guide
 
@@ -49,7 +49,7 @@ Use this table to decide when to compact:
 
 ## What Survives Compaction
 
-Project files and Git state remain available. Conversation details, previous tool results, and task lists may be summarized or omitted. Capture the details needed to resume in the checkpoint, then reread the relevant project files when you continue.
+Project files and Git state remain available. Conversation details, previous tool results, and task lists may be summarized or omitted, even within the same session. When you resume, reread the local checkpoint and verify the relevant project files and Git state.
 
 ## Best Practices
 
