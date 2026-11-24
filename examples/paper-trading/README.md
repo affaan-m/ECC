@@ -29,11 +29,11 @@ The scanner runs 27 configurable role rules in-process across momentum, trend, m
 
 - Per-order quantity, per-position notional, aggregate notional, daily loss, and concurrent-position caps are checked before entries.
 - Entry reads, risk checks, and journal writes are serialized by the database across concurrent runners.
-- Daily loss includes realized P&L today and marked P&L for open positions using the current mock quote.
+- Daily loss includes realized P&L for the current UTC day and marked P&L for open positions using current quotes. Entries fail closed when any open position lacks a mark quote.
 - Only one open position per symbol is allowed, preventing averaging down and hedging.
 - The kill switch blocks all new entries; it does not prevent closing a paper position.
 - Buys fill at the quote ask and sells at the bid. Closing uses the corresponding opposite quote side. Fees, slippage, liquidity, and market impact are not modeled.
-- The scheduler retries failed cycles with bounded exponential backoff and exposes run, success, failure, retry, and last-error-type metrics.
+- The scheduler retries failed cycles with bounded, shutdown-interruptible exponential backoff, logs final failures locally, and exposes run, success, failure, retry, and last-error-type metrics.
 
 ## Configuration
 

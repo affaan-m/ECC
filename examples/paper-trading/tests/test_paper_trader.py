@@ -46,6 +46,17 @@ class SignalAggregationTests(unittest.TestCase):
 
         self.assertEqual(signal.side, Side.HOLD)
 
+    def test_canceled_domain_does_not_count_as_supporting_another_domain(self):
+        evidence = [
+            RoleEvidence("trend-up", "trend", 1, 1.0, "positive trend"),
+            RoleEvidence("trend-down", "trend", -1, 1.0, "negative trend"),
+            RoleEvidence("momentum-up", "momentum", 1, 0.9, "positive momentum"),
+        ]
+
+        signal = aggregate_signals("XAUUSD", evidence, min_domains=2)
+
+        self.assertEqual(signal.side, Side.HOLD)
+
     def test_domain_disagreement_does_not_trigger_a_trade(self):
         evidence = [
             RoleEvidence("bullish", "momentum", 1, 1.0, "positive momentum"),
@@ -115,13 +126,21 @@ class RiskLimitTests(unittest.TestCase):
         self.assertEqual(limited_engine.last_rejection, "position notional cap exceeded")
 
     def test_rejects_order_after_daily_loss_cap(self):
-        self.risk.set_daily_pnl(-100)
+        opened = self.engine.execute(
+            Signal("XAUUSD", Side.BUY, 0.9, ()), self.quote, quantity=1
+        )
+        self.engine.close_position(
+            opened.trade_id, Quote("XAUUSD", bid=1_800, ask=1_801)
+        )
 
         fill = self.engine.execute(
-            Signal("XAUUSD", Side.BUY, 0.9, ()), self.quote, quantity=1
+            Signal("XAGUSD", Side.BUY, 0.9, ()),
+            Quote("XAGUSD", bid=25, ask=25.1),
+            quantity=1,
         )
 
         self.assertIsNone(fill)
+        self.assertEqual(self.risk.daily_pnl, -201)
 
     def test_rejects_second_concurrent_position_and_same_symbol_add(self):
         self.assertIsNotNone(
@@ -136,6 +155,7 @@ class RiskLimitTests(unittest.TestCase):
             Signal("XAGUSD", Side.BUY, 0.9, ()),
             Quote("XAGUSD", bid=25, ask=25.1),
             quantity=1,
+            market_quotes=(self.quote, Quote("XAGUSD", bid=25, ask=25.1)),
         )
 
         self.assertIsNone(same_symbol_add)
@@ -177,14 +197,41 @@ class RiskLimitTests(unittest.TestCase):
         )
 
         self.engine.update_daily_pnl([Quote("XAUUSD", bid=1_800, ask=1_801)])
+        silver_quote = Quote("XAGUSD", bid=25, ask=25.1)
         blocked = self.engine.execute(
+            Signal("XAGUSD", Side.BUY, 0.9, ()),
+            silver_quote,
+            quantity=1,
+            market_quotes=(Quote("XAUUSD", bid=1_800, ask=1_801), silver_quote),
+        )
+
+        self.assertIsNone(blocked)
+        self.assertEqual(self.risk.daily_pnl, -201)
+
+    def test_rejects_entry_when_open_position_mark_quote_is_missing(self):
+        self.engine.execute(
+            Signal("XAUUSD", Side.BUY, 0.9, ()), self.quote, quantity=1
+        )
+        self.risk = RiskManager(
+            RiskLimits(
+                max_order_quantity=2,
+                max_position_notional_usd=5_000,
+                max_total_notional_usd=10_000,
+                max_daily_loss_usd=100,
+                max_concurrent_positions=2,
+            ),
+            self.kill_switch,
+        )
+        self.engine = PaperExecutionEngine(self.journal, self.risk)
+
+        fill = self.engine.execute(
             Signal("XAGUSD", Side.BUY, 0.9, ()),
             Quote("XAGUSD", bid=25, ask=25.1),
             quantity=1,
         )
 
-        self.assertIsNone(blocked)
-        self.assertEqual(self.risk.daily_pnl, -201)
+        self.assertIsNone(fill)
+        self.assertIn("XAUUSD", self.engine.last_rejection)
 
 
 class PaperFillTests(unittest.TestCase):
@@ -219,6 +266,25 @@ class PaperFillTests(unittest.TestCase):
             self.assertEqual(trade["realized_pnl"], -2)
             self.assertEqual(trade["status"], "closed")
 
+    def test_daily_realized_pnl_excludes_the_following_utc_day(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            journal = SQLiteTradeJournal(Path(temp_dir) / "trades.sqlite3")
+            self.addCleanup(journal.close)
+            first = journal.create_trade(
+                "XAGUSD", "buy", 1, 25, "2026-11-23T23:00:00+00:00"
+            )
+            second = journal.create_trade(
+                "XAGUSD", "buy", 1, 25, "2026-11-24T00:00:00+00:00"
+            )
+            journal.close_trade(
+                first, 15, -10, "2026-11-23T23:59:59+00:00"
+            )
+            journal.close_trade(
+                second, 55, 30, "2026-11-24T00:01:00+00:00"
+            )
+
+            self.assertEqual(journal.daily_realized_pnl("2026-11-23"), -10)
+
 
 class ScannerAndSchedulerTests(unittest.TestCase):
     def test_scanner_uses_27_in_process_roles(self):
@@ -251,6 +317,83 @@ class ScannerAndSchedulerTests(unittest.TestCase):
         self.assertEqual(metrics["retry_count"], 2)
         self.assertEqual(metrics["consecutive_failures"], 0)
         self.assertEqual(metrics["status"], "healthy")
+
+    def test_scheduler_health_is_degraded_during_retry_backoff(self):
+        first_failure = threading.Event()
+        attempts = []
+
+        def flaky_operation():
+            attempts.append(True)
+            if len(attempts) == 1:
+                first_failure.set()
+                raise RuntimeError("temporary failure")
+
+        scheduler = Scheduler(
+            flaky_operation,
+            interval_seconds=60,
+            max_retries=1,
+            retry_base_seconds=2,
+        )
+        worker = threading.Thread(target=scheduler.run_once, daemon=True)
+        worker.start()
+        self.assertTrue(first_failure.wait(timeout=1))
+        deadline = time.monotonic() + 1
+        while scheduler.health()["last_error"] is None and time.monotonic() < deadline:
+            threading.Event().wait(0.005)
+
+        self.assertEqual(scheduler.health()["status"], "degraded")
+        worker.join(timeout=3)
+
+    def test_scheduler_shutdown_interrupts_retry_backoff(self):
+        first_failure = threading.Event()
+        stop_event = threading.Event()
+        attempts = []
+
+        def failing_operation():
+            attempts.append(True)
+            first_failure.set()
+            raise RuntimeError("temporary failure")
+
+        scheduler = Scheduler(
+            failing_operation,
+            interval_seconds=60,
+            max_retries=2,
+            retry_base_seconds=10,
+        )
+        result = []
+        worker = threading.Thread(
+            target=lambda: result.append(scheduler.run_once(stop_event)),
+            daemon=True,
+        )
+        worker.start()
+        self.assertTrue(first_failure.wait(timeout=1))
+        deadline = time.monotonic() + 1
+        while scheduler.health()["last_error"] is None and time.monotonic() < deadline:
+            threading.Event().wait(0.005)
+        stop_event.set()
+        worker.join(timeout=1)
+
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(attempts, [True])
+        self.assertEqual(result, [False])
+        self.assertEqual(scheduler.health()["failure_count"], 1)
+
+    def test_failed_scheduler_run_logs_exception_context(self):
+        def failing_operation():
+            raise RuntimeError("database unavailable")
+
+        scheduler = Scheduler(
+            failing_operation,
+            interval_seconds=60,
+            max_retries=0,
+            retry_base_seconds=0,
+        )
+
+        with self.assertLogs("paper_trader.scheduler", level="ERROR") as captured:
+            self.assertFalse(scheduler.run_once())
+
+        self.assertIn("failed after 1 attempt", captured.output[0])
+        self.assertIn("database unavailable", captured.output[0])
 
     def test_partial_config_keeps_default_scanner_roles(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -321,7 +464,12 @@ class AtomicEntryTests(unittest.TestCase):
             def place(engine, order):
                 start.wait()
                 signal, quote = order
-                return engine.execute(signal, quote, quantity=1)
+                return engine.execute(
+                    signal,
+                    quote,
+                    quantity=1,
+                    market_quotes=tuple(item[1] for item in orders),
+                )
 
             with ThreadPoolExecutor(max_workers=2) as workers:
                 fills = list(

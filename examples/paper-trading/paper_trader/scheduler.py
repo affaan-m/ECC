@@ -1,7 +1,11 @@
+import logging
+import math
 import threading
 import time
-import math
 from datetime import datetime, timezone
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _utc_now():
@@ -42,11 +46,21 @@ class Scheduler:
             "last_error": None,
         }
 
-    def run_once(self):
+    def run_once(self, stop_event=None):
+        if stop_event is not None and stop_event.is_set():
+            return False
         with self._lock:
             self._metrics["run_count"] += 1
             self._metrics["last_started_at"] = _utc_now()
+        last_error = None
+        last_attempt = 0
         for attempt in range(self._max_retries + 1):
+            if stop_event is not None and stop_event.is_set():
+                if last_error is not None:
+                    return self._record_failure(
+                        last_error, last_attempt, interrupted=True
+                    )
+                return False
             try:
                 self._operation()
                 with self._lock:
@@ -56,22 +70,47 @@ class Scheduler:
                     self._metrics["last_error"] = None
                 return True
             except Exception as error:
+                last_error = error
+                last_attempt = attempt
                 with self._lock:
                     self._metrics["last_error"] = type(error).__name__
                 if attempt < self._max_retries:
                     with self._lock:
                         self._metrics["retry_count"] += 1
-                    time.sleep(min(self._retry_base * (2 ** attempt), 30.0))
+                    delay = min(self._retry_base * (2 ** attempt), 30.0)
+                    if stop_event is not None:
+                        if stop_event.wait(delay) or stop_event.is_set():
+                            return self._record_failure(error, attempt, interrupted=True)
+                    else:
+                        time.sleep(delay)
                     continue
-                with self._lock:
-                    self._metrics["failure_count"] += 1
-                    self._metrics["consecutive_failures"] += 1
-                return False
+                return self._record_failure(error, attempt)
+        return False
+
+    def _record_failure(self, error, attempt, interrupted=False):
+        with self._lock:
+            self._metrics["failure_count"] += 1
+            self._metrics["consecutive_failures"] += 1
+        operation = getattr(self._operation, "__qualname__", "scheduled operation")
+        if interrupted:
+            _LOGGER.error(
+                "Scheduler operation %s retry interrupted during shutdown after %d attempt(s)",
+                operation,
+                attempt + 1,
+                exc_info=(type(error), error, error.__traceback__),
+            )
+        else:
+            _LOGGER.error(
+                "Scheduler operation %s failed after %d attempt(s)",
+                operation,
+                attempt + 1,
+                exc_info=(type(error), error, error.__traceback__),
+            )
         return False
 
     def run_forever(self, stop_event):
         while not stop_event.is_set():
-            self.run_once()
+            self.run_once(stop_event)
             stop_event.wait(self._interval)
 
     def health(self):
@@ -79,11 +118,9 @@ class Scheduler:
             metrics = dict(self._metrics)
         metrics["interval_seconds"] = self._interval
         metrics["max_retries"] = self._max_retries
-        metrics["status"] = (
-            "starting"
-            if metrics["run_count"] == 0
-            else "degraded"
-            if metrics["consecutive_failures"]
-            else "healthy"
-        )
+        metrics["status"] = "starting"
+        if metrics["last_error"] or metrics["consecutive_failures"]:
+            metrics["status"] = "degraded"
+        elif metrics["last_success_at"]:
+            metrics["status"] = "healthy"
         return metrics

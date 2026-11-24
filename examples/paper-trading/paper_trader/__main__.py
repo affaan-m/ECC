@@ -95,7 +95,7 @@ def _serve(service, config, port):
     finally:
         stop_event.set()
         server.server_close()
-        worker.join(timeout=config.scheduler_interval_seconds + 1)
+        worker.join()
 
 
 def main():

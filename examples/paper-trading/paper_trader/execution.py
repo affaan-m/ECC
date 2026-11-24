@@ -5,6 +5,10 @@ from .models import Quote, Side, Signal
 from .risk import RiskManager
 
 
+class MissingMarkQuoteError(ValueError):
+    pass
+
+
 @dataclass(frozen=True)
 class PaperFill:
     trade_id: str
@@ -29,10 +33,16 @@ class PaperExecutionEngine:
     def update_daily_pnl(self, quotes):
         quote_map = {quote.symbol: quote for quote in quotes}
         pnl = self._journal.daily_realized_pnl()
-        for position in self._journal.open_positions():
+        positions = self._journal.open_positions()
+        missing_symbols = sorted(
+            {position["symbol"] for position in positions} - set(quote_map)
+        )
+        if missing_symbols:
+            raise MissingMarkQuoteError(
+                f"Missing current quote for open position: {', '.join(missing_symbols)}"
+            )
+        for position in positions:
             quote = quote_map.get(position["symbol"])
-            if quote is None:
-                continue
             entry = float(position["entry_price"])
             quantity = float(position["quantity"])
             if position["side"] == Side.BUY.value:
@@ -49,15 +59,11 @@ class PaperExecutionEngine:
             self._last_rejection = "scanner returned hold"
             return None
 
-        refresh_metrics = market_quotes is not None
-        if refresh_metrics:
-            market_quotes = tuple(market_quotes)
-        else:
-            market_quotes = (quote,)
+        market_quotes = tuple(market_quotes) if market_quotes is not None else ()
+        if not any(item.symbol == quote.symbol for item in market_quotes):
+            market_quotes += (quote,)
 
         with self._journal.transaction():
-            if refresh_metrics:
-                self.update_daily_pnl(market_quotes)
             open_positions = self._journal.open_positions()
             existing = next(
                 (
@@ -68,11 +74,13 @@ class PaperExecutionEngine:
                 None,
             )
             if existing and existing["side"] != signal.side.value:
-                fill = self.close_position(existing["trade_id"], quote)
-                if refresh_metrics:
-                    self.update_daily_pnl(market_quotes)
-                return fill
+                return self.close_position(existing["trade_id"], quote)
 
+            try:
+                self.update_daily_pnl(market_quotes)
+            except MissingMarkQuoteError as error:
+                self._last_rejection = str(error)
+                return None
             fill_price = quote.ask if signal.side is Side.BUY else quote.bid
             mark_prices = {
                 item.symbol: (item.bid + item.ask) / 2 for item in market_quotes
@@ -95,8 +103,7 @@ class PaperExecutionEngine:
                 fill_price,
                 _utc_now(),
             )
-            if refresh_metrics:
-                self.update_daily_pnl(market_quotes)
+            self.update_daily_pnl(market_quotes)
             return PaperFill(
                 trade_id, signal.symbol, signal.side, quantity, fill_price, "open"
             )

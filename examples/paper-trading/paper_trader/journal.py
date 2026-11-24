@@ -3,7 +3,7 @@ import sqlite3
 import threading
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 
@@ -195,14 +195,27 @@ class DBAPITradeJournal:
         )
 
     def daily_realized_pnl(self, day=None):
-        date_prefix = day or datetime.now(timezone.utc).date().isoformat()
+        if day is None:
+            target_day = datetime.now(timezone.utc).date()
+        elif isinstance(day, datetime):
+            target_day = day.date()
+        elif isinstance(day, date):
+            target_day = day
+        else:
+            target_day = date.fromisoformat(day)
+        start = datetime.combine(target_day, time.min, timezone.utc).isoformat()
+        end = datetime.combine(
+            target_day + timedelta(days=1), time.min, timezone.utc
+        ).isoformat()
         row = self._run(
             f"""
             SELECT COALESCE(SUM(realized_pnl), 0) AS total
             FROM paper_trades
-            WHERE status = {self._placeholder} AND closed_at >= {self._placeholder}
+            WHERE status = {self._placeholder}
+              AND closed_at >= {self._placeholder}
+              AND closed_at < {self._placeholder}
             """,
-            ("closed", date_prefix),
+            ("closed", start, end),
             fetch="one",
         )
         return float(row["total"])
