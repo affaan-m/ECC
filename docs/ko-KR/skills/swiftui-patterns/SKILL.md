@@ -82,11 +82,11 @@ struct ItemListView: View {
 `@EnvironmentObject`에서 `@Environment`로 전환하세요.
 
 ```swift
-// Inject
+// 환경에 인증 관리자를 주입합니다.
 ContentView()
     .environment(authManager)
 
-// Consume
+// 환경에서 인증 관리자를 가져옵니다.
 struct ProfileView: View {
     @Environment(AuthManager.self) private var auth
 
@@ -201,7 +201,7 @@ ScrollView {
 `ForEach`에는 항목마다 고유하고 변경되지 않는 식별자(ID)를 사용하세요. 배열 인덱스를 식별자로 사용하는 것은 피하세요.
 
 ```swift
-// Use Identifiable conformance or explicit id
+// Identifiable을 채택하거나 id를 명시하세요.
 ForEach(items, id: \.stableID) { item in
     ItemRow(item: item)
 }
@@ -220,14 +220,14 @@ ForEach(items, id: \.stableID) { item in
 
 ```swift
 struct ExpensiveChartView: View, Equatable {
-    let dataPoints: [DataPoint] // DataPoint must conform to Equatable
+    let dataPoints: [DataPoint] // DataPoint는 Equatable을 채택해야 합니다.
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.dataPoints == rhs.dataPoints
     }
 
     var body: some View {
-        // Complex chart rendering
+        // 여기서 복잡한 차트를 렌더링합니다.
     }
 }
 ```
