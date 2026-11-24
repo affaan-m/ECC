@@ -20,9 +20,9 @@ import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { createHash } from 'crypto';
 import {
-  readProjects, writeProjects, findProject, loadContext, saveContext, contextPath, contextMdPath,
+  readJson, readProjects, writeProjects, findProject, loadContext, saveContext, contextPath, contextMdPath,
   today, shortId, gitSummary, nativeMemoryDir,
-  CURRENT_SESSION,
+  CURRENT_SESSION, PROJECTS_FILE,
 } from './shared.mjs';
 
 const isInit = process.argv.includes('--init');
@@ -52,7 +52,15 @@ if (isInit) {
     process.exit(1);
   }
 
-  const projects = readProjects();
+  const projects = readJson(PROJECTS_FILE, {});
+  const hasContextDir = entry => typeof entry?.contextDir === 'string' && entry.contextDir.length > 0;
+  if (
+    !projects || typeof projects !== 'object' || Array.isArray(projects)
+    || !Object.values(projects).every(hasContextDir)
+  ) {
+    console.log(`ck init: cannot read the project registry at ${PROJECTS_FILE}. Repair or restore it before running /ck:init again.`);
+    process.exit(1);
+  }
   const registered = findProject(projects, projectPath);
   const previous = registered ? loadContext(registered.contextDir) : null;
   const readable = Array.isArray(previous?.sessions) && previous.sessions.every(s => s && typeof s === 'object');

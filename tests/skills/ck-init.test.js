@@ -8,6 +8,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const yaml = require('js-yaml');
+const { trySymlink } = require('../lib/helpers/symlink-support');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const commandsDir = path.join(repoRoot, 'skills', 'ck', 'commands');
@@ -17,7 +18,10 @@ let failed = 0;
 function test(description, fn) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ck-init-'));
   try {
-    fn(home);
+    if (fn(home) === false) {
+      console.log(`  SKIP ${description}`);
+      return;
+    }
     console.log(`  ✓ ${description}`);
     passed++;
   } catch (error) {
@@ -99,6 +103,66 @@ test('initializing a registered project under a new name keeps its context direc
   const forget = run(home, project, 'forget.mjs', ['App Server']);
   assert.strictEqual(forget.status, 0, forget.stdout + forget.stderr);
   assert.deepStrictEqual(fs.readdirSync(contextsDir), []);
+});
+
+test('initializing with an unreadable project registry preserves the registry and saved context', home => {
+  const project = path.join(home, 'app');
+  const other = path.join(home, 'other');
+  for (const dir of [project, other]) {
+    fs.mkdirSync(dir);
+    runOk(home, dir, 'save.mjs', ['--init'], { name: path.basename(dir), path: dir });
+  }
+  runOk(home, project, 'save.mjs', [], { summary: 'built the parser' });
+
+  const ckDir = path.join(home, '.claude', 'ck');
+  const registryFile = path.join(ckDir, 'projects.json');
+  const registry = fs.readFileSync(registryFile, 'utf8');
+  const contextDir = path.join(ckDir, 'contexts', 'app');
+  const savedContext = fs.readFileSync(path.join(contextDir, 'context.json'));
+  const savedMarkdown = fs.readFileSync(path.join(contextDir, 'CONTEXT.md'));
+  const invalidRegistries = [
+    registry.trimEnd().slice(0, -1),
+    `\uFEFF${registry}`,
+    '[]',
+    JSON.stringify({ ...JSON.parse(registry), [other]: {} }),
+  ];
+  for (const invalid of invalidRegistries) {
+    fs.writeFileSync(registryFile, invalid);
+    const result = run(home, project, 'save.mjs', ['--init'], JSON.stringify({ name: 'app', path: project }));
+    assert.strictEqual(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout + result.stderr, /projects\.json/);
+    assert.strictEqual(fs.readFileSync(registryFile, 'utf8'), invalid);
+    assert.deepStrictEqual(fs.readFileSync(path.join(contextDir, 'context.json')), savedContext);
+    assert.deepStrictEqual(fs.readFileSync(path.join(contextDir, 'CONTEXT.md')), savedMarkdown);
+  }
+});
+
+test('initializing with a dangling registry symlink preserves the link and saved context', home => {
+  const project = path.join(home, 'app');
+  fs.mkdirSync(project);
+  const registration = { name: 'app', path: project };
+  runOk(home, project, 'save.mjs', ['--init'], registration);
+  runOk(home, project, 'save.mjs', [], { summary: 'checkpoint' });
+
+  const ckDir = path.join(home, '.claude', 'ck');
+  const registry = path.join(ckDir, 'projects.json');
+  const missingTarget = path.join(ckDir, 'missing-registry.json');
+  const contextDir = path.join(ckDir, 'contexts', 'app');
+  const context = path.join(contextDir, 'context.json');
+  const markdown = path.join(contextDir, 'CONTEXT.md');
+  const savedContext = fs.readFileSync(context);
+  const savedMarkdown = fs.readFileSync(markdown);
+
+  fs.unlinkSync(registry);
+  if (!trySymlink(missingTarget, registry, 'file')) return false;
+  const linkTarget = fs.readlinkSync(registry);
+  const result = run(home, project, 'save.mjs', ['--init'], JSON.stringify(registration));
+  assert.strictEqual(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /cannot read the project registry.*projects\.json/);
+  assert.strictEqual(fs.readlinkSync(registry), linkTarget);
+  assert.ok(!fs.existsSync(missingTarget), 'init created the missing target');
+  assert.deepStrictEqual(fs.readFileSync(context), savedContext);
+  assert.deepStrictEqual(fs.readFileSync(markdown), savedMarkdown);
 });
 
 test('initializing a registered project whose context cannot be read changes nothing', home => {
