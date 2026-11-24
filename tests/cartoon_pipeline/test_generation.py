@@ -364,7 +364,7 @@ def test_processor_retains_recovery_backup_if_restore_fails(
         if (
             Path(destination) == landscape
             and source_path.name == "landscape.mp4"
-            and source_path.parent.name == "previous"
+            and source_path.parent.name.startswith("cartoon-previous-")
         ):
             raise OSError("injected restoration failure")
         original_replace(source, destination)
@@ -499,12 +499,13 @@ def test_successful_generation_cleanup_failure_does_not_roll_back(
         ),
     )
 
-    manifest_path = generate_daily_episode(
-        output,
-        Path("config/content_policy.yaml"),
-        date(2026, 11, 23),
-        processor=FakeProcessor(),
-    )
+    with pytest.warns(RuntimeWarning, match="backup cleanup failed"):
+        manifest_path = generate_daily_episode(
+            output,
+            Path("config/content_policy.yaml"),
+            date(2026, 11, 23),
+            processor=FakeProcessor(),
+        )
 
     assert manifest_path.is_file()
     assert load_episode(manifest_path).landscape_path.is_file()

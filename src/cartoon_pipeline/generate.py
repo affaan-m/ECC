@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+import warnings
 from datetime import date, datetime
 from pathlib import Path
 
@@ -81,7 +82,11 @@ def generate_daily_episode(
     try:
         shutil.rmtree(backup_directory)
     except OSError:
-        pass
+        warnings.warn(
+            f"Episode was saved, but backup cleanup failed at {backup_directory}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     return result
 
 
