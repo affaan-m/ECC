@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- UI Canvas (`/ui-canvas`, `ecc-ui-canvas`, `skills/ui-canvas`): a browser preview for UI component mockups. The agent writes a self-contained HTML file; the human selects, drags to reorder, resizes with handles, double-clicks to edit text, deletes elements or style properties, switches between desktop, mobile (393×852 with a device frame), and exact width × height, toggles an interact mode to try the component, pauses animations, and chats with the agent about the selected element. Save and Finish exports the edited DOM to `<name>.edited.html` plus a structured edit log in `<name>.edits.json`, which `await` hands to the agent to implement for real. Shares the Plan Canvas loopback server, state, and Stop/SessionStart hooks; the presence pill now names the connected harness (Claude Code, Codex, Cursor, …). Conventions borrowed from VisBug and Onlook; protocol lineage from lavish-axi.
+
 ### Changed
 
 - Rename the `claude-devfleet` skill to `devfleet` so its frontmatter name complies with Claude's reserved-word rule; the `/devfleet` entrypoint and external DevFleet integration are unchanged (#3783).
@@ -9,6 +13,7 @@
 - GateGuard's external-contract question ("name what outside this repository decides the format, units, timezone or protocol semantics") is opt-in through `GATEGUARD_EXTERNAL_CONTRACT_QUESTION`. Hidden-intent trials did not show it helps, so by default a code change that handles data asks only the data-schema question, and an unreadable change gets the original four questions and condensed hint.
 - GateGuard credits investigation that already happened: a completed, non-error `Glob`, `Grep`, `LS`, or search-style Bash/PowerShell command in the current human turn that names the target and whose scope contains it passes the first touch with a note. `Read` never counts, nor do searches in the same batch, before a compaction, with error results, or whose filters exclude the target or limit the search to another directory. When a denial follows a search that nearly counted, it names that search and why it did not count.
 - GateGuard passes comment and whitespace-only edits of code, test and prose files with a note, without marking the file checked, so the next change that alters code is still gated.
+- GateGuard no longer leaves a file half-edited after a first-touch denial in a parallel batch: when the denied call's `tool_use_id` is in the transcript, the other edits to that file from the same batch are denied too (`batch-deny`), and the retry from the next message passes. Without a located batch the denial keeps the warning that siblings may already have been applied (#3936).
 - GateGuard asks once for a batch of new files: after a new file is denied, later new files of the same class in the same real directory within the same human turn pass with a note.
 - Read-only shell commands (`ls`, `cat`, `rg`, `git status`/`log`/`diff`, `Get-ChildItem`, …) no longer use up the once-per-session routine shell gate; the first other command is still gated (#2573).
 - GateGuard session state keyed by a session id or transcript path now expires after 8 idle hours instead of 30 minutes; the project-directory fallback keeps 30 minutes.
@@ -18,7 +23,7 @@
 - Report that harness's pilot: 72 sessions in which every arm passed every trial, so it measured the gate's cost (about 45% more turns) and nothing about its effect. Add a second runner, `run-intent.js`, for exploratory effectiveness measurements: the deciding fact exists only in a simulated user's hidden intent and sessions are multi-turn. Scenario files omit declared gate-question targets, but the authors knew the taxonomy and this is not blind authorship.
 - Add opt-in `GATEGUARD_METRICS` decision metrics (codes only, never paths, commands or content) and `scripts/gateguard-report.js` to summarise them.
 - Sensitive targets (`.env*`, keys and certificates, `credentials*`, `secrets.*`, `auth`/`security`/`payment(s)`/`billing`/`migrations` path segments, `.github/workflows/`) and files with more than one hard link get none of these allowances, judged on the path as written and its real location, and are gated in subagents too. `GATEGUARD_EXEMPT_GLOBS` still takes precedence.
-- Newly denied: a subagent's first touch of a sensitive or hard-linked file, and the first NotebookEdit of each notebook. Every other rule only removes denials and never returns an `allow` decision. See `skills/gateguard/SKILL.md`.
+- Newly denied: a subagent's first touch of a sensitive or hard-linked file, the first NotebookEdit of each notebook, and the other edits to a file from the same batch as its denied first touch (#3936). Every other rule only removes denials and never returns an `allow` decision. See `skills/gateguard/SKILL.md`.
 
 ### Fixed
 

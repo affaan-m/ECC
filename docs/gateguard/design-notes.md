@@ -37,7 +37,8 @@ and trivial edits) is in [change-profile.md](change-profile.md).
   [Flag parsing](#flag-parsing),
   [PowerShell parameter binding](#powershell-parameter-binding).
 - Right time, other allowances: [New-file detection](#new-file-detection),
-  [Sibling collapse](#sibling-collapse), [Denial cap](#denial-cap),
+  [Sibling collapse](#sibling-collapse), [Same-batch siblings](#same-batch-siblings),
+  [Denial cap](#denial-cap),
   [Read-only first shell command](#read-only-first-shell-command),
   [Idle window](#idle-window), [Subagents](#subagents).
 - State and measurement: [State file is untrusted](#state-file-is-untrusted),
@@ -441,6 +442,32 @@ instead of a repeat denial.
   transcript never collapses.
 - A gate stamped in the future, or not created by a denial, is ignored.
 
+## Same-batch siblings
+
+A first-touch denial marks its file checked, so the retry passes. Without more
+care, the other edits to that file in the same parallel batch pass too and the
+file is left half-edited (#3136). Hooks see calls one at a time, but the
+transcript links each call's `tool_use_id` to its assistant message id, which
+is the batch.
+
+- When the denied call's own `tool_use_id` is in the transcript, the denial
+  records `batch_locks[<file key>] = { batch, at }` in the same state write
+  that marks the file checked.
+- A later Edit, Write, MultiEdit entry or NotebookEdit of that file is denied
+  when its own `tool_use_id` is in the same batch. The denial is recorded as
+  `batch-deny`. It does not add to `fact_force_denials`, so the denial cap and
+  the condensed ordinals are unchanged.
+- A call from any other message passes, including the retry in the next turn.
+- Earlier permitted siblings, such as comment-only edits, are never rolled back.
+  Every batch denial keeps a re-read warning; a lock cannot prove the file is unchanged.
+- There is no fallback to the newest assistant message: a guessed batch could
+  match the retry and deny it forever. With no `tool_use_id`, no transcript, or
+  the pending call missing from the transcript, nothing is locked. The denial
+  then keeps the #3136 warning that siblings may already have been applied, and
+  that warning is the ceiling.
+- The transcript is read for a checked file only when a lock exists for its
+  key.
+
 ## Denial cap
 
 `GATEGUARD_FACT_FORCE_MAX_DENIALS` is validated whole (digits only, a safe
@@ -457,9 +484,10 @@ The session state file can be edited or corrupted, so every field is validated
 on read: counters clamp to non-negative integers, maps are null-prototype and
 reject `__proto__`, `constructor` and `prototype` keys, and malformed or
 old-shape entries are dropped. `dir_gates` maps `<class>\u0000<canonicalDir>` to
-`{ turn, at, first, ordinal }` and keeps the 50 newest entries. Concurrent
+`{ turn, at, first, ordinal }` and keeps the 50 newest entries. `batch_locks`
+maps a file key to `{ batch, at }` and keeps the 50 newest entries. Concurrent
 writers are merged on save (checked keys by union, counts by maximum, gates by
-newest `at`). Marking a target checked and recording its event happen in one
+newest `at`, batch locks by newest `at`). Marking a target checked and recording its event happen in one
 state write, so an event is never half-recorded.
 
 ## MultiEdit paths

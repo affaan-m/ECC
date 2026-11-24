@@ -84,7 +84,9 @@ function annotateFailure(displayPath, reason, output) {
 function parseCounts(combined) {
   // Nested runner diagnostics may contain earlier summaries. The file's last
   // standalone summary owns its totals; mentions inside diagnostics do not.
-  const summaries = [...combined.matchAll(/^[ \t]*(?:(?:[^\r\n:]+:[ \t]*)?Results:[ \t]*)?(Passed|Failed):[ \t]*(\d+)(?:[ \t]*,?[ \t]+(Passed|Failed):[ \t]*(\d+))?(?:[ \t]*,[ \t]*Skipped:[ \t]*\d+)?[ \t]*\r?$/gm)];
+  const normalized = combined.replace(/^[ \t]*=== Results: (\d+) passed, (\d+) failed ===[ \t]*\r?$/gm,
+    'Results: Passed: $1, Failed: $2');
+  const summaries = [...normalized.matchAll(/^[ \t]*(?:(?:[^\r\n:]+:[ \t]*)?Results:[ \t]*)?(Passed|Failed):[ \t]*(\d+)(?:[ \t]*,?[ \t]+(Passed|Failed):[ \t]*(\d+))?(?:[ \t]*,[ \t]*Skipped:[ \t]*\d+)?[ \t]*\r?$/gm)];
   if (summaries.length) {
     let passed = 0;
     let failed = 0;

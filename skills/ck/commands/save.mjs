@@ -193,7 +193,7 @@ try {
 
   const memContent = [
     `---`,
-    `name: Session ${today()} — ${session.summary}`,
+    `name: ${JSON.stringify(`Session ${today()} — ${session.summary}`)}`,
     `description: Key decisions and outcomes from ck session ${sessionId.slice(0, 8)}`,
     `type: project`,
     `source: ck`,

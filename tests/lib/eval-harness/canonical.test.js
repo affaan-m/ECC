@@ -109,4 +109,22 @@ test('this fix retains existing non-JSON omission and coercion policy', () => {
   assert.strictEqual(canonicalJson(input), '{}');
 });
 
+test('toJSON values canonicalize as JSON.stringify serializes them', () => {
+  const early = new Date('2024-01-01T00:00:00.000Z');
+  const late = new Date('2025-06-01T00:00:00.000Z');
+  assert.strictEqual(canonicalJson(early), '"2024-01-01T00:00:00.000Z"');
+  assert.strictEqual(canonicalJson({ since: early, list: [late] }), '{"list":["2025-06-01T00:00:00.000Z"],"since":"2024-01-01T00:00:00.000Z"}');
+  assert.notStrictEqual(hashValue({ since: early }), hashValue({ since: late }));
+  assert.notStrictEqual(hashValue({ since: early }), hashValue({ since: {} }));
+  const seen = [];
+  const custom = { toJSON(key) { seen.push(key); return { z: 1, a: [2] }; } };
+  assert.strictEqual(canonicalJson({ outer: custom, list: [custom] }), '{"list":[{"a":[2],"z":1}],"outer":{"a":[2],"z":1}}');
+  assert.deepStrictEqual(seen.sort(), ['0', 'outer']);
+  assert.strictEqual(canonicalJson({ gone: { toJSON: () => undefined }, kept: 1 }), '{"kept":1}');
+  assert.strictEqual(canonicalJson([{ toJSON: () => undefined }]), '[null]');
+  for (const value of [{ when: early, nested: { list: [late, custom] } }, [early, 1, 'x']]) {
+    assert.strictEqual(canonicalJson(value), canonicalJson(JSON.parse(JSON.stringify(value))));
+  }
+});
+
 finish('canonical');

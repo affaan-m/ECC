@@ -13,7 +13,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { sanitizeSessionId, readBridge, renameWithRetry } = require('../lib/session-bridge');
+const { sanitizeSessionId, readBridge, readContextObservation, renameWithRetry } = require('../lib/session-bridge');
 const { gateOwnsTranscript } = require('../lib/context-gate-state');
 
 const CONTEXT_WARNING_PCT = 35;
@@ -232,12 +232,17 @@ function run(rawInput) {
     if (!bridge) return rawInput;
 
     // Stale check for context warnings
-    const now = Math.floor(Date.now() / 1000);
-    const lastTs = bridge.last_timestamp ? Math.floor(new Date(bridge.last_timestamp).getTime() / 1000) : 0;
-    const isStale = lastTs > 0 && now - lastTs > STALE_SECONDS;
-
-    // If bridge is stale, null out context data (still check cost/scope/loop)
-    const evalBridge = isStale ? { ...bridge, context_remaining_pct: null } : bridge;
+    const now = Date.now();
+    const observation = readContextObservation(sessionId);
+    let remaining = bridge.context_remaining_pct;
+    if (observation) {
+      const age = now - observation.observedAt;
+      remaining = age >= 0 && age <= STALE_SECONDS * 1000 ? observation.remaining : null;
+    } else if (Date.parse(bridge.last_timestamp) < now - STALE_SECONDS * 1000) {
+      // Keep reading legacy bridge files until the statusline publishes its first observation.
+      remaining = null;
+    }
+    const evalBridge = { ...bridge, context_remaining_pct: remaining };
 
     // Gate deference needs the transcript (gateOwnsTranscript reads real
     // usage, never the bridge approximation). Only pay that read when a

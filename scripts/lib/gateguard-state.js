@@ -125,6 +125,40 @@ function capDirGates(gates) {
   return nullMap(entries.sort((a, b) => b[1].at - a[1].at).slice(0, MAX_DIR_GATES));
 }
 
+// --- Same-batch locks ---
+// see docs/gateguard/design-notes.md#same-batch-siblings
+
+const MAX_BATCH_LOCKS = 50;
+
+function isBatchLockEntry(entry) {
+  return isPlainObject(entry) && typeof entry.batch === 'string' && entry.batch !== '' && typeof entry.at === 'number' && Number.isFinite(entry.at);
+}
+
+/** File key -> { batch, at } for files denied at first touch whose batch was located. */
+function getBatchLocks(state) {
+  const raw = state && state.batch_locks;
+  if (!isPlainObject(raw)) return nullMap([]);
+  const entries = Object.keys(raw)
+    .filter(key => isSafeKey(key) && isBatchLockEntry(raw[key]))
+    .map(key => [key, { batch: raw[key].batch, at: raw[key].at }]);
+  return nullMap(entries);
+}
+
+/** Merge two batch-lock maps; the newer `at` wins per key. */
+function mergeBatchLocks(older, newer) {
+  const merged = nullMap(Object.entries(older));
+  for (const [key, entry] of Object.entries(newer)) {
+    if (!Object.hasOwn(merged, key) || entry.at >= merged[key].at) merged[key] = entry;
+  }
+  return merged;
+}
+
+function capBatchLocks(locks) {
+  const entries = Object.entries(locks);
+  if (entries.length <= MAX_BATCH_LOCKS) return locks;
+  return nullMap(entries.sort((a, b) => b[1].at - a[1].at).slice(0, MAX_BATCH_LOCKS));
+}
+
 module.exports = {
   getDenialCount,
   getCreditedCount,
@@ -139,5 +173,8 @@ module.exports = {
   dirGateKey,
   getDirGates,
   mergeDirGates,
-  capDirGates
+  capDirGates,
+  getBatchLocks,
+  mergeBatchLocks,
+  capBatchLocks
 };

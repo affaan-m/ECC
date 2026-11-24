@@ -104,14 +104,19 @@ function detectStackKeywords(projectRoot, projectInfo) {
 
 /**
  * Tokenize a free-text field into lowercase word tokens (split on
- * non-alphanumerics). Token-set matching avoids substring false positives such
- * as the keyword `go` matching the word `good`.
+ * non-alphanumerics). Preserve punctuation that identifies a language or
+ * framework before splitting, using the names returned by detectProjectType.
+ * Token-set matching avoids substring false positives such as `go`/`good`.
  * @param {string} value
  * @returns {string[]}
  */
 function tokenize(value) {
   return String(value || '')
     .toLowerCase()
+    .replace(/(^|[^a-z0-9])c#(?![a-z0-9#])/g, '$1csharp')
+    .replace(/(^|[^a-z0-9])f#(?![a-z0-9#])/g, '$1fsharp')
+    .replace(/(^|[^a-z0-9])next\.js(?![a-z0-9])/g, '$1nextjs')
+    .replace(/(^|[^a-z0-9])nest\.js(?![a-z0-9])/g, '$1nestjs')
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
 }
@@ -125,13 +130,15 @@ function tokenize(value) {
  */
 function instinctMatchesStack(instinct, stackKeywords) {
   if (!instinct || !stackKeywords || stackKeywords.size === 0) return false;
-  const tokens = new Set([
+  const explicitTokens = new Set([
     ...tokenize(instinct.domain),
-    ...tokenize(instinct.trigger),
     ...tokenize(instinct.stack),
   ]);
+  const tokens = new Set([...explicitTokens, ...tokenize(instinct.trigger)]);
+  // In prose, the capitalized language name distinguishes Go from the verb.
+  const hasGoAlias = explicitTokens.has('go') || /(^|[^a-zA-Z0-9])Go(?![a-zA-Z0-9])/.test(String(instinct.trigger || ''));
   for (const keyword of stackKeywords) {
-    if (tokens.has(keyword)) return true;
+    if (tokens.has(keyword) || (keyword === 'golang' && hasGoAlias)) return true;
   }
   return false;
 }

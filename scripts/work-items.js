@@ -5,9 +5,12 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 const { createStateStore } = require('./lib/state-store');
 const { claimWorkItem } = require('./lib/control-pane/work-item-mutations');
+const { verificationLabel } = require('./lib/work-item-verification');
 
 const VALUE_FLAGS = new Set([
   '--as',
+  '--artifact',
+  '--verify',
   '--db',
   '--github-repo',
   '--id',
@@ -33,6 +36,7 @@ Usage:
   node scripts/work-items.js show <id> [--db <path>] [--json]
   node scripts/work-items.js upsert [<id>] --title <title> [options] [--json]
   node scripts/work-items.js close <id> [--status done] [--db <path>] [--json]
+  node scripts/work-items.js verify <id> [--db <path>] [--json]
   node scripts/work-items.js claim [<id>] --owner <name> [--as agent|human] [--db <path>] [--json]
   node scripts/work-items.js sync-github --repo <owner/repo> [--db <path>] [--json]
 
@@ -40,6 +44,8 @@ Track Linear, GitHub, handoff, and manual roadmap items in the ECC SQLite state
 store so "ecc status" can include linked work and blocked operator follow-up.
 
 Options:
+  --verify <verifier>        Register harness-adapter-documentation/v1 on a NEW item
+  --artifact <relative.md>   Artifact within --repo-root; use with --verify
   --id <id>                 Stable local work-item id for upsert
   --source <source>         Source system, e.g. linear, github, handoff, manual
   --source-id <id>          Source-local identifier, e.g. ECC-20 or PR number
@@ -62,6 +68,8 @@ Options:
 
 function assignOption(options, flag, value) {
   if (flag === '--as') options.claimAs = value;
+  else if (flag === '--artifact') options.artifact = value;
+  else if (flag === '--verify') options.verifier = value;
   else if (flag === '--db') options.dbPath = value;
   else if (flag === '--github-repo') options.githubRepo = value;
   else if (flag === '--id') options.id = value;
@@ -390,6 +398,13 @@ function buildUpsertPayload(options, existing = null) {
     throw new Error('Missing --title for a new work item.');
   }
 
+  let metadata = options.metadataJson !== undefined ? parseMetadataJson(options.metadataJson) : ((existing && existing.metadata) ?? null);
+  if (options.verifier || options.artifact) {
+    if (!options.verifier || !options.artifact) throw new Error('--verify and --artifact must be supplied together.');
+    if (metadata !== null && (typeof metadata !== 'object' || Array.isArray(metadata))) throw new Error('Verification metadata must be an object.');
+    metadata = { ...metadata, verification: { contract: { verifier: options.verifier, artifact: options.artifact } } };
+  }
+
   return {
     id,
     source: options.source ?? (existing && existing.source) ?? 'manual',
@@ -401,7 +416,7 @@ function buildUpsertPayload(options, existing = null) {
     owner: options.owner ?? (existing && existing.owner) ?? null,
     repoRoot: options.repoRoot ?? (existing && existing.repoRoot) ?? process.cwd(),
     sessionId: options.sessionId ?? (existing && existing.sessionId) ?? null,
-    metadata: options.metadataJson !== undefined ? parseMetadataJson(options.metadataJson) : ((existing && existing.metadata) ?? null),
+    metadata,
     createdAt: existing ? existing.createdAt : undefined,
     updatedAt: new Date().toISOString()
   };
@@ -416,6 +431,7 @@ function printWorkItem(item) {
   console.log(`Repo: ${item.repoRoot || '(none)'}`);
   console.log(`Session: ${item.sessionId || '(none)'}`);
   console.log(`Updated: ${item.updatedAt}`);
+  console.log(`Verification: ${verificationLabel(item)}`);
   if (item.url) {
     console.log(`URL: ${item.url}`);
   }
@@ -434,6 +450,7 @@ function printWorkItemList(payload) {
     console.log(`    ID: ${item.id}`);
     console.log(`    Owner: ${item.owner || '(unassigned)'}`);
     console.log(`    Updated: ${item.updatedAt}`);
+    console.log(`    Verification: ${verificationLabel(item)}`);
     if (item.url) {
       console.log(`    URL: ${item.url}`);
     }
@@ -514,10 +531,25 @@ async function main() {
       return;
     }
 
+    if (options.command === 'verify') {
+      const id = resolveWorkItemId(options);
+      if (!id) throw new Error('Missing work item id.');
+      const result = store.verifyWorkItem(id);
+      if (options.json) console.log(JSON.stringify(result, null, 2));
+      else {
+        printWorkItem(result.item);
+        for (const reason of result.attempt.reasons) console.log(`  - ${reason}`);
+      }
+      if (!result.verified) process.exitCode = 1;
+      return;
+    }
+
     if (options.command === 'upsert') {
       const id = resolveWorkItemId(options);
       const existing = id ? store.getWorkItemById(id) : null;
-      const item = store.upsertWorkItem(buildUpsertPayload(options, existing));
+      const payload = buildUpsertPayload(options, existing);
+      const item = store.upsertWorkItem(payload);
+      if (item.status !== payload.status) process.exitCode = 1;
       if (options.json) {
         console.log(JSON.stringify(item, null, 2));
       } else {
@@ -545,6 +577,7 @@ async function main() {
           existing
         )
       );
+      if (item.status !== (options.status || 'done')) process.exitCode = 1;
       if (options.json) {
         console.log(JSON.stringify(item, null, 2));
       } else {

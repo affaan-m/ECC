@@ -73,7 +73,7 @@ flowchart TD
 | **プライマリラベル**  | `aria-label` / `<label>` | `.accessibilityLabel()`              | `contentDescription`                                        |
 | **セカンダリヒント** | `aria-describedby`       | `.accessibilityHint()`               | `Modifier.semantics { stateDescription = ... }`             |
 | **アクションロール**    | `role="button"`          | `.accessibilityAddTraits(.isButton)` | `Modifier.semantics { role = Role.Button }`                 |
-| **ライブ更新**   | `aria-live="polite"`     | `.accessibilityLiveRegion(.polite)`  | `Modifier.semantics { liveRegion = LiveRegionMode.Polite }` |
+| **ライブ更新**   | `aria-live="polite"`     | `AccessibilityNotification.Announcement(...).post()` (iOS 17 以降、優先度 `.low`) | `Modifier.semantics { liveRegion = LiveRegionMode.Polite }` |
 
 ## 例
 
@@ -98,6 +98,22 @@ Button(action: deleteItem) {
 .accessibilityLabel("Delete item")
 .accessibilityHint("Permanently removes this item from your list")
 .accessibilityAddTraits(.isButton)
+```
+
+### iOS 17 以降: ステータス更新の読み上げ
+
+ステータスは画面にも表示します。保存が成功したら、完了ハンドラから優先度の低い通知を一度だけ送信します。VoiceOver は現在の読み上げが終わってから、フォーカスを移動せずに新しいステータスを読み上げられます。
+
+```swift
+import Accessibility
+import Foundation
+
+@available(iOS 17.0, *)
+func announceSaveCompleted() {
+    var message = AttributedString("Changes saved.")
+    message.accessibilitySpeechAnnouncementPriority = .low
+    AccessibilityNotification.Announcement(message).post()
+}
 ```
 
 ### Android: アクセシブルなトグル

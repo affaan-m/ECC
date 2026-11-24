@@ -39,7 +39,7 @@ function run(rawInput) {
     const input = JSON.parse(rawInput);
     const filePath = input.tool_input?.file_path;
 
-    if (filePath && /\.(ts|tsx|js|jsx)$/.test(filePath)) {
+    if (filePath && /\.(?:[cm]?[jt]s|[jt]sx)$/.test(filePath)) {
       try {
         const resolvedFilePath = path.resolve(filePath);
         const projectRoot = findProjectRoot(path.dirname(resolvedFilePath));

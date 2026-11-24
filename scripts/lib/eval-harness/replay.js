@@ -18,6 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 
+const { readFileWithSharingRetry, writeFileAtomic } = require('../atomic-write');
 const { canonicalJson, hashValue } = require('./canonical');
 const envelope = require('./envelope');
 
@@ -30,6 +31,13 @@ class ReplayError extends Error {
   }
 }
 
+function fixtureIdentity(tool, args) {
+  // Use the same root JSON snapshot in record and replay. A live toJSON(key)
+  // must not see a different holder key inside the fixture identity envelope.
+  const snapshot = JSON.parse(canonicalJson(args));
+  return { key: hashValue({ tool, args: snapshot }), args_hash: hashValue(snapshot) };
+}
+
 class FixtureStore {
   constructor(dir) {
     this.dir = path.resolve(dir);
@@ -37,7 +45,7 @@ class FixtureStore {
   }
 
   key(tool, args) {
-    return hashValue({ tool, args });
+    return fixtureIdentity(tool, args).key;
   }
 
   pathFor(key) {
@@ -49,31 +57,40 @@ class FixtureStore {
   }
 
   put(tool, args, response) {
-    const key = this.key(tool, args);
+    const { key, args_hash } = fixtureIdentity(tool, args);
+    // Hash and persist one plain JSON value, without invoking a response's
+    // serializer again under the record's different 'response' holder key.
+    const snapshot = JSON.parse(canonicalJson(response));
     const record = {
       key,
       tool,
-      args_hash: hashValue(args),
-      response_hash: hashValue(response),
-      response,
+      args_hash,
+      response_hash: hashValue(snapshot),
+      response: snapshot,
     };
-    fs.writeFileSync(this.pathFor(key), canonicalJson(record) + '\n', 'utf8');
+    writeFileAtomic(this.pathFor(key), canonicalJson(record) + '\n');
     return record;
   }
 
   get(tool, args) {
-    const key = this.key(tool, args);
+    const { key, args_hash } = fixtureIdentity(tool, args);
     const filePath = this.pathFor(key);
     if (!fs.existsSync(filePath)) {
       throw new ReplayError('tool.fixture_missing', `no fixture for ${tool} (${key.slice(0, 16)})`, { tool, key });
     }
     let record;
     try {
-      record = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      record = JSON.parse(readFileWithSharingRetry(filePath, 'utf8'));
     } catch (_error) {
       throw new ReplayError('tool.fixture_corrupt', `fixture ${key.slice(0, 16)} is not valid JSON`, { tool, key });
     }
-    if (record.tool !== tool || record.args_hash !== hashValue(args)) {
+    if (!record || typeof record !== 'object' || Array.isArray(record)
+        || typeof record.tool !== 'string' || !Object.hasOwn(record, 'response')
+        || ['key', 'args_hash', 'response_hash'].some(field =>
+          typeof record[field] !== 'string' || !envelope.HASH_PATTERN.test(record[field]))) {
+      throw new ReplayError('tool.fixture_corrupt', `fixture ${key.slice(0, 16)} has invalid record fields`, { tool, key });
+    }
+    if (record.key !== key || record.tool !== tool || record.args_hash !== args_hash) {
       throw new ReplayError('tool.fixture_mismatch', `fixture ${key.slice(0, 16)} was recorded for different arguments`, { tool, key });
     }
     if (record.response_hash !== hashValue(record.response)) {
