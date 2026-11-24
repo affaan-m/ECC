@@ -60,7 +60,7 @@ def load_episode(path: Path) -> Episode:
         return Episode(
             episode_id=_string(manifest, "episode_id"),
             title=_string(manifest, "title"),
-            description=_string(manifest, "description"),
+            description=_string(manifest, "description", allow_empty=True),
             story=tuple(_string_list(manifest, "story")),
             episode_date=date.fromisoformat(_string(manifest, "episode_date")),
             landscape_path=landscape,
@@ -89,10 +89,11 @@ def _asset_path(root: Path, value: Any) -> Path:
     return path
 
 
-def _string(payload: dict, key: str) -> str:
+def _string(payload: dict, key: str, allow_empty: bool = False) -> str:
     value = payload[key]
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"{key} must be a non-empty string")
+    if not isinstance(value, str) or (not allow_empty and not value):
+        requirement = "a string" if allow_empty else "a non-empty string"
+        raise ValueError(f"{key} must be {requirement}")
     return value
 
 

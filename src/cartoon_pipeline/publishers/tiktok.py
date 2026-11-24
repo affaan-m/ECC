@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from math import ceil
 from typing import BinaryIO
 
 import httpx
@@ -27,11 +26,14 @@ _MAX_CHUNK_BYTES = 64 * _MIB
 
 @dataclass(frozen=True)
 class TikTokConsent:
+    episode_id: str
     consent_id: str
     privacy_level: str
     confirmed_at: datetime
 
     def __post_init__(self) -> None:
+        if not self.episode_id.strip():
+            raise ValueError("A TikTok consent episode is required")
         if not self.consent_id.strip():
             raise ValueError("A TikTok consent reference is required")
         if self.privacy_level not in {
@@ -43,6 +45,14 @@ class TikTokConsent:
             raise ValueError("Unsupported TikTok privacy level")
         if self.confirmed_at.tzinfo is None:
             raise ValueError("TikTok consent timestamp must include a timezone")
+        self._validate_recent()
+
+    def validate_for_episode(self, episode_id: str) -> None:
+        if self.episode_id != episode_id:
+            raise ValueError("TikTok consent must be bound to this episode")
+        self._validate_recent()
+
+    def _validate_recent(self) -> None:
         age = datetime.now(UTC) - self.confirmed_at.astimezone(UTC)
         if age < timedelta(0) or age > timedelta(minutes=15):
             raise ValueError("TikTok consent must be recent")
@@ -81,6 +91,7 @@ class TikTokPublisher:
             raise ProviderError(
                 "TikTok direct posting requires per-episode creator consent"
             )
+        _validate_consent(consent, episode.episode_id)
         video, size = open_video_asset(episode.vertical_path, "TikTok")
         with video:
             chunk_size, chunk_count = self._chunk_plan(size)
@@ -96,13 +107,16 @@ class TikTokPublisher:
                     "TikTok consent privacy setting is no longer available",
                     retry_safe=True,
                 )
+            _validate_consent(consent, episode.episode_id)
             initialized = self._initialize_post(
                 headers, episode, consent, size, chunk_size, chunk_count
             )
             publish_id = _required_string(initialized, "publish_id")
             upload_url = _required_string(initialized, "upload_url")
             validate_https_url(upload_url, ("tiktokapis.com",))
-            self._upload_chunks(upload_url, video, size, chunk_size)
+            self._upload_chunks(
+                upload_url, video, size, chunk_size, chunk_count
+            )
         return self._poll_status(headers, publish_id)
 
     def _creator_info(self, headers: dict[str, str]) -> dict:
@@ -160,24 +174,30 @@ class TikTokPublisher:
         return _required_mapping(payload, "data")
 
     def _upload_chunks(
-        self, upload_url: str, video: BinaryIO, size: int, chunk_size: int
+        self,
+        upload_url: str,
+        video: BinaryIO,
+        size: int,
+        chunk_size: int,
+        chunk_count: int,
     ) -> None:
         first_byte = 0
-        while first_byte < size:
+        for chunk_index in range(chunk_count):
+            final_chunk = chunk_index == chunk_count - 1
+            chunk_length = size - first_byte if final_chunk else chunk_size
             try:
-                chunk = video.read(min(chunk_size, size - first_byte))
+                chunk = video.read(chunk_length)
             except OSError as exc:
                 raise ProviderError(
                     "TikTok video asset could not be read",
                     retry_safe=first_byte == 0,
                 ) from exc
-            if not chunk:
+            if len(chunk) != chunk_length:
                 raise ProviderError(
                     "TikTok video asset ended during upload",
                     retry_safe=first_byte == 0,
                 )
             last_byte = first_byte + len(chunk) - 1
-            is_final = last_byte + 1 == size
             response = provider_request(
                 lambda: self.client.put(
                     upload_url,
@@ -191,12 +211,14 @@ class TikTokPublisher:
                 ),
                 "TikTok",
             )
-            expected = 201 if is_final else 206
+            expected = 201 if final_chunk else 206
             if response.status_code != expected:
                 raise ProviderError(
                     f"TikTok chunk upload failed with HTTP {response.status_code}"
                 )
             first_byte = last_byte + 1
+        if first_byte != size:
+            raise ProviderError("TikTok upload chunks did not cover the full video")
 
     def _poll_status(self, headers: dict[str, str], publish_id: str) -> PublishReceipt:
         for attempt in range(self.poll_attempts):
@@ -232,20 +254,14 @@ class TikTokPublisher:
     def _chunk_plan(self, size: int) -> tuple[int, int]:
         if size <= 0:
             raise ProviderError("TikTok video asset is empty", retry_safe=True)
-        if size < _MIN_CHUNK_BYTES:
+        if size <= self.chunk_size:
             return size, 1
-        chunk_count = ceil(size / self.chunk_size)
+        chunk_count = size // self.chunk_size
         if chunk_count > 1000:
             raise ProviderError(
                 "TikTok video exceeds the upload chunk limit", retry_safe=True
             )
-        chunk_size = ceil(size / chunk_count)
-        if chunk_size > _MAX_CHUNK_BYTES or chunk_size < _MIN_CHUNK_BYTES:
-            raise ProviderError(
-                "TikTok video cannot be divided into valid upload chunks",
-                retry_safe=True,
-            )
-        return chunk_size, chunk_count
+        return self.chunk_size, chunk_count
 
 
 def _required_string(payload: dict, key: str) -> str:
@@ -266,3 +282,10 @@ def _require_api_success(payload: dict) -> None:
     error = payload.get("error")
     if not isinstance(error, dict) or error.get("code") != "ok":
         raise ProviderError("TikTok rejected the API request")
+
+
+def _validate_consent(consent: TikTokConsent, episode_id: str) -> None:
+    try:
+        consent.validate_for_episode(episode_id)
+    except ValueError as exc:
+        raise ProviderError(str(exc)) from exc

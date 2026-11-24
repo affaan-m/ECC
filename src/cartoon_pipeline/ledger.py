@@ -1,4 +1,6 @@
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -97,7 +99,12 @@ class PublicationLedger:
             if cursor.rowcount != 1:
                 raise RuntimeError("Publication ledger state changed unexpectedly")
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.path, timeout=30)
-        connection.execute("PRAGMA busy_timeout = 30000")
-        return connection
+        try:
+            connection.execute("PRAGMA busy_timeout = 30000")
+            with connection:
+                yield connection
+        finally:
+            connection.close()

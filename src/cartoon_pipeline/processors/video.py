@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import shutil
 import subprocess
 import tempfile
 from collections.abc import Callable
@@ -59,9 +60,28 @@ class FFmpegProcessor:
                 manifest = safe_output_file(output_directory, "episode.json")
                 safe_output_file(output_directory, "landscape.mp4")
                 safe_output_file(output_directory, "vertical.mp4")
-                manifest.unlink(missing_ok=True)
-                os.replace(staged_landscape, landscape)
-                os.replace(staged_vertical, vertical)
+                backup_directory = staged / "previous"
+                backup_directory.mkdir()
+                backups: dict[Path, Path | None] = {}
+                for target in (landscape, vertical, manifest):
+                    if target.is_file():
+                        backup = backup_directory / target.name
+                        shutil.copy2(target, backup)
+                        backups[target] = backup
+                    else:
+                        backups[target] = None
+                try:
+                    manifest.unlink(missing_ok=True)
+                    os.replace(staged_landscape, landscape)
+                    os.replace(staged_vertical, vertical)
+                except OSError:
+                    try:
+                        _restore_outputs(backups)
+                    except OSError as restore_error:
+                        raise RenderError(
+                            "Unable to restore the previous cartoon assets"
+                        ) from restore_error
+                    raise
         except UnsafeOutputPathError as exc:
             raise RenderError("Unsafe cartoon output path") from exc
         except OSError as exc:
@@ -148,7 +168,7 @@ def _draw_frame(
     width, height = dimensions
     image = Image.new("RGB", dimensions, (185, 225, 250))
     draw = ImageDraw.Draw(image)
-    font = ImageFont.load_default()
+    font = ImageFont.load_default(size=max(18, round(min(width, height) * 0.04)))
     _draw_sky(draw, width, height)
     _draw_character(draw, width, height, progress)
     _draw_text_panel(draw, title, caption, font, width, height)
@@ -207,17 +227,32 @@ def _draw_text_panel(
     width: int,
     height: int,
 ) -> None:
-    panel_top = int(height * 0.78)
+    panel_top = int(height * 0.76)
+    panel_bottom = int(height * 0.96)
     draw.rounded_rectangle(
-        (width * 0.06, panel_top, width * 0.94, height * 0.96),
+        (width * 0.06, panel_top, width * 0.94, panel_bottom),
         radius=max(8, int(height * 0.025)),
         fill="#FFFFFF",
         outline="#4A7C59",
         width=max(2, int(height * 0.004)),
     )
-    draw.text((width * 0.09, panel_top + height * 0.025), title[:70], fill="#24324A", font=font)
+    line_height = font.getbbox("Ag")[3] - font.getbbox("Ag")[1]
+    line_spacing = max(line_height, int(font.size * 1.2))
+    title_y = panel_top + int(height * 0.02)
+    caption_y = title_y + line_height + int(height * 0.008)
+    caption_bottom = panel_bottom - int(height * 0.015)
+    caption_space = max(1, caption_bottom - caption_y)
+    max_lines = max(1, min(3, (caption_space + line_spacing - line_height) // line_spacing))
+    draw.text((width * 0.09, title_y), title[:70], fill="#24324A", font=font)
     _draw_wrapped_caption(
-        draw, caption, font, width * 0.09, panel_top + height * 0.075, width * 0.82
+        draw,
+        caption,
+        font,
+        width * 0.09,
+        caption_y,
+        width * 0.82,
+        line_spacing,
+        max_lines,
     )
 
 
@@ -228,6 +263,8 @@ def _draw_wrapped_caption(
     x: float,
     y: float,
     max_width: float,
+    line_spacing: int,
+    max_lines: int,
 ) -> None:
     lines: list[str] = []
     current = ""
@@ -240,5 +277,13 @@ def _draw_wrapped_caption(
             current = candidate
     if current:
         lines.append(current)
-    for index, line in enumerate(lines[:3]):
-        draw.text((x, y + index * 22), line, fill="#24324A", font=font)
+    for index, line in enumerate(lines[:max_lines]):
+        draw.text((x, y + index * line_spacing), line, fill="#24324A", font=font)
+
+
+def _restore_outputs(backups: dict[Path, Path | None]) -> None:
+    for target, backup in backups.items():
+        if backup is None:
+            target.unlink(missing_ok=True)
+        else:
+            os.replace(backup, target)

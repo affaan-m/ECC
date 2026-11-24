@@ -5,6 +5,33 @@ from typing import Any
 import yaml
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_unique_mapping(
+    loader: _UniqueKeyLoader, node: yaml.MappingNode, deep: bool = False
+) -> dict:
+    loader.flatten_mapping(node)
+    mapping = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise yaml.constructor.ConstructorError(
+                "while constructing a mapping",
+                node.start_mark,
+                f"found duplicate key {key!r}",
+                key_node.start_mark,
+            )
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique_mapping
+)
+
+
 class ConfigurationError(ValueError):
     """Raised when a pipeline configuration is missing or malformed."""
 
@@ -27,7 +54,11 @@ class ContentPolicy:
 
 def load_yaml(path: Path) -> dict[str, Any]:
     try:
-        value = yaml.safe_load(path.read_text(encoding="utf-8"))
+        loader = _UniqueKeyLoader(path.read_text(encoding="utf-8"))
+        try:
+            value = loader.get_single_data()
+        finally:
+            loader.dispose()
     except (OSError, yaml.YAMLError) as exc:
         raise ConfigurationError(f"Unable to read configuration: {path.name}") from exc
     if not isinstance(value, dict):

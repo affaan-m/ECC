@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier
@@ -63,3 +64,26 @@ def test_concurrent_failed_retries_only_grant_one_reservation(
 
     assert results.count("reserved") == 1
     assert sum(isinstance(result, RuntimeError) for result in results) == 1
+
+
+def test_ledger_closes_connections_after_transactions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original_connect = sqlite3.connect
+    connections: list[sqlite3.Connection] = []
+
+    def tracking_connect(*args, **kwargs) -> sqlite3.Connection:
+        connection = original_connect(*args, **kwargs)
+        connections.append(connection)
+        return connection
+
+    monkeypatch.setattr("cartoon_pipeline.ledger.sqlite3.connect", tracking_connect)
+    ledger = PublicationLedger(tmp_path / "ledger.sqlite3")
+
+    ledger.reserve("2026-11-23", "youtube")
+    ledger.mark_retryable_failure("2026-11-23", "youtube")
+
+    assert len(connections) == 3
+    for connection in connections:
+        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+            connection.execute("SELECT 1")

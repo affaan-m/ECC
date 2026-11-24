@@ -10,7 +10,7 @@ from cartoon_pipeline.publishers.base import ProviderError, require_json
 
 _TOKEN_URLS = {
     "youtube": "https://oauth2.googleapis.com/token",
-    "dailymotion": "https://api.dailymotion.com/oauth/token",
+    "dailymotion": "https://oauth2.dailymotion.com/v2/token",
     "tiktok": "https://open.tiktokapis.com/v2/oauth/token/",
 }
 
@@ -24,7 +24,7 @@ class OAuthCredentials:
     provider: str
     client_id: str
     client_secret: str
-    refresh_token: str
+    refresh_token: str | None = None
 
 
 class OAuthTokenProvider:
@@ -35,13 +35,10 @@ class OAuthTokenProvider:
     ) -> None:
         if credentials.provider not in _TOKEN_URLS:
             raise ValueError("Unsupported OAuth provider")
-        if not all(
-            (
-                credentials.client_id.strip(),
-                credentials.client_secret.strip(),
-                credentials.refresh_token.strip(),
-            )
-        ):
+        required = (credentials.client_id, credentials.client_secret)
+        if credentials.provider != "dailymotion":
+            required += (credentials.refresh_token or "",)
+        if not all(value.strip() for value in required):
             raise ValueError("OAuth credentials must not be empty")
         self.credentials = credentials
         self.client = client or httpx.Client(timeout=20)
@@ -55,8 +52,9 @@ class OAuthTokenProvider:
         names = {
             "client_id": f"{prefix}_CLIENT_ID",
             "client_secret": f"{prefix}_CLIENT_SECRET",
-            "refresh_token": f"{prefix}_REFRESH_TOKEN",
         }
+        if provider != "dailymotion":
+            names["refresh_token"] = f"{prefix}_REFRESH_TOKEN"
         missing = [key for key, name in names.items() if not values.get(name)]
         if missing:
             raise OAuthError(
@@ -68,7 +66,7 @@ class OAuthTokenProvider:
                 provider=provider,
                 client_id=values[names["client_id"]],
                 client_secret=values[names["client_secret"]],
-                refresh_token=values[names["refresh_token"]],
+                refresh_token=values.get(names.get("refresh_token", "")),
             )
         )
 
@@ -100,7 +98,12 @@ class OAuthTokenProvider:
                 retry_safe=True,
             )
         rotated = payload.get("refresh_token")
-        if isinstance(rotated, str) and rotated and rotated != self.credentials.refresh_token:
+        if (
+            self.credentials.refresh_token
+            and isinstance(rotated, str)
+            and rotated
+            and rotated != self.credentials.refresh_token
+        ):
             raise OAuthError(
                 f"{self.credentials.provider} rotated its refresh token; "
                 "update the configured secret before publishing"
@@ -116,9 +119,16 @@ class OAuthTokenProvider:
                 "grant_type": "refresh_token",
                 "refresh_token": values.refresh_token,
             }
+        if values.provider == "dailymotion":
+            return {
+                "client_id": values.client_id,
+                "client_secret": values.client_secret,
+                "grant_type": "client_credentials",
+                "scope": "video.manage",
+            }
         return {
             "client_id": values.client_id,
             "client_secret": values.client_secret,
             "grant_type": "refresh_token",
-            "refresh_token": values.refresh_token,
+            "refresh_token": values.refresh_token or "",
         }

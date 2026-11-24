@@ -22,6 +22,14 @@ def test_load_yaml_rejects_non_mapping_and_invalid_syntax(tmp_path: Path) -> Non
         load_yaml(malformed)
 
 
+def test_load_yaml_rejects_duplicate_mapping_keys(tmp_path: Path) -> None:
+    path = tmp_path / "duplicate.yaml"
+    path.write_text("version: 1\nversion: 2\n", encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="duplicate"):
+        load_yaml(path)
+
+
 def test_content_policy_rejects_unsupported_version(tmp_path: Path) -> None:
     path = tmp_path / "policy.yaml"
     path.write_text("version: 2\n", encoding="utf-8")

@@ -1,4 +1,4 @@
-name: AgentShield pipeline audit
+name: Cartoon pipeline security audit
 
 on:
   pull_request:
@@ -32,24 +32,29 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Scan workflow files with AgentShield
+      - name: Scan supported agent configuration with AgentShield
         uses: affaan-m/agentshield@b0891303bdcd6037376a94263d45cfd2ff3dfb98 # v1.6.0
         with:
-          path: .github/workflows
+          path: .
           min-severity: high
           fail-on-findings: true
-      - name: Scan OAuth and provider adapters with AgentShield
-        uses: affaan-m/agentshield@b0891303bdcd6037376a94263d45cfd2ff3dfb98 # v1.6.0
+      - name: Scan workflow files with zizmor
+        uses: zizmorcore/zizmor-action@bd12b495c90993a4301c73398142281a61499af3 # v0.9.0
         with:
-          path: src/cartoon_pipeline
-          min-severity: high
-          fail-on-findings: true
+          inputs: .github/workflows
+          version: v1.33.1
+          strict-collection: true
+          online-audits: false
+          advanced-security: false
+          annotations: true
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
       - name: Install pipeline test dependencies
-        run: python -m pip install --disable-pip-version-check -r requirements.txt pytest
+        run: python -m pip install --disable-pip-version-check -r requirements.txt pytest bandit==1.9.4
+      - name: Scan pipeline sources with Bandit
+        run: python -m bandit -r src/cartoon_pipeline -ll
       - name: Run mocked provider and policy tests
         env:
           PYTHONPATH: src

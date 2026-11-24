@@ -71,8 +71,27 @@ def test_oauth_credentials_are_read_from_environment_names_only() -> None:
         {
             "DAILYMOTION_CLIENT_ID": "id",
             "DAILYMOTION_CLIENT_SECRET": "secret",
-            "DAILYMOTION_REFRESH_TOKEN": "refresh",
         },
     )
 
     assert provider.credentials.provider == "dailymotion"
+    assert provider.credentials.refresh_token is None
+
+
+def test_dailymotion_uses_api_v2_client_credentials_scope() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"access_token": "temporary-token"})
+
+    provider = OAuthTokenProvider(
+        OAuthCredentials("dailymotion", "private-key", "private-secret"),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert provider.get_access_token() == "temporary-token"
+    assert requests[0].url.host == "oauth2.dailymotion.com"
+    assert requests[0].url.path == "/v2/token"
+    assert b"grant_type=client_credentials" in requests[0].content
+    assert b"scope=video.manage" in requests[0].content

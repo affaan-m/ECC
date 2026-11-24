@@ -79,6 +79,5 @@ jobs:
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
           DAILYMOTION_CLIENT_ID: ${{ secrets.DAILYMOTION_CLIENT_ID }}
           DAILYMOTION_CLIENT_SECRET: ${{ secrets.DAILYMOTION_CLIENT_SECRET }}
-          DAILYMOTION_REFRESH_TOKEN: ${{ secrets.DAILYMOTION_REFRESH_TOKEN }}
           DAILYMOTION_PROFILE_ID: ${{ secrets.DAILYMOTION_PROFILE_ID }}
         run: python -m cartoon_pipeline publish --episode build/cartoon/episode.json

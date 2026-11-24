@@ -10,18 +10,25 @@ class UnsafeOutputPathError(ValueError):
 
 
 def prepare_output_directory(directory: Path) -> Path:
-    if directory.is_symlink():
-        raise UnsafeOutputPathError("Output directory must not be a symlink")
+    _reject_symlink_components(directory)
     try:
         directory.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise UnsafeOutputPathError("Unable to create output directory") from exc
-    if directory.is_symlink():
-        raise UnsafeOutputPathError("Output directory must not be a symlink")
+    _reject_symlink_components(directory)
     resolved = directory.resolve(strict=True)
     if not resolved.is_dir():
         raise UnsafeOutputPathError("Output path is not a directory")
     return resolved
+
+
+def _reject_symlink_components(directory: Path) -> None:
+    absolute = Path(os.path.abspath(directory))
+    current = Path(absolute.anchor)
+    for component in absolute.parts[1:]:
+        current /= component
+        if current.is_symlink():
+            raise UnsafeOutputPathError("Output path components must not be symlinks")
 
 
 def safe_output_file(directory: Path, filename: str) -> Path:

@@ -1,4 +1,5 @@
 import re
+import stat
 from pathlib import Path
 
 from cartoon_pipeline.config import ContentPolicy
@@ -62,8 +63,10 @@ def _is_episode_identifier(value: str, expected: str) -> bool:
 
 def _validate_asset(path: Path, maximum_bytes: int, kind: str) -> None:
     try:
-        size = path.stat().st_size
+        asset = path.stat()
     except OSError as exc:
         raise PolicyViolationError(f"The {kind} video asset is unavailable") from exc
-    if size <= 0 or size > maximum_bytes:
+    if not stat.S_ISREG(asset.st_mode):
+        raise PolicyViolationError(f"The {kind} video asset must be a regular file")
+    if asset.st_size <= 0 or asset.st_size > maximum_bytes:
         raise PolicyViolationError(f"The {kind} video asset has an invalid size")

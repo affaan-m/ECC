@@ -35,7 +35,6 @@ def test_daily_workflow_references_credentials_only_through_github_secrets() -> 
         "YOUTUBE_REFRESH_TOKEN",
         "DAILYMOTION_CLIENT_ID",
         "DAILYMOTION_CLIENT_SECRET",
-        "DAILYMOTION_REFRESH_TOKEN",
         "DAILYMOTION_PROFILE_ID",
     ):
         assert re.search(
@@ -65,12 +64,14 @@ def test_provider_secrets_are_scoped_only_to_the_publish_command() -> None:
     assert all("env" not in step for step in publish_job["steps"][:-1])
 
 
-def test_agentshield_workflow_scans_pipeline_sources_and_workflow_files() -> None:
+def test_security_workflow_uses_supported_specialized_scanners() -> None:
     content = (ROOT / ".github/workflows/ci-agentshield.yml").read_text(
         encoding="utf-8"
     )
 
     assert "affaan-m/agentshield@" in content
-    assert "src/cartoon_pipeline" in content
-    assert ".github/workflows" in content
+    assert "zizmorcore/zizmor-action@" in content
+    assert "inputs: .github/workflows" in content
+    assert "bandit==1.9.4" in content
+    assert "python -m bandit -r src/cartoon_pipeline -ll" in content
     assert "contents: read" in content

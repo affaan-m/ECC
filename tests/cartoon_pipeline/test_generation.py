@@ -1,15 +1,18 @@
 import json
+import os
 import subprocess
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
 import pytest
 
+import cartoon_pipeline.generate as generate_module
 from cartoon_pipeline.episode_io import load_episode, save_episode
 from cartoon_pipeline.generate import generate_daily_episode
 from cartoon_pipeline.generators.storyboard import generate_storyboard
 from cartoon_pipeline.models import Episode
-from cartoon_pipeline.processors.video import FFmpegProcessor, RenderError
+from cartoon_pipeline.processors.video import FFmpegProcessor, RenderError, _draw_frame
 
 
 class FakeProcessor:
@@ -41,6 +44,20 @@ def test_daily_generation_writes_reviewable_manifest_and_assets(tmp_path: Path) 
     assert episode.made_for_kids is True
     assert episode.landscape_path.read_bytes() == b"fake-video"
     assert episode.vertical_path.read_bytes() == b"fake-video"
+
+
+def test_empty_episode_description_survives_manifest_round_trip(tmp_path: Path) -> None:
+    manifest_path = generate_daily_episode(
+        tmp_path,
+        Path("config/content_policy.yaml"),
+        date(2026, 11, 23),
+        processor=FakeProcessor(),
+    )
+    episode = load_episode(manifest_path)
+
+    saved_path = save_episode(replace(episode, description=""), tmp_path)
+
+    assert load_episode(saved_path).description == ""
 
 
 def test_episode_loader_rejects_asset_paths_outside_manifest_directory(
@@ -118,9 +135,11 @@ def test_episode_save_rejects_symlink_manifest_destination(tmp_path: Path) -> No
 
 def test_processor_passes_arguments_without_shell_interpretation(tmp_path: Path) -> None:
     commands: list[list[str]] = []
+    runner_options: list[dict] = []
 
     def fake_runner(command: list[str], **kwargs) -> subprocess.CompletedProcess:
         commands.append(command)
+        runner_options.append(kwargs)
         Path(command[-1]).write_bytes(b"fake-video")
         return subprocess.CompletedProcess(command, 0)
 
@@ -132,8 +151,28 @@ def test_processor_passes_arguments_without_shell_interpretation(tmp_path: Path)
     ).process(generate_storyboard(date(2026, 11, 23)), output)
 
     assert all(path.read_bytes() == b"fake-video" for path in paths)
-    assert all("shell" not in command for command in commands)
+    assert all(options.get("shell", False) is False for options in runner_options)
     assert len(commands) == 2
+
+
+def test_vertical_caption_is_scaled_to_video_dimensions() -> None:
+    image = _draw_frame(
+        "The Patient Little Seed",
+        "Friends take turns watering it and waiting.",
+        0.5,
+        (720, 1280),
+    )
+    pixels = image.load()
+    text_rows = [
+        y
+        for y in range(int(image.height * 0.78), int(image.height * 0.96))
+        for x in range(int(image.width * 0.06), int(image.width * 0.94))
+        if pixels[x, y] == (36, 50, 74)
+    ]
+
+    assert text_rows
+    assert max(text_rows) - min(text_rows) >= 20
+    assert max(text_rows) < int(image.height * 0.95)
 
 
 def test_processor_rejects_symlink_output_without_overwriting_target(
@@ -167,6 +206,27 @@ def test_processor_rejects_symlink_output_directory(tmp_path: Path) -> None:
             seconds_per_scene=1,
             runner=lambda *args, **kwargs: subprocess.CompletedProcess(args, 0),
         ).process(generate_storyboard(date(2026, 11, 23)), output)
+
+    assert list(outside.iterdir()) == []
+
+
+def test_processor_rejects_symlinked_ancestor_before_creating_output(
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    linked_parent = tmp_path / "linked-parent"
+    linked_parent.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(RenderError, match="Unsafe"):
+        FFmpegProcessor(
+            frames_per_second=1,
+            seconds_per_scene=1,
+            runner=lambda *args, **kwargs: subprocess.CompletedProcess(args, 0),
+        ).process(
+            generate_storyboard(date(2026, 11, 23)),
+            linked_parent / "nested" / "output",
+        )
 
     assert list(outside.iterdir()) == []
 
@@ -223,3 +283,70 @@ def test_failed_vertical_render_preserves_previous_complete_episode(
     assert landscape.read_bytes() == b"old-landscape"
     assert vertical.read_bytes() == b"old-vertical"
     assert manifest.read_text(encoding="utf-8") == "old-manifest"
+
+
+def test_second_asset_replacement_failure_restores_previous_episode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "out"
+    output.mkdir()
+    landscape = output / "landscape.mp4"
+    vertical = output / "vertical.mp4"
+    manifest = output / "episode.json"
+    landscape.write_bytes(b"old-landscape")
+    vertical.write_bytes(b"old-vertical")
+    manifest.write_text("old-manifest", encoding="utf-8")
+    original_replace = os.replace
+    failed = False
+
+    def fail_vertical_once(source, destination) -> None:
+        nonlocal failed
+        if Path(destination) == vertical and not failed:
+            failed = True
+            raise OSError("injected replacement failure")
+        original_replace(source, destination)
+
+    monkeypatch.setattr("cartoon_pipeline.processors.video.os.replace", fail_vertical_once)
+
+    def fake_runner(command: list[str], **kwargs) -> subprocess.CompletedProcess:
+        Path(command[-1]).write_bytes(b"new-video")
+        return subprocess.CompletedProcess(command, 0)
+
+    with pytest.raises(RenderError):
+        FFmpegProcessor(
+            frames_per_second=1, seconds_per_scene=1, runner=fake_runner
+        ).process(generate_storyboard(date(2026, 11, 23)), output)
+
+    assert failed is True
+    assert landscape.read_bytes() == b"old-landscape"
+    assert vertical.read_bytes() == b"old-vertical"
+    assert manifest.read_text(encoding="utf-8") == "old-manifest"
+
+
+def test_generation_restores_previous_episode_if_manifest_save_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "out"
+    output.mkdir()
+    expected = {
+        "landscape.mp4": b"old-landscape",
+        "vertical.mp4": b"old-vertical",
+        "episode.json": b"old-manifest",
+    }
+    for name, contents in expected.items():
+        (output / name).write_bytes(contents)
+
+    def fail_save(*args, **kwargs):
+        raise OSError("injected manifest failure")
+
+    monkeypatch.setattr(generate_module, "save_episode", fail_save)
+
+    with pytest.raises(OSError, match="manifest failure"):
+        generate_daily_episode(
+            output,
+            Path("config/content_policy.yaml"),
+            date(2026, 11, 23),
+            processor=FakeProcessor(),
+        )
+
+    assert {name: (output / name).read_bytes() for name in expected} == expected

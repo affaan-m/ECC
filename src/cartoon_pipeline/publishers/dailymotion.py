@@ -79,7 +79,7 @@ class DailymotionPublisher:
                 ),
                 "Dailymotion",
             )
-        video_id = _required_string(video, "id", "Dailymotion")
+        video_id = _required_string(video, "video_id", "Dailymotion")
         return PublishReceipt(platform=self.platform, remote_id=video_id)
 
     def _upload_file(

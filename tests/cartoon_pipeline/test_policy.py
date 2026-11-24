@@ -65,3 +65,15 @@ def test_policy_rejects_tiktok_when_audience_includes_under_13(
 
     with pytest.raises(PolicyViolationError, match="TikTok"):
         validate_episode(episode, policy, "tiktok")
+
+
+def test_policy_rejects_directory_as_video_asset(episode: Episode, tmp_path: Path) -> None:
+    policy = replace(
+        load_content_policy(Path("config/content_policy.yaml")),
+        maximum_asset_bytes=10**12,
+    )
+
+    with pytest.raises(PolicyViolationError, match="regular file"):
+        validate_episode(
+            replace(episode, landscape_path=tmp_path), policy, "youtube"
+        )
