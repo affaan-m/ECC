@@ -693,7 +693,7 @@ Start with the workflow you need, not the full catalog.
 
 | What you are doing | Start here |
 |---|---|
-| Building a feature | `/ecc:plan "describe the feature"`, then `tdd-workflow` |
+| Building a feature | `/ecc:plan "describe the feature"`, create a feature branch, then `tdd-workflow` |
 | Fixing a bug | Reproduce it with a failing test, then use `tdd-workflow` |
 | Reviewing new code | `/code-review` for a fresh-context review |
 | Triaging a GitHub issue | `/ecc:issue-review <number>` (plugin) or `/issue-review <number>` (manual install) to verify it against the code and draft a reply |
@@ -762,8 +762,10 @@ Slash forms below are shown where they remain part of the maintained command sur
 ```
 /ecc:plan "Add user authentication with OAuth"
                                               -> planner creates implementation blueprint
+git switch -c feat/oauth-login                -> keep TDD checkpoint commits off main
 tdd-workflow skill                            -> tdd-guide enforces write-tests-first
 /code-review                                  -> code-reviewer checks your work
+/pr                                           -> push the branch and open a pull request
 ```
 
 **Fixing a bug:**
