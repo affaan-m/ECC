@@ -57,46 +57,60 @@ class FFmpegProcessor:
                 self._render_variant(
                     storyboard, staged_vertical, (720, 1280), "vertical"
                 )
-                manifest = safe_output_file(output_directory, "episode.json")
-                safe_output_file(output_directory, "landscape.mp4")
-                safe_output_file(output_directory, "vertical.mp4")
-                backup_directory = Path(
-                    tempfile.mkdtemp(
-                        prefix="cartoon-previous-", dir=output_directory
-                    )
+                self._replace_outputs(
+                    output_directory,
+                    landscape,
+                    vertical,
+                    staged_landscape,
+                    staged_vertical,
                 )
-                backups: dict[Path, Path | None] = {}
-                try:
-                    for target in (landscape, vertical, manifest):
-                        if target.is_file():
-                            backup = backup_directory / target.name
-                            shutil.copy2(target, backup)
-                            backups[target] = backup
-                        else:
-                            backups[target] = None
-                except OSError as exc:
-                    shutil.rmtree(backup_directory, ignore_errors=True)
-                    raise RenderError("Unable to prepare previous cartoon recovery copies") from exc
-                try:
-                    manifest.unlink(missing_ok=True)
-                    os.replace(staged_landscape, landscape)
-                    os.replace(staged_vertical, vertical)
-                except OSError:
-                    try:
-                        _restore_outputs(backups)
-                    except OSError as restore_error:
-                        raise RenderError(
-                            "Unable to restore the previous cartoon assets; "
-                            f"recovery copies retained at {backup_directory}"
-                        ) from restore_error
-                    shutil.rmtree(backup_directory, ignore_errors=True)
-                    raise
-                shutil.rmtree(backup_directory, ignore_errors=True)
         except UnsafeOutputPathError as exc:
             raise RenderError("Unsafe cartoon output path") from exc
         except OSError as exc:
             raise RenderError("Unable to replace the completed cartoon assets") from exc
         return landscape, vertical
+
+    def _replace_outputs(
+        self,
+        output_directory: Path,
+        landscape: Path,
+        vertical: Path,
+        staged_landscape: Path,
+        staged_vertical: Path,
+    ) -> None:
+        manifest = safe_output_file(output_directory, "episode.json")
+        safe_output_file(output_directory, "landscape.mp4")
+        safe_output_file(output_directory, "vertical.mp4")
+        backup_directory = Path(
+            tempfile.mkdtemp(prefix="cartoon-previous-", dir=output_directory)
+        )
+        backups: dict[Path, Path | None] = {}
+        try:
+            for target in (landscape, vertical, manifest):
+                if target.is_file():
+                    backup = backup_directory / target.name
+                    shutil.copy2(target, backup)
+                    backups[target] = backup
+                else:
+                    backups[target] = None
+        except OSError as exc:
+            shutil.rmtree(backup_directory, ignore_errors=True)
+            raise RenderError("Unable to prepare previous cartoon recovery copies") from exc
+        try:
+            manifest.unlink(missing_ok=True)
+            os.replace(staged_landscape, landscape)
+            os.replace(staged_vertical, vertical)
+        except OSError:
+            try:
+                _restore_outputs(backups)
+            except OSError as restore_error:
+                raise RenderError(
+                    "Unable to restore the previous cartoon assets; "
+                    f"recovery copies retained at {backup_directory}"
+                ) from restore_error
+            shutil.rmtree(backup_directory, ignore_errors=True)
+            raise
+        shutil.rmtree(backup_directory, ignore_errors=True)
 
     def _render_variant(
         self,
