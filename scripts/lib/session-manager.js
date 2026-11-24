@@ -359,12 +359,17 @@ function getSessionStats(sessionPathOrContent) {
     : sessionPathOrContent;
 
   const metadata = parseSessionMetadata(content);
+  // Count LF separators without retaining an array entry for every line.
+  let lineCount = content ? 1 : 0;
+  for (let newline = content ? content.indexOf('\n') : -1; newline !== -1; newline = content.indexOf('\n', newline + 1)) {
+    lineCount++;
+  }
 
   return {
     totalItems: metadata.completed.length + metadata.inProgress.length,
     completedItems: metadata.completed.length,
     inProgressItems: metadata.inProgress.length,
-    lineCount: content ? content.split('\n').length : 0,
+    lineCount,
     hasNotes: !!metadata.notes,
     hasContext: !!metadata.context
   };
