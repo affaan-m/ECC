@@ -8,6 +8,15 @@ license: MIT
 
 Comprehensive Playwright patterns for building stable, fast, and maintainable E2E test suites.
 
+## Verify the Test Target
+
+Run state-changing journeys only against an authorized sandbox with verified
+identity, isolated storage, and synthetic accounts and data. Confirm the
+effective origin and that payments, wallets, notifications, and similar
+services are stubbed or isolated. A hostname or an environment variable alone
+does not establish this. If the target or its dependencies cannot be verified,
+stop before the mutation and use a local fixture instead.
+
 ## Test File Organization
 
 ```
@@ -85,7 +94,6 @@ test.describe('Item Search', () => {
     expect(count).toBeGreaterThan(0)
 
     await expect(itemsPage.itemCards.first()).toContainText(/test/i)
-    await page.screenshot({ path: 'artifacts/search-results.png' })
   })
 
   test('should handle no results', async ({ page }) => {
@@ -99,8 +107,13 @@ test.describe('Item Search', () => {
 
 ## Playwright Configuration
 
+This example assumes the project's reviewed `dev:e2e` script starts a dedicated
+loopback fixture with synthetic data and stubbed services.
+
 ```typescript
 import { defineConfig, devices } from '@playwright/test'
+
+const baseURL = 'http://127.0.0.1:3000'
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -114,10 +127,10 @@ export default defineConfig({
     ['json', { outputFile: 'playwright-results.json' }]
   ],
   use: {
-    baseURL: process.env.BASE_URL || 'http://localhost:3000',
-    trace: 'on-first-retry',
-    screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    baseURL,
+    trace: 'off',
+    screenshot: 'off',
+    video: 'off',
     actionTimeout: 10000,
     navigationTimeout: 30000,
   },
@@ -128,9 +141,9 @@ export default defineConfig({
     { name: 'mobile-chrome', use: { ...devices['Pixel 5'] } },
   ],
   webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
+    command: 'npm run dev:e2e',
+    url: baseURL,
+    reuseExistingServer: false,
     timeout: 120000,
   },
 })
@@ -154,9 +167,12 @@ test('conditional skip', async ({ page }) => {
 
 ### Identify Flakiness
 
+Use the project's reviewed test script backed by its installed, lockfile-pinned
+Playwright. This example assumes `test:e2e` runs `playwright test`.
+
 ```bash
-npx playwright test tests/search.spec.ts --repeat-each=10
-npx playwright test tests/search.spec.ts --retries=3
+npm run test:e2e -- tests/search.spec.ts --repeat-each=10
+npm run test:e2e -- tests/search.spec.ts --retries=3
 ```
 
 ### Common Causes & Fixes
@@ -192,6 +208,13 @@ await page.locator('[data-testid="menu-item"]').click()
 
 ## Artifact Management
 
+Enable the captures below only when needed for a synthetic run. Keep traces,
+screenshots, videos, and reports local by default. Authenticated capture can
+include cookies, headers, request bodies, or private screen content. Export
+only an explicitly approved artifact to the approved destination after
+inspecting and redacting its contents. If the artifact cannot be safely
+redacted, share an authorized sanitized summary instead.
+
 ### Screenshots
 
 ```typescript
@@ -203,51 +226,32 @@ await page.locator('[data-testid="chart"]').screenshot({ path: 'artifacts/chart.
 ### Traces
 
 ```typescript
-await browser.startTracing(page, {
-  path: 'artifacts/trace.json',
-  screenshots: true,
-  snapshots: true,
-})
-// ... test actions ...
-await browser.stopTracing()
+// In playwright.config.ts for an approved synthetic run
+use: {
+  trace: 'retain-on-failure'
+}
 ```
 
 ### Video
 
 ```typescript
-// In playwright.config.ts
+// In playwright.config.ts for an approved synthetic run
+outputDir: 'artifacts/playwright',
 use: {
-  video: 'retain-on-failure',
-  videosPath: 'artifacts/videos/'
+  video: 'retain-on-failure'
 }
 ```
 
 ## CI/CD Integration
 
-```yaml
-# .github/workflows/e2e.yml
-name: E2E Tests
-on: [push, pull_request]
+Use the repository's pinned CI setup for the runtime, package manager,
+dependencies and browser binaries. Verify that the job runs against the
+synthetic fixture server. Publish only approved, reviewed output.
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: npm ci
-      - run: npx playwright install --with-deps
-      - run: npx playwright test
-        env:
-          BASE_URL: ${{ vars.STAGING_URL }}
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 30
+```yaml
+# Test step after the repository's pinned setup.
+- name: Run E2E tests against the local fixture
+  run: npm run test:e2e
 ```
 
 ## Test Report Template
@@ -279,6 +283,9 @@ jobs:
 
 ## Wallet / Web3 Testing
 
+Use an in-browser provider stub and a stubbed application backend. This
+example exercises UI connection with a synthetic account and no real wallet.
+
 ```typescript
 test('wallet connection', async ({ page, context }) => {
   // Mock wallet provider
@@ -288,7 +295,8 @@ test('wallet connection', async ({ page, context }) => {
       request: async ({ method }) => {
         if (method === 'eth_requestAccounts')
           return ['0x1234567890123456789012345678901234567890']
-        if (method === 'eth_chainId') return '0x1'
+        if (method === 'eth_chainId') return '0x7a69'
+        throw new Error('Unexpected request to the wallet stub')
       }
     }
   })
@@ -301,26 +309,32 @@ test('wallet connection', async ({ page, context }) => {
 
 ## Financial / Critical Flow Testing
 
+Have the dedicated fixture expose its test identity and run ID from
+`/__e2e/identity`. Supply the same unique `E2E_RUN_ID` to the fixture and
+test runner. Stub the ledger and settlement providers. Use the fake backend
+state for any confirmation assertions.
+
 ```typescript
-test('trade execution', async ({ page }) => {
-  // Skip on production — real money
-  test.skip(process.env.NODE_ENV === 'production', 'Skip on production')
+test('shows a trade preview using a synthetic market', async ({ page, baseURL }) => {
+  const runId = process.env.E2E_RUN_ID
+  if (baseURL !== 'http://127.0.0.1:3000' || !runId) {
+    throw new Error('Expected this run\'s local synthetic fixture')
+  }
+  const identity = await page.request.get('/__e2e/identity', { maxRedirects: 0 })
+  expect(identity.status()).toBe(200)
+  expect(await identity.json()).toMatchObject({
+    environment: 'synthetic-e2e',
+    runId,
+    ledger: 'stub',
+  })
 
   await page.goto('/markets/test-market')
+  await expect(page).toHaveURL(baseURL + '/markets/test-market')
   await page.locator('[data-testid="position-yes"]').click()
   await page.locator('[data-testid="trade-amount"]').fill('1.0')
 
   // Verify preview
   const preview = page.locator('[data-testid="trade-preview"]')
   await expect(preview).toContainText('1.0')
-
-  // Confirm and wait for blockchain
-  await page.locator('[data-testid="confirm-trade"]').click()
-  await page.waitForResponse(
-    resp => resp.url().includes('/api/trade') && resp.status() === 200,
-    { timeout: 30000 }
-  )
-
-  await expect(page.locator('[data-testid="trade-success"]')).toBeVisible()
 })
 ```
