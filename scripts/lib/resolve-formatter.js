@@ -148,9 +148,9 @@ function getRunnerFromPackageManager(projectRoot) {
 }
 
 /**
- * Resolve the formatter binary, preferring the local node_modules/.bin
- * installation over the package manager exec command to avoid
- * package-resolution overhead.
+ * Resolve the formatter binary, preferring the nearest node_modules/.bin
+ * installation, including hoisted workspace dependencies, over the package
+ * manager exec command. Keep the config directory as the caller's cwd.
  *
  * @param {string} projectRoot - Absolute path to the project root
  * @param {'biome' | 'prettier'} formatter - Detected formatter name
@@ -169,12 +169,22 @@ function resolveFormatterBin(projectRoot, formatter) {
   }
 
   const isWin = process.platform === 'win32';
-  const localBin = path.join(projectRoot, 'node_modules', '.bin', isWin ? `${pkg.binName}.cmd` : pkg.binName);
+  const homeDir = os.homedir();
+  let dir = projectRoot;
+  while (true) {
+    const localBin = path.join(dir, 'node_modules', '.bin', isWin ? `${pkg.binName}.cmd` : pkg.binName);
+    if (fs.existsSync(localBin)) {
+      const result = { bin: localBin, prefix: [] };
+      binCache.set(cacheKey, result);
+      return result;
+    }
 
-  if (fs.existsSync(localBin)) {
-    const result = { bin: localBin, prefix: [] };
-    binCache.set(cacheKey, result);
-    return result;
+    // A package may have its own config but use the workspace's installation.
+    // Match config discovery's repository/home boundaries, including worktrees.
+    const parent = path.dirname(dir);
+    if (fs.existsSync(path.join(dir, '.git')) || parent === dir ||
+        path.relative(homeDir, dir) === '' || path.relative(homeDir, parent) === '') break;
+    dir = parent;
   }
 
   const runner = getRunnerFromPackageManager(projectRoot);
