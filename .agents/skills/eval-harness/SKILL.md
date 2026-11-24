@@ -1,18 +1,18 @@
 ---
 name: eval-harness
-description: Formal evaluation framework for Claude Code sessions implementing eval-driven development (EDD) principles. Use when a Claude Code workflow needs a formal eval before it is trusted or changed.
+description: Define and run capability and regression evaluations for Codex tasks. Use when specifying success criteria, measuring reliability, or comparing baseline and candidate behavior.
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 license: MIT
 ---
 
 # Eval Harness Skill
 
-A formal evaluation framework for Claude Code sessions, implementing eval-driven development (EDD) principles.
+Use eval-driven development (EDD) to define expected behavior and measure changes in Codex or project workflows.
 
 ## When to Activate
 
 - Setting up eval-driven development (EDD) for AI-assisted workflows
-- Defining pass/fail criteria for Claude Code task completion
+- Defining pass/fail criteria for agent task completion
 - Measuring agent reliability with pass@k metrics
 - Creating regression test suites for prompt or agent changes
 - Benchmarking agent performance across model versions
@@ -28,10 +28,10 @@ Eval-Driven Development treats evals as the "unit tests of AI development":
 ## Eval Types
 
 ### Capability Evals
-Test if Claude can do something it couldn't before:
+Test whether the workflow can meet a new requirement.
 ```markdown
 [CAPABILITY EVAL: feature-name]
-Task: Description of what Claude should accomplish
+Task: Description of what the agent should accomplish
 Success Criteria:
   - [ ] Criterion 1
   - [ ] Criterion 2
@@ -54,20 +54,10 @@ Result: X/Y passed (previously Y/Y)
 ## Grader Types
 
 ### 1. Code-Based Grader
-Deterministic checks using code:
-```bash
-# Check if file contains expected pattern
-grep -q "export function handleAuth" src/auth.ts && echo "PASS" || echo "FAIL"
-
-# Check if tests pass
-npm test -- --testPathPattern="auth" && echo "PASS" || echo "FAIL"
-
-# Check if build succeeds
-npm run build && echo "PASS" || echo "FAIL"
-```
+Prefer deterministic checks for requirements that can be expressed as assertions. Use the project's available tools to check the relevant files, run targeted tests, or verify a build. Preserve command exit statuses and each grader outcome.
 
 ### 2. Model-Based Grader
-Use Claude to evaluate open-ended outputs:
+Use an available, authorized model grader for open-ended outputs. Give it the same rubric and synthetic fixture for the baseline and candidate.
 ```markdown
 [MODEL GRADER PROMPT]
 Evaluate the following code change:
@@ -106,6 +96,9 @@ Risk Level: LOW/MEDIUM/HIGH
 ## Eval Workflow
 
 ### 1. Define (Before Coding)
+
+Use synthetic fixtures. Record the fixtures, grader, expected outcomes, and success thresholds before running the baseline.
+
 ```markdown
 ## EVAL DEFINITION: feature-xyz
 
@@ -128,70 +121,27 @@ Risk Level: LOW/MEDIUM/HIGH
 Write code to pass the defined evals.
 
 ### 3. Evaluate
-```bash
-# Run capability evals
-[Run each capability eval, record PASS/FAIL]
 
-# Run regression evals
-npm test -- --testPathPattern="existing"
+Find the existing local evaluation command in the project's documentation, scripts, or task configuration. Inspect its scope and run the applicable cases from the project directory. Compare the baseline and candidate with the same fixtures, rubric, configuration, and trial budget.
 
-# Generate report
-```
+If the evaluator is unavailable or refuses to run, record the reason. Use available focused checks where appropriate and label their results separately. Respect the evaluator's isolation controls and distinguish static inspection from a candidate run.
 
 ### 4. Report
 ```markdown
 EVAL REPORT: feature-xyz
-========================
-
-Capability Evals:
-  create-user:     PASS (pass@1)
-  validate-email:  PASS (pass@2)
-  hash-password:   PASS (pass@1)
-  Overall:         3/3 passed
-
-Regression Evals:
-  login-flow:      PASS
-  session-mgmt:    PASS
-  logout-flow:     PASS
-  Overall:         3/3 passed
-
-Metrics:
-  pass@1: 67% (2/3)
-  pass@3: 100% (3/3)
-
-Status: READY FOR REVIEW
+Baseline: [revision or checkpoint]
+Candidate: [revision or working-tree change]
+Evaluator and configuration: [local command, grader, fixture set]
+Capability results: [baseline and candidate outcomes]
+Regression results: [baseline and candidate outcomes]
+Trials and metrics: [counts and pass@k or pass^k where measured]
+Missing or skipped checks: [reason and scope]
+Evidence: [project-relative report or relevant output]
 ```
 
-## Integration Patterns
+## Project Evidence
 
-### Pre-Implementation
-```
-/eval define feature-name
-```
-Creates eval definition file at `.claude/evals/feature-name.md`
-
-### During Implementation
-```
-/eval check feature-name
-```
-Runs current evals and reports status
-
-### Post-Implementation
-```
-/eval report feature-name
-```
-Generates full eval report
-
-## Eval Storage
-
-Store evals in project:
-```
-.claude/
-  evals/
-    feature-xyz.md      # Eval definition
-    feature-xyz.log     # Eval run history
-    baseline.json       # Regression baselines
-```
+Follow the project's existing conventions for definitions, fixtures, baselines, and reports. If it has no eval storage convention, include the scoped report in the task output or the requested project artifact. Record only the evidence needed to reproduce the result. Keep credentials, private data, and unrelated session logs out of fixtures and reports.
 
 ## Best Practices
 
@@ -225,12 +175,10 @@ Regression Evals:
 [Write code]
 
 ### Phase 3: Evaluate
-Run: /eval check add-authentication
+Use synthetic accounts in the local test environment.
+Run the same available authentication checks against both revisions.
 
 ### Phase 4: Report
-EVAL REPORT: add-authentication
-==============================
-Capability: 5/5 passed (pass@3: 100%)
-Regression: 3/3 passed (pass^3: 100%)
-Status: SHIP IT
+Record per-case baseline and candidate results, including missing checks.
+Report reliability metrics only when they were measured.
 ```
