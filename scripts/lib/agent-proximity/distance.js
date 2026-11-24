@@ -246,10 +246,36 @@ function dependencyRisk(a, b, graph, opts = {}) {
 function treeRisk(a, b) {
   const filesA = a.files || [];
   const filesB = b.files || [];
+  if (filesA.length === 0 || filesB.length === 0) return 0;
+
+  // For a fixed shared prefix, the shortest path gives the closest distance.
+  // Index that depth once instead of splitting both paths for every cross pair.
+  const prefixes = new Map();
+  for (const file of filesB) {
+    const parts = segments(file.path);
+    let children = prefixes;
+    for (const part of parts) {
+      let node = children.get(part);
+      if (!node || parts.length < node.depth) {
+        node = { depth: parts.length, children: node ? node.children : new Map() };
+        children.set(part, node);
+      }
+      children = node.children;
+    }
+  }
+
   let minDist = 1;
   for (const fa of filesA) {
-    for (const fb of filesB) {
-      minDist = Math.min(minDist, treeDistance(fa.path, fb.path));
+    const parts = segments(fa.path);
+    let children = prefixes;
+    for (let index = 0; index < parts.length; index++) {
+      const node = children.get(parts[index]);
+      if (!node) break;
+      const shared = index + 1;
+      // Keep treeDistance's operation order, including floating-point rounding.
+      const distance = (parts.length - shared + (node.depth - shared)) / (parts.length + node.depth);
+      minDist = Math.min(minDist, distance);
+      children = node.children;
     }
   }
   return clamp01(1 - minDist);
