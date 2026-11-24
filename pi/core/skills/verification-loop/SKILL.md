@@ -40,7 +40,11 @@ Run the relevant local test suites and use the project's coverage command and th
 
 ### Phase 5: Security Scan
 
-Review files in scope for exposed credentials, unsafe logging, and permission changes. Use the project's configured local scanner in redacted or summary mode. For a lightweight working-tree check, use `git grep --untracked --exclude-standard --files-with-matches` with the project's patterns and scoped paths. This includes new, non-ignored files. Use the configured local scanner in redacted or summary mode for ignored files explicitly in scope. Interpret exit status 1 as no matches and a status greater than 1 as an error.
+Review files in scope for exposed credentials, unsafe logging, and permission changes. Run the project's configured local scanner in redacted or summary mode and interpret its exit codes according to its documented contract and configuration. For example, Gitleaks defaults to exit status 1 for a leak or an error.
+
+For a lightweight working-tree check, use `git grep --untracked --exclude-standard --files-with-matches` with the project's reviewed patterns and pass explicit in-scope paths after `--`. This includes new, non-ignored files. Use the configured local scanner in redacted or summary mode for ignored files explicitly in scope.
+
+For `git grep`, exit status 0 indicates matches, 1 indicates no matches, and a status greater than 1 indicates a check error.
 
 Report findings by rule, count, and applicable file location. Keep raw matches and private logs out of the report, tool output, PRs, and external services. Use synthetic examples to explain findings.
 
