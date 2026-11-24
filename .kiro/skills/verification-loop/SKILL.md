@@ -1,6 +1,6 @@
 ---
 name: verification-loop
-description: >
+description: Verify coding changes with project-pinned build, type, lint, test, security, and diff checks before handoff or a PR.
   A comprehensive verification system for Kiro sessions.
 metadata:
   origin: ECC
@@ -8,9 +8,9 @@ metadata:
 
 # Verification Loop Skill
 
-A comprehensive verification system for Kiro sessions.
+Verify the completed work with the project's local checks.
 
-## When to Use
+## When to Activate
 
 Invoke this skill:
 - After completing a feature or significant code change
@@ -20,72 +20,33 @@ Invoke this skill:
 
 ## Verification Phases
 
-### Phase 1: Build Verification
-```bash
-# Check if project builds
-npm run build 2>&1 | tail -20
-# OR
-pnpm build 2>&1 | tail -20
-```
+Review the repository's check definitions and use its installed, pinned toolchain. Select commands for the affected project and use the host's native shell. Review changed or unfamiliar scripts before running them. If a required command is missing, report the prerequisite and use the repository's pinned setup only when installation is in scope.
 
-If build fails, STOP and fix before continuing.
+### Phase 1: Build Verification
+
+Run the configured build for the affected package, such as `npm run build` or `pnpm build` when the corresponding script is present. Check its actual exit status before summarizing its output. Stop dependent checks when build fails and report the cause or fix it within the task scope.
 
 ### Phase 2: Type Check
-```bash
-# TypeScript projects
-npx tsc --noEmit 2>&1 | head -30
 
-# Python projects
-pyright . 2>&1 | head -30
-```
-
-Report all type errors. Fix critical ones before continuing.
+Run the repository's configured type-check command, such as `npm run typecheck` when defined. A known, already installed local type checker can be used for the affected modules. Report type errors without downloading a floating tool as a fallback.
 
 ### Phase 3: Lint Check
-```bash
-# JavaScript/TypeScript
-npm run lint 2>&1 | head -30
 
-# Python
-ruff check . 2>&1 | head -30
-```
+Run the configured lint target, such as `npm run lint` or a pinned, installed `ruff` for Python. Report the exit status, relevant diagnostics, and any warnings. Summarize or truncate logs only after saving the status of the original command.
 
 ### Phase 4: Test Suite
-```bash
-# Run tests with coverage
-npm run test -- --coverage 2>&1 | tail -50
 
-# Check coverage threshold
-# Target: 80% minimum
-```
-
-Report:
-- Total tests: X
-- Passed: X
-- Failed: X
-- Coverage: X%
+Run the relevant local test suites and use the project's coverage command and threshold when applicable. Record executed, passed, failed, and skipped tests and measured coverage. Identify checks that were blocked, cached, or found no tests.
 
 ### Phase 5: Security Scan
-```bash
-# Check for secrets
-grep -rn "sk-" --include="*.ts" --include="*.js" . 2>/dev/null | head -10
-grep -rn "api_key" --include="*.ts" --include="*.js" . 2>/dev/null | head -10
 
-# Check for console.log
-grep -rn "console.log" --include="*.ts" --include="*.tsx" src/ 2>/dev/null | head -10
-```
+Review files in scope for exposed credentials, unsafe logging, and permission changes. Use the project's configured local scanner in redacted or summary mode. For a lightweight Git check, use `git grep --files-with-matches` with the project's patterns and scoped paths. Interpret exit status 1 as no matches and a status greater than 1 as an error.
+
+Report findings by rule, count, and applicable file location. Keep raw matches and private logs out of the report, tool output, PRs, and external services. Use synthetic examples to explain findings.
 
 ### Phase 6: Diff Review
-```bash
-# Show what changed
-git diff --stat
-git diff HEAD~1 --name-only
-```
 
-Review each changed file for:
-- Unintended changes
-- Missing error handling
-- Potential edge cases
+Check the diff against the intended base, including staged or unstaged changes in scope. Review unintended changes, missing error handling, and edge cases.
 
 ## Target Acceptance
 
@@ -134,7 +95,7 @@ Set a mental checkpoint:
 - After finishing a component
 - Before moving to next task
 
-Run: /verify
+Use the verification-loop skill, or /verify where the host provides that command.
 ```
 
 ## Integration with Hooks
