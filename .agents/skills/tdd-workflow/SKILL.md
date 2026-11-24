@@ -77,6 +77,8 @@ Do not assume `npm test`. The commands in the steps and examples below use `<tes
 
    Otherwise, inspect the target package and its workspace root. Use the repository's documented choice or the `packageManager` field. If neither is available, use the lockfile for that workspace. Resolve conflicting repository signals before running tests.
 
+   If a test command requires a JavaScript package manager and no signal identifies one, ask which manager to use and report that command as blocked until the choice is confirmed. When no JavaScript package manager is needed, use the project's documented test commands directly.
+
    Confirm that the selected manager is already available. If it is missing or would be downloaded by a shim, report the prerequisite and use the repository's pinned setup only when installation is authorized.
 
 2. **Distinguish the package manager from the test runner — they are not the same.** A project can use Bun to install dependencies yet still run Jest or Vitest. Inspect `package.json` `scripts.test` and the test files:
