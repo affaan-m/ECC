@@ -74,6 +74,63 @@ class PaperTraderTests(unittest.TestCase):
         self.assertEqual(trade.exit_price, 9.9)
         self.assertAlmostEqual(result.realized_trade_max_drawdown_percent, 1.0)
 
+    def test_downward_crossover_exits_at_the_next_bar_open(self):
+        bars = bars_from_rows([
+            ("2026-01-01T00:00:00Z", 10.0, 10.1, 9.9, 10.0),
+            ("2026-01-01T00:01:00Z", 9.0, 9.1, 8.9, 9.0),
+            ("2026-01-01T00:02:00Z", 8.0, 8.1, 7.9, 8.0),
+            ("2026-01-01T00:03:00Z", 9.5, 9.6, 9.4, 9.5),
+            ("2026-01-01T00:04:00Z", 10.1, 10.2, 10.0, 10.1),
+            ("2026-01-01T00:05:00Z", 10.1, 10.3, 10.0, 10.2),
+            ("2026-01-01T00:06:00Z", 10.0, 10.1, 9.8, 9.9),
+            ("2026-01-01T00:07:00Z", 9.7, 9.8, 9.6, 9.75),
+        ])
+        config = paper_trader.BacktestConfig(
+            fast_window=1,
+            slow_window=3,
+            initial_balance=1000.0,
+            risk_per_trade=0.01,
+            stop_loss_percent=0.1,
+            take_profit_percent=0.5,
+        )
+
+        result = paper_trader.backtest(bars, config)
+
+        self.assertEqual(len(result.trades), 1)
+        trade = result.trades[0]
+        self.assertEqual(trade.entry_timestamp, "2026-01-01T00:04:00Z")
+        self.assertEqual(trade.exit_timestamp, "2026-01-01T00:07:00Z")
+        self.assertEqual(trade.exit_price, 9.7)
+        self.assertEqual(trade.exit_reason, "moving_average_cross")
+        self.assertAlmostEqual(result.final_balance, 996.0396039604)
+
+    def test_gap_below_stop_exits_at_the_opening_price(self):
+        bars = bars_from_rows([
+            ("2026-01-01T00:00:00Z", 10.0, 10.1, 9.9, 10.0),
+            ("2026-01-01T00:01:00Z", 9.0, 9.1, 8.9, 9.0),
+            ("2026-01-01T00:02:00Z", 8.0, 8.1, 7.9, 8.0),
+            ("2026-01-01T00:03:00Z", 9.5, 9.6, 9.4, 9.5),
+            ("2026-01-01T00:04:00Z", 10.1, 10.2, 10.0, 10.1),
+            ("2026-01-01T00:05:00Z", 9.8, 9.9, 9.7, 9.85),
+        ])
+        config = paper_trader.BacktestConfig(
+            fast_window=1,
+            slow_window=3,
+            initial_balance=1000.0,
+            risk_per_trade=0.01,
+            stop_loss_percent=0.01,
+            take_profit_percent=0.5,
+        )
+
+        result = paper_trader.backtest(bars, config)
+
+        self.assertEqual(len(result.trades), 1)
+        trade = result.trades[0]
+        self.assertEqual(trade.exit_timestamp, "2026-01-01T00:05:00Z")
+        self.assertEqual(trade.exit_price, 9.8)
+        self.assertEqual(trade.exit_reason, "stop_loss")
+        self.assertAlmostEqual(result.final_balance, 970.297029703)
+
     def test_position_size_never_exceeds_account_notional(self):
         config = paper_trader.BacktestConfig(
             fast_window=1,

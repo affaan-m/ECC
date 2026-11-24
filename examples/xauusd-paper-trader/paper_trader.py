@@ -156,11 +156,6 @@ def load_bars(path: Path) -> Tuple[Bar, ...]:
     return tuple(bars)
 
 
-def _moving_average(closes: Sequence[float], end_index: int, window: int) -> float:
-    start_index = end_index - window + 1
-    return sum(closes[start_index:end_index + 1]) / window
-
-
 def _close_position(
     position: Position, bar: Bar, exit_price: float, reason: str
 ) -> Trade:
@@ -221,14 +216,22 @@ def _protective_exit(position: Position, bar: Bar) -> Optional[Tuple[float, str]
 
 
 def _crossover_signal(
-    closes: Sequence[float], index: int, config: BacktestConfig
+    closes: Sequence[float],
+    index: int,
+    config: BacktestConfig,
+    fast_sum: float,
+    slow_sum: float,
 ) -> Optional[str]:
     if index < config.slow_window:
         return None
-    previous_fast = _moving_average(closes, index - 1, config.fast_window)
-    previous_slow = _moving_average(closes, index - 1, config.slow_window)
-    current_fast = _moving_average(closes, index, config.fast_window)
-    current_slow = _moving_average(closes, index, config.slow_window)
+    previous_fast = (
+        fast_sum - closes[index] + closes[index - config.fast_window]
+    ) / config.fast_window
+    previous_slow = (
+        slow_sum - closes[index] + closes[index - config.slow_window]
+    ) / config.slow_window
+    current_fast = fast_sum / config.fast_window
+    current_slow = slow_sum / config.slow_window
     if previous_fast <= previous_slow and current_fast > current_slow:
         return "enter"
     if previous_fast >= previous_slow and current_fast < current_slow:
@@ -247,8 +250,17 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig) -> BacktestResult:
     position: Optional[Position] = None
     pending_action = None
     balance = config.initial_balance
+    fast_sum = 0.0
+    slow_sum = 0.0
 
     for index, bar in enumerate(bars):
+        fast_sum += bar.close
+        slow_sum += bar.close
+        if index >= config.fast_window:
+            fast_sum -= closes[index - config.fast_window]
+        if index >= config.slow_window:
+            slow_sum -= closes[index - config.slow_window]
+
         position, trade, balance = _fill_pending_action(
             pending_action, position, bar, balance, config
         )
@@ -265,7 +277,7 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig) -> BacktestResult:
                 balance += trade.pnl_usd
                 position = None
 
-        signal = _crossover_signal(closes, index, config)
+        signal = _crossover_signal(closes, index, config, fast_sum, slow_sum)
         if signal == "enter" and position is None:
             pending_action = "enter"
         elif signal == "exit" and position is not None:
