@@ -70,6 +70,7 @@ ALWAYS write tests first, then implement code to make tests pass.
 - UI interactions
 
 ### 4. Git Checkpoints
+- Before the first checkpoint commit, run `git branch --show-current`. If you are on the repository's base branch (for example `main` or `master`), create a task branch first (for example `git switch -c feat/<short-task-name>`) so checkpoint commits stay off the base branch and `/pr` can open a pull request afterwards
 - If the repository is under Git, create a checkpoint commit after each TDD stage
 - Do not squash or rewrite these checkpoint commits until the workflow is complete
 - Each checkpoint commit message must describe the stage and the exact evidence captured
