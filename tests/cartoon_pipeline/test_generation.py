@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 from dataclasses import replace
 from datetime import date
@@ -353,19 +354,19 @@ def test_processor_retains_recovery_backup_if_restore_fails(
     landscape.write_bytes(b"old-landscape")
     vertical.write_bytes(b"old-vertical")
     original_replace = os.replace
-    restoration_started = False
 
     def fail_replacement_and_restore(source, destination) -> None:
-        nonlocal restoration_started
         source_path = Path(source)
         if Path(destination) == vertical and source_path.parent.name.startswith(
             "cartoon-output-"
         ):
             raise OSError("injected replacement failure")
-        if Path(destination) == landscape and source_path.name == "landscape.mp4":
-            if restoration_started:
-                raise OSError("injected restoration failure")
-            restoration_started = True
+        if (
+            Path(destination) == landscape
+            and source_path.name == "landscape.mp4"
+            and source_path.parent.name == "previous"
+        ):
+            raise OSError("injected restoration failure")
         original_replace(source, destination)
 
     monkeypatch.setattr(video_module.os, "replace", fail_replacement_and_restore)
@@ -452,3 +453,58 @@ def test_generation_retains_recovery_backup_if_restore_fails(
     assert len(recovery_directories) == 1
     assert (recovery_directories[0] / "landscape.mp4").read_bytes() == b"old-landscape"
     assert str(recovery_directories[0]) in str(error.value)
+
+
+def test_backup_copy_failure_cleans_partial_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "out"
+    output.mkdir()
+    (output / "landscape.mp4").write_bytes(b"old-landscape")
+    (output / "vertical.mp4").write_bytes(b"old-vertical")
+    original_copy = shutil.copy2
+    failed = False
+
+    def fail_second_copy(source, destination, *args, **kwargs):
+        nonlocal failed
+        if Path(source).name == "vertical.mp4" and not failed:
+            failed = True
+            raise OSError("injected backup copy failure")
+        return original_copy(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(generate_module.shutil, "copy2", fail_second_copy)
+
+    with pytest.raises(OSError, match="backup copy failure"):
+        generate_daily_episode(
+            output,
+            Path("config/content_policy.yaml"),
+            date(2026, 11, 23),
+            processor=FakeProcessor(),
+        )
+
+    assert not list(output.glob("cartoon-backup-*"))
+    assert (output / "landscape.mp4").read_bytes() == b"old-landscape"
+
+
+def test_successful_generation_cleanup_failure_does_not_roll_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "out"
+
+    monkeypatch.setattr(
+        generate_module.shutil,
+        "rmtree",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            OSError("injected cleanup failure")
+        ),
+    )
+
+    manifest_path = generate_daily_episode(
+        output,
+        Path("config/content_policy.yaml"),
+        date(2026, 11, 23),
+        processor=FakeProcessor(),
+    )
+
+    assert manifest_path.is_file()
+    assert load_episode(manifest_path).landscape_path.is_file()
