@@ -28,6 +28,7 @@ class PublicationLedger:
     def reserve(self, episode_id: str, platform: str) -> str:
         now = datetime.now(UTC).isoformat()
         with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT status FROM publications WHERE episode_id = ? AND platform = ?",
                 (episode_id, platform),
@@ -37,7 +38,7 @@ class PublicationLedger:
                 if status in {"published", "submitted"}:
                     return "already_published"
                 if status == "failed":
-                    connection.execute(
+                    cursor = connection.execute(
                         """
                         UPDATE publications
                         SET status = 'in_progress', updated_at = ?
@@ -45,6 +46,10 @@ class PublicationLedger:
                         """,
                         (now, episode_id, platform),
                     )
+                    if cursor.rowcount != 1:
+                        raise RuntimeError(
+                            f"Previous {platform} attempt requires reconciliation before retry"
+                        )
                     return "reserved"
                 raise RuntimeError(
                     f"Previous {platform} attempt requires reconciliation before retry"

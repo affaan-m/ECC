@@ -190,3 +190,36 @@ def test_processor_preserves_previous_output_if_encoding_fails(
         ).process(generate_storyboard(date(2026, 11, 23)), output)
 
     assert previous.read_bytes() == b"previous"
+
+
+def test_failed_vertical_render_preserves_previous_complete_episode(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "out"
+    output.mkdir()
+    landscape = output / "landscape.mp4"
+    vertical = output / "vertical.mp4"
+    manifest = output / "episode.json"
+    landscape.write_bytes(b"old-landscape")
+    vertical.write_bytes(b"old-vertical")
+    manifest.write_text("old-manifest", encoding="utf-8")
+    calls = 0
+
+    def fail_vertical(command: list[str], **kwargs) -> subprocess.CompletedProcess:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            Path(command[-1]).write_bytes(b"new-landscape")
+            return subprocess.CompletedProcess(command, 0)
+        raise subprocess.CalledProcessError(1, command)
+
+    with pytest.raises(RenderError):
+        FFmpegProcessor(
+            frames_per_second=1,
+            seconds_per_scene=1,
+            runner=fail_vertical,
+        ).process(generate_storyboard(date(2026, 11, 23)), output)
+
+    assert landscape.read_bytes() == b"old-landscape"
+    assert vertical.read_bytes() == b"old-vertical"
+    assert manifest.read_text(encoding="utf-8") == "old-manifest"

@@ -409,7 +409,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install Python dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]' -r requirements.txt
 
       - name: Run ruff (lint)
         run: python -m ruff check src tests skills/ecc-contribution-review/scripts skills/ecc-contribution-review/tests

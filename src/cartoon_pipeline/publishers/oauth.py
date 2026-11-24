@@ -82,14 +82,23 @@ class OAuthTokenProvider:
                 timeout=20,
             )
         except httpx.HTTPError as exc:
-            raise OAuthError(f"{self.credentials.provider} OAuth refresh failed") from exc
+            raise OAuthError(
+                f"{self.credentials.provider} OAuth refresh failed",
+                retry_safe=True,
+            ) from exc
         try:
             payload = require_json(response, self.credentials.provider)
         except ProviderError as exc:
-            raise OAuthError(f"{self.credentials.provider} OAuth refresh failed") from exc
+            raise OAuthError(
+                f"{self.credentials.provider} OAuth refresh failed",
+                retry_safe=True,
+            ) from exc
         access_token = payload.get("access_token")
         if not isinstance(access_token, str) or not access_token.strip():
-            raise OAuthError(f"{self.credentials.provider} OAuth response lacks an access token")
+            raise OAuthError(
+                f"{self.credentials.provider} OAuth response lacks an access token",
+                retry_safe=True,
+            )
         rotated = payload.get("refresh_token")
         if isinstance(rotated, str) and rotated and rotated != self.credentials.refresh_token:
             raise OAuthError(

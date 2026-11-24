@@ -43,8 +43,26 @@ def test_oauth_rotation_fails_closed_instead_of_losing_new_refresh_secret() -> N
         client=client,
     )
 
-    with pytest.raises(OAuthError, match="rotated its refresh token"):
+    with pytest.raises(OAuthError, match="rotated its refresh token") as error:
         provider.get_access_token()
+
+    assert error.value.retry_safe is False
+
+
+def test_oauth_network_failure_is_safe_to_retry_before_upload() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection unavailable", request=request)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    provider = OAuthTokenProvider(
+        OAuthCredentials("youtube", "client-id", "client-secret", "refresh-token"),
+        client=client,
+    )
+
+    with pytest.raises(OAuthError) as error:
+        provider.get_access_token()
+
+    assert error.value.retry_safe is True
 
 
 def test_oauth_credentials_are_read_from_environment_names_only() -> None:

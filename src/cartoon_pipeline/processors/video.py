@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 import subprocess
 import tempfile
 from collections.abc import Callable
@@ -42,8 +43,29 @@ class FFmpegProcessor:
             vertical = safe_output_file(output_directory, "vertical.mp4")
         except UnsafeOutputPathError as exc:
             raise RenderError("Unsafe cartoon output path") from exc
-        self._render_variant(storyboard, landscape, (1280, 720), "landscape")
-        self._render_variant(storyboard, vertical, (720, 1280), "vertical")
+        try:
+            with tempfile.TemporaryDirectory(
+                prefix="cartoon-output-", dir=output_directory
+            ) as staged_directory:
+                staged = Path(staged_directory)
+                staged_landscape = staged / "landscape.mp4"
+                staged_vertical = staged / "vertical.mp4"
+                self._render_variant(
+                    storyboard, staged_landscape, (1280, 720), "landscape"
+                )
+                self._render_variant(
+                    storyboard, staged_vertical, (720, 1280), "vertical"
+                )
+                manifest = safe_output_file(output_directory, "episode.json")
+                safe_output_file(output_directory, "landscape.mp4")
+                safe_output_file(output_directory, "vertical.mp4")
+                manifest.unlink(missing_ok=True)
+                os.replace(staged_landscape, landscape)
+                os.replace(staged_vertical, vertical)
+        except UnsafeOutputPathError as exc:
+            raise RenderError("Unsafe cartoon output path") from exc
+        except OSError as exc:
+            raise RenderError("Unable to replace the completed cartoon assets") from exc
         return landscape, vertical
 
     def _render_variant(
