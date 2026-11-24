@@ -425,3 +425,12 @@ def test_tiktok_floor_chunk_plan_uses_one_final_remainder_chunk(
     assert upload_requests[0].headers["content-range"] == (
         f"bytes 0-{6 * mib - 1}/{6 * mib}"
     )
+
+
+def test_tiktok_chunk_plan_defines_the_64_mib_boundary() -> None:
+    mib = 1024 * 1024
+    publisher = TikTokPublisher(StaticToken())
+
+    assert publisher._chunk_plan(64 * mib) == (64 * mib, 1)
+    assert publisher._chunk_plan(64 * mib + 1) == (64 * mib, 1)
+    assert publisher._chunk_plan(128 * mib) == (64 * mib, 2)
