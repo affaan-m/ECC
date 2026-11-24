@@ -73,7 +73,9 @@ ALWAYS write tests first, then implement code to make tests pass.
 
 Do not assume `npm test`. The commands in the steps and examples below use `<test>`, `<test-watch>`, and `<coverage>` as placeholders for the project's actual runner. Resolve them once before starting:
 
-1. **Resolve the package manager from the project under test.** Inspect the target package and its workspace root. Use the repository's documented choice or the `packageManager` field. If neither is available, use the lockfile for that workspace. Resolve conflicting signals before running tests.
+1. **Resolve the package manager from the project under test.** For tests that need a JavaScript package manager, honor ECC's `CLAUDE_PACKAGE_MANAGER` override if it is already set to `npm`, `pnpm`, `yarn`, or `bun` in the current environment. It takes precedence over repository signals. Report the override and any disagreement with the project's pinned manager before running tests.
+
+   Otherwise, inspect the target package and its workspace root. Use the repository's documented choice or the `packageManager` field. If neither is available, use the lockfile for that workspace. Resolve conflicting repository signals before running tests.
 
    Confirm that the selected manager is already available. If it is missing or would be downloaded by a shim, report the prerequisite and use the repository's pinned setup only when installation is authorized.
 
