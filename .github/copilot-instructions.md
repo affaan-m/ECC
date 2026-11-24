@@ -113,3 +113,7 @@ Use these prompts in Copilot Chat for deeper workflows:
 | `/refactor` | Code maintenance | Dead code cleanup and simplification |
 
 To use: open Copilot Chat, type `/` and select the prompt from the picker.
+
+## Daily Cartoon Pipeline Safety
+
+The optional `src/cartoon_pipeline` example handles content for children. Keep its publishing path fail-closed: generated episodes require a protected GitHub Environment review, platform privacy flags must remain explicit, and the SQLite publication ledger must live on persistent storage. Do not add child data collection, bypass provider consent/app review, or send real provider requests from tests. The configured AgentShield action audits workflow and connector directories; it complements, but does not replace, source review and mocked API tests.

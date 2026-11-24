@@ -1,0 +1,1 @@
+"""Provider-specific publishing adapters."""

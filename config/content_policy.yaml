@@ -1,0 +1,17 @@
+version: 1
+audience:
+  minimum_age: 8
+  maximum_age: 15
+  hard_maximum_age: 15
+platform_restrictions:
+  tiktok_minimum_audience_age: 13
+  tiktok_direct_post_enabled: false
+content:
+  require_original: true
+  require_rights_clearance: true
+  require_made_for_kids: true
+  reject_personal_data: true
+  human_review_required: true
+  maximum_title_characters: 100
+  maximum_description_characters: 5000
+  maximum_asset_bytes: 536870912

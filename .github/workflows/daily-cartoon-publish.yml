@@ -1,0 +1,83 @@
+name: Daily cartoon pipeline
+
+on:
+  schedule:
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Request publishing after a protected-environment review"
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: daily-cartoon-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    name: Generate reviewable cartoon
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: src
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install pinned pipeline dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Verify local video encoder
+        run: ffmpeg -version
+      - name: Generate episode
+        run: python -m cartoon_pipeline generate --output build/cartoon
+      - name: Upload review artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: daily-cartoon-episode
+          path: build/cartoon/
+          if-no-files-found: error
+          retention-days: 2
+
+  publish:
+    name: Publish reviewed episode
+    if: (github.event_name == 'schedule' || inputs.publish == true) && github.ref == 'refs/heads/main'
+    needs: generate
+    runs-on: [self-hosted, linux, cartoon-pipeline]
+    timeout-minutes: 30
+    environment:
+      name: cartoon-production
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download generated episode for review
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: daily-cartoon-episode
+          path: build/cartoon/
+      - name: Publish to enabled providers
+        env:
+          CARTOON_HUMAN_APPROVED: "true"
+          CARTOON_LEDGER_PATH: /var/lib/cartoon-pipeline/publications.sqlite3
+          PYTHONPATH: src
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          DAILYMOTION_CLIENT_ID: ${{ secrets.DAILYMOTION_CLIENT_ID }}
+          DAILYMOTION_CLIENT_SECRET: ${{ secrets.DAILYMOTION_CLIENT_SECRET }}
+          DAILYMOTION_PROFILE_ID: ${{ secrets.DAILYMOTION_PROFILE_ID }}
+        run: python -m cartoon_pipeline publish --episode build/cartoon/episode.json

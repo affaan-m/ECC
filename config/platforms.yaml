@@ -1,0 +1,21 @@
+version: 1
+platforms:
+  youtube:
+    enabled: true
+    privacy_status: private
+    category_id: "1"
+    required_scope: https://www.googleapis.com/auth/youtube.upload
+  dailymotion:
+    enabled: true
+    profile_id_env: DAILYMOTION_PROFILE_ID
+    visibility: private
+    category: kids
+    required_scope: video.manage
+  tiktok:
+    enabled: false
+    direct_post_enabled: false
+    privacy_level: SELF_ONLY
+    disable_comments: true
+    disable_duet: true
+    disable_stitch: true
+    required_scope: video.publish
