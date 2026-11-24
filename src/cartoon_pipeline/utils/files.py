@@ -23,6 +23,8 @@ def prepare_output_directory(directory: Path) -> Path:
 
 
 def _reject_symlink_components(directory: Path) -> None:
+    if ".." in directory.parts:
+        raise UnsafeOutputPathError("Output path must not contain parent traversal")
     absolute = Path(os.path.abspath(directory))
     current = Path(absolute.anchor)
     for component in absolute.parts[1:]:

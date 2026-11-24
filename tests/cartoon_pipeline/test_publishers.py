@@ -390,7 +390,10 @@ def test_tiktok_floor_chunk_plan_uses_one_final_remainder_chunk(
                 },
             )
         if request.method == "PUT":
-            return httpx.Response(201)
+            content_range = request.headers["content-range"]
+            if content_range.startswith("bytes 5"):
+                return httpx.Response(201)
+            return httpx.Response(206)
         return httpx.Response(
             200,
             json={
@@ -420,10 +423,13 @@ def test_tiktok_floor_chunk_plan_uses_one_final_remainder_chunk(
     upload_requests = [request for request in requests if request.method == "PUT"]
     source_info = json.loads(initialization.content)["source_info"]
     assert source_info["chunk_size"] == 5 * mib
-    assert source_info["total_chunk_count"] == 1
-    assert len(upload_requests) == 1
+    assert source_info["total_chunk_count"] == 2
+    assert len(upload_requests) == 2
     assert upload_requests[0].headers["content-range"] == (
-        f"bytes 0-{6 * mib - 1}/{6 * mib}"
+        f"bytes 0-{5 * mib - 1}/{6 * mib}"
+    )
+    assert upload_requests[1].headers["content-range"] == (
+        f"bytes {5 * mib}-{6 * mib - 1}/{6 * mib}"
     )
 
 
@@ -432,5 +438,6 @@ def test_tiktok_chunk_plan_defines_the_64_mib_boundary() -> None:
     publisher = TikTokPublisher(StaticToken())
 
     assert publisher._chunk_plan(64 * mib) == (64 * mib, 1)
-    assert publisher._chunk_plan(64 * mib + 1) == (64 * mib, 1)
+    assert publisher._chunk_plan(64 * mib + 1) == ((64 * mib + 2) // 2, 2)
     assert publisher._chunk_plan(128 * mib) == (64 * mib, 2)
+    assert publisher._chunk_plan(128 * mib + 1) == (64 * mib, 3)

@@ -28,39 +28,43 @@ def generate_daily_episode(
     policy = load_content_policy(policy_path)
     storyboard = generate_storyboard(day)
     output_directory = prepare_output_directory(output_directory)
-    with tempfile.TemporaryDirectory(
-        prefix="cartoon-backup-", dir=output_directory
-    ) as backup_directory:
-        backups = _backup_episode_outputs(output_directory, Path(backup_directory))
+    backup_directory = Path(
+        tempfile.mkdtemp(prefix="cartoon-backup-", dir=output_directory)
+    )
+    backups = _backup_episode_outputs(output_directory, backup_directory)
+    try:
+        landscape, vertical = (processor or FFmpegProcessor()).process(
+            storyboard, output_directory
+        )
+        episode = Episode(
+            episode_id=day.isoformat(),
+            title=storyboard.title,
+            description=storyboard.description,
+            story=storyboard.beats,
+            episode_date=day,
+            landscape_path=landscape,
+            vertical_path=vertical,
+            audience_min_age=policy.minimum_age,
+            audience_max_age=policy.maximum_age,
+            made_for_kids=True,
+            original=True,
+            rights_cleared=True,
+            safety_reviewed=True,
+            contains_personal_data=False,
+        )
+        result = save_episode(episode, output_directory)
+        shutil.rmtree(backup_directory)
+        return result
+    except Exception:
         try:
-            landscape, vertical = (processor or FFmpegProcessor()).process(
-                storyboard, output_directory
-            )
-            episode = Episode(
-                episode_id=day.isoformat(),
-                title=storyboard.title,
-                description=storyboard.description,
-                story=storyboard.beats,
-                episode_date=day,
-                landscape_path=landscape,
-                vertical_path=vertical,
-                audience_min_age=policy.minimum_age,
-                audience_max_age=policy.maximum_age,
-                made_for_kids=True,
-                original=True,
-                rights_cleared=True,
-                safety_reviewed=True,
-                contains_personal_data=False,
-            )
-            return save_episode(episode, output_directory)
-        except Exception:
-            try:
-                _restore_episode_outputs(output_directory, backups)
-            except Exception as restore_error:
-                raise RuntimeError(
-                    "Episode generation failed and previous outputs could not be restored"
-                ) from restore_error
-            raise
+            _restore_episode_outputs(output_directory, backups)
+        except Exception as restore_error:
+            raise RuntimeError(
+                "Episode generation failed and previous outputs could not be "
+                f"restored; recovery copies retained at {backup_directory}"
+            ) from restore_error
+        shutil.rmtree(backup_directory)
+        raise
 
 
 def _backup_episode_outputs(

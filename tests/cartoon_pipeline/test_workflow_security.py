@@ -71,6 +71,7 @@ def test_security_workflow_uses_supported_specialized_scanners() -> None:
 
     assert "affaan-m/agentshield@" in content
     assert "zizmorcore/zizmor-action@" in content
+    assert "version: v1.33.0" in content
     assert "inputs: .github/workflows" in content
     assert "bandit==1.9.4" in content
     assert "python -m bandit -r src/cartoon_pipeline -ll" in content

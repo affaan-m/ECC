@@ -75,12 +75,22 @@ class FFmpegProcessor:
                     os.replace(staged_landscape, landscape)
                     os.replace(staged_vertical, vertical)
                 except OSError:
+                    recovery_directory = Path(
+                        tempfile.mkdtemp(
+                            prefix="cartoon-previous-", dir=output_directory
+                        )
+                    )
                     try:
+                        for target, backup in backups.items():
+                            if backup is not None:
+                                shutil.copy2(backup, recovery_directory / target.name)
                         _restore_outputs(backups)
                     except OSError as restore_error:
                         raise RenderError(
-                            "Unable to restore the previous cartoon assets"
+                            "Unable to restore the previous cartoon assets; "
+                            f"recovery copies retained at {recovery_directory}"
                         ) from restore_error
+                    shutil.rmtree(recovery_directory)
                     raise
         except UnsafeOutputPathError as exc:
             raise RenderError("Unsafe cartoon output path") from exc

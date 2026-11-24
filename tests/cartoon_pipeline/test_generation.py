@@ -8,11 +8,16 @@ from pathlib import Path
 import pytest
 
 import cartoon_pipeline.generate as generate_module
+import cartoon_pipeline.processors.video as video_module
 from cartoon_pipeline.episode_io import load_episode, save_episode
 from cartoon_pipeline.generate import generate_daily_episode
 from cartoon_pipeline.generators.storyboard import generate_storyboard
 from cartoon_pipeline.models import Episode
 from cartoon_pipeline.processors.video import FFmpegProcessor, RenderError, _draw_frame
+from cartoon_pipeline.utils.files import (
+    UnsafeOutputPathError,
+    prepare_output_directory,
+)
 
 
 class FakeProcessor:
@@ -231,6 +236,21 @@ def test_processor_rejects_symlinked_ancestor_before_creating_output(
     assert list(outside.iterdir()) == []
 
 
+def test_output_directory_rejects_parent_traversal_through_symlink(
+    tmp_path: Path,
+) -> None:
+    outside_child = tmp_path / "outside" / "child"
+    outside_child.mkdir(parents=True)
+    linked_parent = tmp_path / "linked-parent"
+    linked_parent.symlink_to(outside_child, target_is_directory=True)
+
+    with pytest.raises(UnsafeOutputPathError, match="parent traversal"):
+        prepare_output_directory(linked_parent / ".." / "episode")
+
+    assert not (tmp_path / "outside" / "episode").exists()
+    assert not (tmp_path / "episode").exists()
+
+
 def test_processor_preserves_previous_output_if_encoding_fails(
     tmp_path: Path,
 ) -> None:
@@ -323,6 +343,48 @@ def test_second_asset_replacement_failure_restores_previous_episode(
     assert manifest.read_text(encoding="utf-8") == "old-manifest"
 
 
+def test_processor_retains_recovery_backup_if_restore_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "out"
+    output.mkdir()
+    landscape = output / "landscape.mp4"
+    vertical = output / "vertical.mp4"
+    landscape.write_bytes(b"old-landscape")
+    vertical.write_bytes(b"old-vertical")
+    original_replace = os.replace
+    restoration_started = False
+
+    def fail_replacement_and_restore(source, destination) -> None:
+        nonlocal restoration_started
+        source_path = Path(source)
+        if Path(destination) == vertical and source_path.parent.name.startswith(
+            "cartoon-output-"
+        ):
+            raise OSError("injected replacement failure")
+        if Path(destination) == landscape and source_path.name == "landscape.mp4":
+            if restoration_started:
+                raise OSError("injected restoration failure")
+            restoration_started = True
+        original_replace(source, destination)
+
+    monkeypatch.setattr(video_module.os, "replace", fail_replacement_and_restore)
+
+    def fake_runner(command: list[str], **kwargs) -> subprocess.CompletedProcess:
+        Path(command[-1]).write_bytes(b"new-video")
+        return subprocess.CompletedProcess(command, 0)
+
+    with pytest.raises(RenderError, match="recovery copies retained") as error:
+        FFmpegProcessor(
+            frames_per_second=1, seconds_per_scene=1, runner=fake_runner
+        ).process(generate_storyboard(date(2026, 11, 23)), output)
+
+    recovery_directories = list(output.glob("cartoon-previous-*"))
+    assert len(recovery_directories) == 1
+    assert (recovery_directories[0] / "landscape.mp4").read_bytes() == b"old-landscape"
+    assert str(recovery_directories[0]) in str(error.value)
+
+
 def test_generation_restores_previous_episode_if_manifest_save_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -350,3 +412,43 @@ def test_generation_restores_previous_episode_if_manifest_save_fails(
         )
 
     assert {name: (output / name).read_bytes() for name in expected} == expected
+
+
+def test_generation_retains_recovery_backup_if_restore_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "out"
+    output.mkdir()
+    expected = {
+        "landscape.mp4": b"old-landscape",
+        "vertical.mp4": b"old-vertical",
+        "episode.json": b"old-manifest",
+    }
+    for name, contents in expected.items():
+        (output / name).write_bytes(contents)
+
+    def fail_save(*args, **kwargs):
+        raise OSError("injected manifest failure")
+
+    original_replace = os.replace
+
+    def fail_restore(source, destination) -> None:
+        if Path(source).parent.name.startswith("cartoon-backup-"):
+            raise OSError("injected restoration failure")
+        original_replace(source, destination)
+
+    monkeypatch.setattr(generate_module, "save_episode", fail_save)
+    monkeypatch.setattr(generate_module.os, "replace", fail_restore)
+
+    with pytest.raises(RuntimeError, match="recovery copies retained") as error:
+        generate_daily_episode(
+            output,
+            Path("config/content_policy.yaml"),
+            date(2026, 11, 23),
+            processor=FakeProcessor(),
+        )
+
+    recovery_directories = list(output.glob("cartoon-backup-*"))
+    assert len(recovery_directories) == 1
+    assert (recovery_directories[0] / "landscape.mp4").read_bytes() == b"old-landscape"
+    assert str(recovery_directories[0]) in str(error.value)

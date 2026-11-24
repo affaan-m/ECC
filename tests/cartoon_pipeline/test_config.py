@@ -30,6 +30,14 @@ def test_load_yaml_rejects_duplicate_mapping_keys(tmp_path: Path) -> None:
         load_yaml(path)
 
 
+def test_load_yaml_rejects_unhashable_mapping_keys(tmp_path: Path) -> None:
+    path = tmp_path / "unhashable.yaml"
+    path.write_text("? [a, b]\n: value\n", encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="read configuration"):
+        load_yaml(path)
+
+
 def test_content_policy_rejects_unsupported_version(tmp_path: Path) -> None:
     path = tmp_path / "policy.yaml"
     path.write_text("version: 2\n", encoding="utf-8")

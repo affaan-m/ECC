@@ -256,12 +256,15 @@ class TikTokPublisher:
             raise ProviderError("TikTok video asset is empty", retry_safe=True)
         if size <= self.chunk_size:
             return size, 1
-        chunk_count = size // self.chunk_size
+        chunk_size = self.chunk_size
+        if size > _MAX_CHUNK_BYTES:
+            chunk_size = min(_MAX_CHUNK_BYTES, max(_MIN_CHUNK_BYTES, (size + 1) // 2))
+        chunk_count = (size + chunk_size - 1) // chunk_size
         if chunk_count > 1000:
             raise ProviderError(
                 "TikTok video exceeds the upload chunk limit", retry_safe=True
             )
-        return self.chunk_size, chunk_count
+        return chunk_size, chunk_count
 
 
 def _required_string(payload: dict, key: str) -> str:
