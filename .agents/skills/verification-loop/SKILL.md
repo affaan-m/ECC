@@ -42,6 +42,8 @@ Review files in scope for exposed credentials, unsafe logging, and permission ch
 
 For a lightweight working-tree check, use `git grep --untracked --exclude-standard --files-with-matches` with the project's reviewed patterns and pass explicit in-scope paths after `--`. This includes new, non-ignored files. Use the configured local scanner in redacted or summary mode for ignored files explicitly in scope.
 
+Separately, use `git grep --cached --files-with-matches` with the same patterns and paths to check what is staged in the index.
+
 For `git grep`, exit status 0 indicates matches, 1 indicates no matches, and a status greater than 1 indicates a check error.
 
 Report findings by rule, count, and applicable file location. Keep raw matches and private logs out of the report, tool output, PRs, and external services. Use synthetic examples to explain findings.
