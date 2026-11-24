@@ -516,7 +516,7 @@ You can also install explicit skills or capabilities:
 node scripts/ecc.js install --profile minimal --target claude --with capability:machine-learning
 ```
 
-Manual component-by-component copying also works. Each component is fully independent:
+To copy selected components by hand, run the commands you need from the ECC checkout.
 
 ```bash
 # Just agents
@@ -528,16 +528,16 @@ mkdir -p ~/.claude/rules/ecc
 cp -r rules/common ~/.claude/rules/ecc/
 cp -r rules/typescript ~/.claude/rules/ecc/   # pick your stack
 
-# Core/general skills only (Claude Code loads skills from direct children
-# of ~/.claude/skills; do not nest manual installs under ~/.claude/skills/ecc/)
+# Selected skills (copy whole directories so supporting files travel with them)
 mkdir -p ~/.claude/skills
-cp -r .agents/skills/* ~/.claude/skills/
-cp -r skills/search-first ~/.claude/skills/
+cp -R skills/search-first skills/coding-standards ~/.claude/skills/
 
 # Optional: maintained slash-command compatibility during migration
 mkdir -p ~/.claude/commands
 cp commands/*.md ~/.claude/commands/
 ```
+
+Choose additional skills from the canonical `skills/` directory. Claude Code discovers each skill at `~/.claude/skills/<skill-name>/SKILL.md`. If a skill calls an ECC helper, follow the setup instructions in that skill for the helper.
 
 Retired shims live in `legacy-command-shims/`. Copy individual files from there only if you still need old names such as `/tdd`.
 </details>
@@ -876,7 +876,7 @@ ECC/
 |-- docs/             # public setup, architecture, and operating guides
 ```
 
-The root is the source of truth. Platform adapters package or map these same workflows instead of maintaining separate copies.
+The root directories are the source of truth. Some harnesses ship adapted copies of these workflows. Use the installer or setup guide for your harness to get its intended layout.
 
 <details>
 <summary><strong>Annotated component catalog</strong></summary>

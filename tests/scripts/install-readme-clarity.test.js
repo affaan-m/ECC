@@ -291,6 +291,19 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('README manual Claude skill copies use canonical skill bundles', () => {
+    const section = readme.split('<summary><strong>Choose only the components you need</strong></summary>')[1]
+      .split('</details>')[0];
+    const skillCopies = [...section.matchAll(/^cp -[rR] (.+) ~\/\.claude\/skills\/$/gm)];
+    assert.ok(skillCopies.length > 0, 'expected a manual Claude skill copy example');
+    for (const [, sources] of skillCopies) {
+      for (const source of sources.split(/\s+/)) {
+        assert.match(source, /^skills\/[a-z0-9-]+$/, 'copy each selected canonical skill directory');
+        assert.ok(fs.existsSync(path.join(path.dirname(README), source, 'SKILL.md')), source);
+      }
+    }
+  })) passed++; else failed++;
+
   if (test('rules README mirrors ECC namespaced install path', () => {
     assert.ok(
       rulesReadme.includes('mkdir -p ~/.claude/rules/ecc'),
