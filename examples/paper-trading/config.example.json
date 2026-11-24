@@ -1,0 +1,19 @@
+{
+  "scheduler_interval_seconds": 60,
+  "scheduler_max_retries": 3,
+  "scheduler_retry_base_seconds": 1,
+  "base_quantity_by_symbol": {
+    "XAUUSD": 0.1,
+    "XAGUSD": 1
+  },
+  "risk_limits": {
+    "max_order_quantity": 1,
+    "max_position_notional_usd": 5000,
+    "max_total_notional_usd": 10000,
+    "max_daily_loss_usd": 250,
+    "max_concurrent_positions": 2
+  },
+  "enabled_roles": [],
+  "auto_paper_execute": true,
+  "database_path": "paper-trader.sqlite3"
+}

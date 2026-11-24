@@ -1,0 +1,9 @@
+[project]
+name = "ecc-paper-trading-example"
+version = "0.1.0"
+description = "Mock-only XAUUSD and XAGUSD paper-trading example"
+requires-python = ">=3.9"
+dependencies = []
+
+[tool.unittest]
+test-directory = "tests"

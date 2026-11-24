@@ -1,0 +1,5 @@
+__pycache__/
+*.py[cod]
+paper-trader.sqlite3
+paper-trader.sqlite3-shm
+paper-trader.sqlite3-wal
