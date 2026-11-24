@@ -58,6 +58,14 @@ def _mean(values):
     return statistics.fmean(values)
 
 
+def _ema(values, period):
+    smoothing = 2 / (period + 1)
+    average = values[0]
+    for value in values[1:]:
+        average += smoothing * (value - average)
+    return average
+
+
 def _features(candles, quote):
     closes = [candle.close for candle in candles]
     highs = [candle.high for candle in candles]
@@ -111,8 +119,8 @@ def _features(candles, quote):
         ),
         "sma_gap_5": _scaled(closes[-1] / _mean(closes[-5:]) - 1, 500),
         "sma_gap_10": _scaled(closes[-1] / _mean(closes[-10:]) - 1, 350),
-        "ema_gap_5": _scaled(closes[-1] / _mean(closes[-5:]) - 1, 500),
-        "ema_gap_10": _scaled(closes[-1] / _mean(closes[-10:]) - 1, 350),
+        "ema_gap_5": _scaled(closes[-1] / _ema(closes, 5) - 1, 500),
+        "ema_gap_10": _scaled(closes[-1] / _ema(closes, 10) - 1, 350),
         "higher_highs": (
             1.0 if highs[-1] > highs[-2] and lows[-1] > lows[-2]
             else -1.0 if highs[-1] < highs[-2] and lows[-1] < lows[-2]
@@ -185,10 +193,14 @@ def aggregate_signals(symbol, evidence, min_domains=2, min_confidence=0.2):
 
     score = _mean(independent_scores)
     confidence = abs(score)
-    if confidence < min_confidence:
+    direction = 1 if score > 0 else -1 if score < 0 else 0
+    agreeing_domains = sum(
+        domain_score * direction > 0 for domain_score in independent_scores
+    )
+    if direction == 0 or confidence < min_confidence or agreeing_domains < min_domains:
         side = Side.HOLD
     else:
-        side = Side.BUY if score > 0 else Side.SELL
+        side = Side.BUY if direction > 0 else Side.SELL
     return Signal(symbol, side, confidence, tuple(evidence))
 
 

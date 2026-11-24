@@ -2,11 +2,23 @@ import os
 import sqlite3
 import threading
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
 
 _SCHEMA = (
+    """
+    CREATE TABLE IF NOT EXISTS paper_trading_mutex (
+        lock_id INTEGER PRIMARY KEY,
+        marker INTEGER NOT NULL
+    )
+    """,
+    """
+    INSERT INTO paper_trading_mutex (lock_id, marker)
+    VALUES (1, 1)
+    ON CONFLICT (lock_id) DO NOTHING
+    """,
     """
     CREATE TABLE IF NOT EXISTS paper_trades (
         trade_id VARCHAR(32) PRIMARY KEY,
@@ -45,6 +57,7 @@ class DBAPITradeJournal:
         self._connection = connection
         self._placeholder = placeholder
         self._lock = threading.RLock()
+        self._transaction_local = threading.local()
         self._initialize()
 
     def _initialize(self):
@@ -62,6 +75,7 @@ class DBAPITradeJournal:
     def _run(self, statement, params=(), fetch="none"):
         with self._lock:
             cursor = self._connection.cursor()
+            in_transaction = getattr(self._transaction_local, "depth", 0) > 0
             try:
                 cursor.execute(statement, params)
                 if fetch == "one":
@@ -73,12 +87,45 @@ class DBAPITradeJournal:
                     ]
                 else:
                     result = cursor.rowcount
-                self._connection.commit()
+                if not in_transaction:
+                    self._connection.commit()
                 return result
+            except Exception:
+                if not in_transaction:
+                    self._connection.rollback()
+                raise
+            finally:
+                cursor.close()
+
+    def _begin_transaction(self, cursor):
+        cursor.execute("BEGIN")
+        cursor.execute(
+            "SELECT lock_id FROM paper_trading_mutex WHERE lock_id = 1 FOR UPDATE"
+        )
+
+    @contextmanager
+    def transaction(self):
+        with self._lock:
+            depth = getattr(self._transaction_local, "depth", 0)
+            if depth:
+                self._transaction_local.depth = depth + 1
+                try:
+                    yield self
+                finally:
+                    self._transaction_local.depth = depth
+                return
+
+            cursor = self._connection.cursor()
+            try:
+                self._begin_transaction(cursor)
+                self._transaction_local.depth = 1
+                yield self
+                self._connection.commit()
             except Exception:
                 self._connection.rollback()
                 raise
             finally:
+                self._transaction_local.depth = 0
                 cursor.close()
 
     @staticmethod
@@ -175,6 +222,9 @@ class SQLiteTradeJournal(DBAPITradeJournal):
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA journal_mode = WAL")
         super().__init__(connection, "?")
+
+    def _begin_transaction(self, cursor):
+        cursor.execute("BEGIN IMMEDIATE")
 
 
 class PostgresTradeJournal(DBAPITradeJournal):

@@ -113,7 +113,7 @@ def load_config(path=None):
     if not isinstance(limits_raw, dict):
         raise ValueError("risk_limits must be a JSON object")
     risk_limits = RiskLimits(**limits_raw)
-    enabled_roles = raw.get("enabled_roles", ())
+    enabled_roles = raw.get("enabled_roles", [])
     if not isinstance(enabled_roles, list) or any(
         not isinstance(role, str) for role in enabled_roles
     ):

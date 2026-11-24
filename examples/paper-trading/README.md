@@ -28,6 +28,7 @@ The scanner runs 27 configurable role rules in-process across momentum, trend, m
 ## Paper-only controls
 
 - Per-order quantity, per-position notional, aggregate notional, daily loss, and concurrent-position caps are checked before entries.
+- Entry reads, risk checks, and journal writes are serialized by the database across concurrent runners.
 - Daily loss includes realized P&L today and marked P&L for open positions using the current mock quote.
 - Only one open position per symbol is allowed, preventing averaging down and hedging.
 - The kill switch blocks all new entries; it does not prevent closing a paper position.

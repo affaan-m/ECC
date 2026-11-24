@@ -1,15 +1,24 @@
+import json
 import tempfile
+import threading
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from paper_trader.config import RiskLimits
+from paper_trader.config import RiskLimits, load_config
+from paper_trader.execution import PaperExecutionEngine
 from paper_trader.journal import SQLiteTradeJournal
 from paper_trader.market_data import Quote
 from paper_trader.models import RoleEvidence, Side, Signal
 from paper_trader.risk import KillSwitch, RiskManager
-from paper_trader.execution import PaperExecutionEngine
 from paper_trader.scheduler import Scheduler
-from paper_trader.signals import ROLE_CATALOG, Scanner, aggregate_signals
+from paper_trader.signals import (
+    ROLE_CATALOG,
+    Scanner,
+    _features,
+    aggregate_signals,
+)
 
 
 class SignalAggregationTests(unittest.TestCase):
@@ -34,6 +43,26 @@ class SignalAggregationTests(unittest.TestCase):
         ]
 
         signal = aggregate_signals("XAGUSD", evidence, min_domains=2)
+
+        self.assertEqual(signal.side, Side.HOLD)
+
+    def test_domain_disagreement_does_not_trigger_a_trade(self):
+        evidence = [
+            RoleEvidence("bullish", "momentum", 1, 1.0, "positive momentum"),
+            RoleEvidence("bearish", "trend", -1, 0.56, "negative trend"),
+        ]
+
+        signal = aggregate_signals("XAUUSD", evidence, min_domains=2)
+
+        self.assertEqual(signal.side, Side.HOLD)
+
+    def test_equal_opposing_domain_scores_cancel_to_hold(self):
+        evidence = [
+            RoleEvidence("bullish", "momentum", 1, 1.0, "positive momentum"),
+            RoleEvidence("bearish", "trend", -1, 1.0, "negative trend"),
+        ]
+
+        signal = aggregate_signals("XAUUSD", evidence, min_domains=2)
 
         self.assertEqual(signal.side, Side.HOLD)
 
@@ -222,6 +251,96 @@ class ScannerAndSchedulerTests(unittest.TestCase):
         self.assertEqual(metrics["retry_count"], 2)
         self.assertEqual(metrics["consecutive_failures"], 0)
         self.assertEqual(metrics["status"], "healthy")
+
+    def test_partial_config_keeps_default_scanner_roles(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.json"
+            config_path.write_text(
+                json.dumps({"scheduler_interval_seconds": 10}),
+                encoding="utf-8",
+            )
+
+            config = load_config(config_path)
+
+        self.assertEqual(config.scheduler_interval_seconds, 10)
+        self.assertEqual(len(Scanner(config.enabled_roles)._roles), 27)
+
+    def test_ema_features_are_not_duplicate_sma_features(self):
+        from paper_trader.market_data import MockMarketDataProvider
+
+        snapshot = MockMarketDataProvider().get_snapshot()
+        quote = snapshot.quotes[0]
+        features = _features(snapshot.candles[quote.symbol], quote)
+
+        self.assertNotEqual(features["ema_gap_5"], features["sma_gap_5"])
+        self.assertNotEqual(features["ema_gap_10"], features["sma_gap_10"])
+
+
+class AtomicEntryTests(unittest.TestCase):
+    def test_concurrent_entries_cannot_exceed_position_limit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Path(temp_dir) / "trades.sqlite3"
+
+            class DelayedJournal(SQLiteTradeJournal):
+                def open_positions(self):
+                    positions = super().open_positions()
+                    time.sleep(0.05)
+                    return positions
+
+            journals = [DelayedJournal(database), DelayedJournal(database)]
+            self.addCleanup(journals[0].close)
+            self.addCleanup(journals[1].close)
+            engines = [
+                PaperExecutionEngine(
+                    journal,
+                    RiskManager(
+                        RiskLimits(
+                            max_order_quantity=1,
+                            max_position_notional_usd=5_000,
+                            max_total_notional_usd=2_010,
+                            max_daily_loss_usd=100,
+                            max_concurrent_positions=1,
+                        ),
+                        KillSwitch(),
+                    ),
+                )
+                for journal in journals
+            ]
+            orders = (
+                (
+                    Signal("XAUUSD", Side.BUY, 0.9, ()),
+                    Quote("XAUUSD", bid=2_000, ask=2_001),
+                ),
+                (
+                    Signal("XAGUSD", Side.BUY, 0.9, ()),
+                    Quote("XAGUSD", bid=25, ask=25.1),
+                ),
+            )
+            start = threading.Barrier(2)
+
+            def place(engine, order):
+                start.wait()
+                signal, quote = order
+                return engine.execute(signal, quote, quantity=1)
+
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                fills = list(
+                    workers.map(
+                        lambda pair: place(*pair),
+                        zip(engines, orders),
+                    )
+                )
+
+            self.assertEqual(sum(fill is not None for fill in fills), 1)
+            open_positions = journals[0].open_positions()
+            self.assertEqual(len(open_positions), 1)
+            self.assertLessEqual(
+                sum(
+                    position["quantity"] * position["entry_price"]
+                    for position in open_positions
+                ),
+                2_010,
+            )
 
 
 if __name__ == "__main__":
