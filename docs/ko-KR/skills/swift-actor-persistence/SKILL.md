@@ -28,11 +28,11 @@ public actor LocalRepository<T: Codable & Identifiable> where T.ID == String {
 
     public init(directory: URL = .documentsDirectory, filename: String = "data.json") {
         self.fileURL = directory.appendingPathComponent(filename)
-        // Synchronous load during init (actor isolation not yet active)
+        // 초기화 중에는 아직 액터 격리가 적용되지 않으므로 동기적으로 불러옵니다.
         self.cache = Self.loadSynchronously(from: fileURL)
     }
 
-    // MARK: - Public API
+    // MARK: - 공개 API
 
     public func save(_ item: T) throws {
         cache[item.id] = item
@@ -52,7 +52,7 @@ public actor LocalRepository<T: Codable & Identifiable> where T.ID == String {
         Array(cache.values)
     }
 
-    // MARK: - Private
+    // MARK: - 비공개 메서드
 
     private func persistToFile() throws {
         let data = try JSONEncoder().encode(Array(cache.values))
@@ -76,11 +76,11 @@ public actor LocalRepository<T: Codable & Identifiable> where T.ID == String {
 ```swift
 let repository = LocalRepository<Question>()
 
-// Read — fast O(1) lookup from in-memory cache
+// 읽기: 메모리 캐시에서 식별자로 조회하는 데 O(1)이 걸립니다.
 let question = await repository.find(by: "q-001")
 let allQuestions = await repository.loadAll()
 
-// Write — updates cache and persists to file atomically
+// 쓰기: 캐시를 갱신한 뒤 파일에 원자적으로 기록합니다.
 try await repository.save(newQuestion)
 try await repository.delete("q-001")
 ```
