@@ -66,7 +66,7 @@ class DBAPITradeJournal:
             for statement in _SCHEMA:
                 cursor.execute(statement)
             self._connection.commit()
-        except Exception:
+        except BaseException:
             self._connection.rollback()
             raise
         finally:
@@ -90,7 +90,7 @@ class DBAPITradeJournal:
                 if not in_transaction:
                     self._connection.commit()
                 return result
-            except Exception:
+            except BaseException:
                 if not in_transaction:
                     self._connection.rollback()
                 raise
@@ -99,6 +99,7 @@ class DBAPITradeJournal:
 
     def _begin_transaction(self, cursor):
         cursor.execute("BEGIN")
+        cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
         cursor.execute(
             "SELECT lock_id FROM paper_trading_mutex WHERE lock_id = 1 FOR UPDATE"
         )
@@ -121,7 +122,7 @@ class DBAPITradeJournal:
                 self._transaction_local.depth = 1
                 yield self
                 self._connection.commit()
-            except Exception:
+            except BaseException:
                 self._connection.rollback()
                 raise
             finally:

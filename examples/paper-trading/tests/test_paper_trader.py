@@ -4,11 +4,12 @@ import threading
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from pathlib import Path
 
 from paper_trader.config import RiskLimits, load_config
 from paper_trader.execution import PaperExecutionEngine
-from paper_trader.journal import SQLiteTradeJournal
+from paper_trader.journal import PostgresTradeJournal, SQLiteTradeJournal
 from paper_trader.market_data import Quote
 from paper_trader.models import RoleEvidence, Side, Signal
 from paper_trader.risk import KillSwitch, RiskManager
@@ -236,9 +237,9 @@ class RiskLimitTests(unittest.TestCase):
 
 class PaperFillTests(unittest.TestCase):
     def test_buy_fills_at_ask_and_close_marks_realized_loss(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory() as temp_dir, ExitStack() as cleanup:
             journal = SQLiteTradeJournal(Path(temp_dir) / "trades.sqlite3")
-            self.addCleanup(journal.close)
+            cleanup.callback(journal.close)
             engine = PaperExecutionEngine(
                 journal,
                 RiskManager(
@@ -267,9 +268,9 @@ class PaperFillTests(unittest.TestCase):
             self.assertEqual(trade["status"], "closed")
 
     def test_daily_realized_pnl_excludes_the_following_utc_day(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory() as temp_dir, ExitStack() as cleanup:
             journal = SQLiteTradeJournal(Path(temp_dir) / "trades.sqlite3")
-            self.addCleanup(journal.close)
+            cleanup.callback(journal.close)
             first = journal.create_trade(
                 "XAGUSD", "buy", 1, 25, "2026-11-23T23:00:00+00:00"
             )
@@ -421,7 +422,7 @@ class ScannerAndSchedulerTests(unittest.TestCase):
 
 class AtomicEntryTests(unittest.TestCase):
     def test_concurrent_entries_cannot_exceed_position_limit(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory() as temp_dir, ExitStack() as cleanup:
             database = Path(temp_dir) / "trades.sqlite3"
 
             class DelayedJournal(SQLiteTradeJournal):
@@ -431,8 +432,8 @@ class AtomicEntryTests(unittest.TestCase):
                     return positions
 
             journals = [DelayedJournal(database), DelayedJournal(database)]
-            self.addCleanup(journals[0].close)
-            self.addCleanup(journals[1].close)
+            for journal in journals:
+                cleanup.callback(journal.close)
             engines = [
                 PaperExecutionEngine(
                     journal,
@@ -489,6 +490,65 @@ class AtomicEntryTests(unittest.TestCase):
                 ),
                 2_010,
             )
+
+class JournalTransactionTests(unittest.TestCase):
+    def test_keyboard_interrupt_rolls_back_journal_transaction(self):
+        with tempfile.TemporaryDirectory() as temp_dir, ExitStack() as cleanup:
+            journal = SQLiteTradeJournal(Path(temp_dir) / "trades.sqlite3")
+            cleanup.callback(journal.close)
+
+            with self.assertRaises(KeyboardInterrupt):
+                with journal.transaction():
+                    journal.create_trade("XAUUSD", "buy", 1, 2_000)
+                    raise KeyboardInterrupt
+
+            self.assertEqual(journal.open_positions(), [])
+
+    def test_postgres_entry_transaction_sets_read_committed_before_mutex(self):
+        class RecordingCursor:
+            def __init__(self, connection):
+                self.connection = connection
+
+            def execute(self, statement, _params=()):
+                self.connection.statements.append(" ".join(statement.split()))
+
+            def close(self):
+                pass
+
+        class RecordingConnection:
+            def __init__(self):
+                self.statements = []
+
+            def cursor(self):
+                return RecordingCursor(self)
+
+            def commit(self):
+                pass
+
+            def rollback(self):
+                pass
+
+            def close(self):
+                pass
+
+        connection = RecordingConnection()
+        journal = PostgresTradeJournal(connection)
+        try:
+            connection.statements.clear()
+            with journal.transaction():
+                pass
+
+            self.assertEqual(connection.statements[0], "BEGIN")
+            self.assertEqual(
+                connection.statements[1],
+                "SET TRANSACTION ISOLATION LEVEL READ COMMITTED",
+            )
+            self.assertEqual(
+                connection.statements[2],
+                "SELECT lock_id FROM paper_trading_mutex WHERE lock_id = 1 FOR UPDATE",
+            )
+        finally:
+            journal.close()
 
 
 if __name__ == "__main__":

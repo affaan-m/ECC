@@ -23,7 +23,7 @@ The scanner runs 27 configurable role rules in-process across momentum, trend, m
 
 `MarketDataProvider` is the input boundary. `MockMarketDataProvider` supplies deterministic synthetic candles and quotes. `TradingViewMarketDataProvider` and `FutureBrokerMarketDataProvider` are intentionally unimplemented hooks: do not scrape TradingView or add a provider without confirming its official API, licensing, data rights, and privacy implications. No broker execution adapter is included.
 
-`SQLiteTradeJournal` is the runnable backend. Its schema uses SQL types supported by SQLite and PostgreSQL; `PostgresTradeJournal` accepts an already-created DB-API connection with `%s` placeholders for an integration that supplies its own reviewed connection setup. The included CLI always selects SQLite.
+`SQLiteTradeJournal` is the runnable backend. Its schema uses SQL types supported by SQLite and PostgreSQL; `PostgresTradeJournal` accepts an already-created DB-API connection with `%s` placeholders for an integration that supplies its own reviewed connection setup. PostgreSQL transactions set `READ COMMITTED` before taking the mutex so concurrent entry checks see committed positions after waiting. The included CLI always selects SQLite.
 
 ## Paper-only controls
 
