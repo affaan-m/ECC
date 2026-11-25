@@ -200,7 +200,10 @@ if (realWindowsShell) {
           env: { ...process.env, HOME: '/home/tester', LIB: libPath.replace(/\\/g, '/'), CLV2_HOMUNCULUS_DIR: form },
         });
         assert.strictEqual(r.status, 0, r.stderr);
-        assert.strictEqual(path.resolve(r.stdout.trim()).toLowerCase(), path.resolve(tmp).toLowerCase());
+        // Compare final long-form paths: os.tmpdir() can return an 8.3 short
+        // name (C:\Users\RUNNER~1\...) while pwd -W prints the long one.
+        const resolved = (p) => fs.realpathSync.native(p).toLowerCase();
+        assert.strictEqual(resolved(r.stdout.trim()), resolved(tmp));
         assert.strictEqual(r.stderr.includes('not absolute'), false);
       }
     } finally {
