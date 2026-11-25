@@ -75,7 +75,9 @@ Do not assume `npm test`. The commands in the steps and examples below use `<tes
 
 1. **Resolve the package manager from the project under test.** For tests that need a JavaScript package manager, honor ECC's `CLAUDE_PACKAGE_MANAGER` override if it is already set to `npm`, `pnpm`, `yarn`, or `bun` in the current environment. It takes precedence over repository signals. Report the override and any disagreement with the project's pinned manager before running tests.
 
-   Otherwise, inspect the target package and its workspace root. Use the repository's documented choice or the `packageManager` field. If neither is available, use the lockfile for that workspace. Resolve conflicting repository signals before running tests.
+   If there is no supported override, check `.claude/package-manager.json` in the target project directory, using the workspace root for workspace-wide commands. Read its `packageManager` field. If it is `npm`, `pnpm`, `yarn`, or `bun`, use it ahead of other repository signals and report any disagreement with the project's pinned manager before running tests.
+
+   If the project preference provides no supported choice, use the repository's documented choice or the `packageManager` field in `package.json`. If neither is available, use the workspace lockfile. Resolve conflicting repository signals before running tests.
 
    If a test command requires a JavaScript package manager and no signal identifies one, ask which manager to use and report that command as blocked until the choice is confirmed. When no JavaScript package manager is needed, use the project's documented test commands directly.
 
