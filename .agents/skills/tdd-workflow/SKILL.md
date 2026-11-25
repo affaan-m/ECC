@@ -79,6 +79,8 @@ Do not assume `npm test`. The commands in the steps and examples below use `<tes
 
    If the project preference provides no supported choice, use the repository's documented choice or the `packageManager` field in `package.json`. If neither is available, use the workspace lockfile. Resolve conflicting repository signals before running tests.
 
+   If a JavaScript package manager is still needed and no repository signal selects one, check the existing user preference in `~/.claude/package-manager.json`. If the active ECC JavaScript setup uses an alternate agent data directory, read `package-manager.json` from that resolved directory instead. Read only the `packageManager` field and use it only if it is `npm`, `pnpm`, `yarn`, or `bun`.
+
    If a test command requires a JavaScript package manager and no signal identifies one, ask which manager to use and report that command as blocked until the choice is confirmed. When no JavaScript package manager is needed, use the project's documented test commands directly.
 
    Confirm that the selected manager is already available. If it is missing or would be downloaded by a shim, report the prerequisite and use the repository's pinned setup only when installation is authorized.
