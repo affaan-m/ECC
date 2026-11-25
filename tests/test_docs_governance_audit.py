@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -945,6 +946,57 @@ def test_spine_scope_warns_when_root_has_no_git_head(project: Path) -> None:
     assert result.returncode == 0, result.stdout
     assert "Git history is unavailable" in result.stdout
     assert "append-only when combined" not in result.stdout
+
+
+def commit_log_bytes(project: Path, content: bytes) -> None:
+    configure_git(project)
+    (project / "PROJECT_LOG.md").write_bytes(content)
+    subprocess.run(["git", "add", "PROJECT_LOG.md"], cwd=project, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "init"], cwd=project, capture_output=True, check=True
+    )
+
+
+def run_spine_with_legacy_locale(project: Path) -> subprocess.CompletedProcess[str]:
+    # Pin a legacy locale so the check does not depend on the runner's default.
+    env = {
+        **os.environ,
+        "PYTHONUTF8": "0",
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONCOERCECLOCALE": "0",
+        "LC_ALL": "C",
+    }
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), "--root", str(project), "--scope", "spine"],
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+
+
+def test_log_history_comparison_decodes_git_output_as_utf8(project: Path) -> None:
+    log = "# LOG\n\n## [2026-01-01] fix | caf\u00e9 \u0101 \u2192 done\n"
+    commit_log_bytes(project, log.encode("utf-8"))
+    result = run_spine_with_legacy_locale(project)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Traceback" not in result.stderr
+    assert "differ from HEAD" not in result.stdout
+
+
+def test_log_history_comparison_survives_non_utf8_committed_log(
+    project: Path,
+) -> None:
+    head = "# LOG\n\n## [2026-01-01] fix | caf".encode("ascii")
+    commit_log_bytes(project, head + b"\xe9 done\n")
+    (project / "PROJECT_LOG.md").write_text(
+        "# LOG\n\n## [2026-01-01] fix | caf\u00e9 done\n", encoding="utf-8"
+    )
+    result = run_spine_with_legacy_locale(project)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Traceback" not in result.stderr
+    assert "1 working-tree history events differ from HEAD" in result.stdout
 
 
 def test_log_duplicate_removal_is_detected(project: Path) -> None:
