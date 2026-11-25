@@ -18,6 +18,7 @@ const { run: runPostEditAccumulator } = require('./post-edit-accumulator');
 const { run: runConsoleWarn } = require('./post-edit-console-warn');
 const { run: runGovernanceCapture } = require('./governance-capture');
 const { run: runSessionActivityTracker } = require('./session-activity-tracker');
+const { run: runCapsuleRecorder } = require('./capsule-recorder');
 const { run: runObserve } = require('./observe-runner');
 const { run: runMetricsBridge } = require('./ecc-metrics-bridge');
 const { run: runContextMonitor } = require('./ecc-context-monitor');
@@ -66,7 +67,10 @@ const ASYNC_HOOKS = [
   },
   { id: 'post:quality-gate', matcher: 'Edit|Write|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/quality-gate.js', run: runQualityGate },
   { id: 'post:observe:continuous-learning', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/observe-runner.js', run: runObserve },
-  { id: 'post:skill:track', matcher: 'Skill', profiles: 'standard,strict', script: 'scripts/hooks/skill-run-tracker.js', run: runSkillRunTracker }
+  { id: 'post:skill:track', matcher: 'Skill', profiles: 'standard,strict', script: 'scripts/hooks/skill-run-tracker.js', run: runSkillRunTracker },
+  // Inert unless ECC_CAPSULE_RECORDING=1, so it is listed for every profile. Async because
+  // each append re-verifies the journal (about +55 ms per call at 1,000 entries).
+  { id: 'post:capsule-recorder', matcher: '*', profiles: 'minimal,standard,strict', script: 'scripts/hooks/capsule-recorder.js', run: runCapsuleRecorder }
 ];
 
 function getPluginRoot(env = process.env) {

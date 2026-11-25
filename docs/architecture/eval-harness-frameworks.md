@@ -239,8 +239,9 @@ name beginning with `--`, use a relative `./` prefix or an absolute path.
 This inherits the existing capsule reader's filesystem and memory limits. The
 100-input cap does not bound journal bytes. It does not isolate hostile files,
 serialize concurrent writers, validate a signature or establish live provenance.
-Executor containment, opt-in hook recording, stable-taskset validation and the
-roadmap's operational retrospective milestone remain separate prerequisites.
+Executor containment, stable-taskset validation and the roadmap's operational
+retrospective milestone remain separate prerequisites. Opt-in hook recording is
+described next.
 
 ## Verification gate: unavailable
 
@@ -378,6 +379,48 @@ described above; concurrent export/create and broader envelope/review findings
 remain separate. Package/count evidence is a separate ignore-scripts test scope
 and does not validate normal prepack or clear a release.
 
+## Opt-in hook recording
+
+With `ECC_CAPSULE_RECORDING=1`, three Claude Code hooks journal each harness
+session into one capsule at `<agent data home>/capsules/<session_id>`
+(`ECC_CAPSULE_DIR` moves the parent). Off by default, in every profile.
+
+| Hook id | Event | Entry |
+| --- | --- | --- |
+| `session:start:capsule-recorder` | SessionStart | `environment/session.start`, `note` = source word |
+| `post:capsule-recorder` | PostToolUse (async phase) | `interaction/tool.call` |
+| `session:end:capsule-recorder` | SessionEnd | `environment/session.end`, `reason` = reason word |
+
+A tool call records `tool`, `tool_call_id`, `status: ok`, and sha256 digests of
+the tool input and response (`args_hash`, `response_hash`). No argument or
+output text enters the journal; the envelope allowlist and canary scan still
+run. `run_id` and `capsule_id` are the session id, `task_family` is
+`ECC_CAPSULE_TASK_FAMILY` (default `session`). The capsule verifies, projects,
+receipts and groups with the commands above.
+
+Effect classes are declared from the tool name: `Read`, `Grep`, `Glob`, `LS` and
+notebook/todo reads are SE0; `Edit`, `Write`, `MultiEdit` and `NotebookEdit`
+are SE1 only when every target path, including each `edits[].file_path`, is
+inside the session `cwd` once symbolic links are resolved; a target that cannot
+be resolved is SE4. Every other tool, including `Bash`, MCP tools and web
+fetches, is declared SE4, the upper bound, because the hook cannot see what a
+command did. Replay refuses those.
+
+Each append re-verifies the whole journal. Measured through the dispatcher on
+Node 18: +8 ms per call on a new capsule, +55 ms at 1,000 entries, +170 ms at
+4,000, which is why the tool-call hook runs in the async phase. Appends stop at
+`ECC_CAPSULE_MAX_BYTES` (default 2 MiB, about 3,000 calls), checked again after
+each wait for the lock. A concurrent sibling holding the append lock is retried
+for up to 500 ms, as is an open that sees that sibling's entry half-written. The
+first capsule of a session is staged and renamed into place so concurrent first
+events cannot overwrite each other. Every refusal (cap, lock, damaged journal, non-id session
+id) is a `[CapsuleRecorder]` stderr line; the hook always exits 0.
+
+Not recorded: failed tool calls (`PostToolUseFailure`), prompts, model output,
+token counts and other harnesses. Async tool-call entries can land after
+`session.end`. A recorded session is local evidence only: it is not a gate
+receipt, a stable taskset or proof of what a tool did.
+
 ## Where it plugs in
 
 - `skills/eval-harness/SKILL.md` describes eval-driven development. These
@@ -399,5 +442,7 @@ node tests/lib/eval-harness/security.test.js
 node tests/lib/eval-harness/replay.test.js
 node tests/lib/eval-harness/receipt.test.js
 node tests/lib/eval-harness/cli.test.js
+node tests/lib/capsule-recording.test.js
+node tests/hooks/capsule-recorder.test.js
 node examples/eval-harness/run-example.js
 ```

@@ -572,4 +572,27 @@ test('actual offline example persists refusal without absent optional hashes', (
   } finally { cleanup(tempRoot); }
 });
 
+test('append with maxBytes refuses under the lock once the journal reaches the cap', () => {
+  const dir = tempDir('max-bytes');
+  try {
+    const c = seeded(dir);
+    const journal = path.join(dir, 'journal.ndjson');
+    const size = fs.statSync(journal).size;
+    const below = c.append('plan', 'note', { task_id: 'b' }, { maxBytes: size + 1 });
+    assert.strictEqual(below.seq, 5, 'an append that starts below the cap is recorded');
+    const before = fs.readFileSync(journal);
+    assert.throws(() => c.append('plan', 'note', { task_id: 'c' }, { maxBytes: before.length }),
+      error => error.code === 'capsule.byte_cap' && error.max_bytes === before.length);
+    assert.deepStrictEqual(fs.readFileSync(journal), before);
+    assert.strictEqual(fs.existsSync(path.join(dir, '.append.lock')), false, 'refusal releases the lock');
+    for (const bad of [0, -1, 1.5, '10', Number.NaN]) {
+      assert.throws(() => c.append('plan', 'note', { task_id: 'd' }, { maxBytes: bad }),
+        error => error.code === 'capsule.bad_max_bytes');
+    }
+    assert.deepStrictEqual(fs.readFileSync(journal), before);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 finish('capsule');
