@@ -15,6 +15,7 @@ const {
 const {
   migrateClaudePluginScope,
 } = require('./lib/claude-scope-migration');
+const { resolveDryRun } = require('./lib/dry-run');
 const { resolveClaudePaths } = require('./lib/install/inventory');
 const { startTerminalSpinner } = require('./lib/terminal-spinner');
 const { showTerminalWelcome } = require('./lib/terminal-welcome');
@@ -112,6 +113,7 @@ function parseArgs(argv) {
   if (options.moveScope && options.scope === undefined) {
     throw new Error('--move-scope requires an explicit --scope destination.');
   }
+  options.dryRun = resolveDryRun(options.dryRun);
   return options;
 }
 

@@ -284,6 +284,130 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  console.log('\nresolveDryRun() shared helper:');
+
+  if (test('returns false with no flag and no env', () => {
+    const { resolveDryRun } = require('../../scripts/lib/dry-run');
+    assert.strictEqual(resolveDryRun(false, {}), false);
+  })) passed++; else failed++;
+
+  if (test('returns true when the flag is true', () => {
+    const { resolveDryRun } = require('../../scripts/lib/dry-run');
+    assert.strictEqual(resolveDryRun(true, {}), true);
+  })) passed++; else failed++;
+
+  if (test('returns true when ECC_DRY_RUN=1 even if the flag is false', () => {
+    const { resolveDryRun } = require('../../scripts/lib/dry-run');
+    assert.strictEqual(resolveDryRun(false, { ECC_DRY_RUN: '1' }), true);
+  })) passed++; else failed++;
+
+  if (test('returns false when ECC_DRY_RUN=0 and the flag is false', () => {
+    const { resolveDryRun } = require('../../scripts/lib/dry-run');
+    assert.strictEqual(resolveDryRun(false, { ECC_DRY_RUN: '0' }), false);
+  })) passed++; else failed++;
+
+  if (test('throws when ECC_DRY_RUN is set to an unrecognized value', () => {
+    const { resolveDryRun } = require('../../scripts/lib/dry-run');
+    assert.throws(
+      () => resolveDryRun(false, { ECC_DRY_RUN: 'yes' }),
+      /ECC_DRY_RUN must be "1" or "0" when set/
+    );
+  })) passed++; else failed++;
+
+  console.log('\nsubcommand parseArgs() honoring the global --dry-run prefix (#2952 follow-up):');
+
+  if (test('setup.js parseArgs() honors ECC_DRY_RUN=1 even without a literal --dry-run flag', () => {
+    const previous = process.env.ECC_DRY_RUN;
+    process.env.ECC_DRY_RUN = '1';
+    try {
+      delete require.cache[require.resolve('../../scripts/setup.js')];
+      const { parseArgs } = require('../../scripts/setup.js');
+      const options = parseArgs(['--mode', 'claude-plugin', '--scope', 'user', '--yes']);
+      assert.strictEqual(options.dryRun, true);
+    } finally {
+      if (previous === undefined) delete process.env.ECC_DRY_RUN;
+      else process.env.ECC_DRY_RUN = previous;
+    }
+  })) passed++; else failed++;
+
+  if (test('auto-update.js parseArgs() honors ECC_DRY_RUN=1 even without a literal --dry-run flag', () => {
+    const previous = process.env.ECC_DRY_RUN;
+    process.env.ECC_DRY_RUN = '1';
+    try {
+      delete require.cache[require.resolve('../../scripts/auto-update.js')];
+      const { parseArgs } = require('../../scripts/auto-update.js');
+      const options = parseArgs(['node', 'auto-update.js']);
+      assert.strictEqual(options.dryRun, true);
+    } finally {
+      if (previous === undefined) delete process.env.ECC_DRY_RUN;
+      else process.env.ECC_DRY_RUN = previous;
+    }
+  })) passed++; else failed++;
+
+  if (test('install-guided.js parseArgs() honors ECC_DRY_RUN=1 even without a literal --dry-run flag', () => {
+    const previous = process.env.ECC_DRY_RUN;
+    process.env.ECC_DRY_RUN = '1';
+    try {
+      delete require.cache[require.resolve('../../scripts/install-guided.js')];
+      const { parseArgs } = require('../../scripts/install-guided.js');
+      const options = parseArgs([]);
+      assert.strictEqual(options.dryRun, true);
+    } finally {
+      if (previous === undefined) delete process.env.ECC_DRY_RUN;
+      else process.env.ECC_DRY_RUN = previous;
+    }
+  })) passed++; else failed++;
+
+  if (test('ecc --dry-run setup ... previews instead of writing Claude settings', () => {
+    const eccJs = path.resolve(__dirname, '..', '..', 'scripts', 'ecc.js');
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-dry-run-setup-'));
+    const claudeDir = path.join(homeDir, '.claude');
+    fs.mkdirSync(claudeDir, { recursive: true });
+    const settingsPath = path.join(claudeDir, 'settings.json');
+    fs.writeFileSync(settingsPath, '{}');
+    try {
+      const result = spawnSync(process.execPath, [
+        eccJs, '--dry-run', 'setup',
+        '--mode', 'claude-plugin', '--scope', 'user', '--hooks', 'standard', '--yes',
+      ], {
+        encoding: 'utf8',
+        env: { ...process.env, CLAUDE_CONFIG_DIR: claudeDir, HOME: homeDir, USERPROFILE: homeDir },
+      });
+      assert.strictEqual(result.status, 0, `Expected exit 0, got ${result.status}: ${result.stderr}`);
+      assert.ok(
+        result.stdout.includes('would-install') || result.stdout.includes('would-update'),
+        `Expected preview language in output, got: ${result.stdout}`
+      );
+      assert.strictEqual(
+        fs.readFileSync(settingsPath, 'utf8'),
+        '{}',
+        'Global --dry-run before setup must not write to Claude settings'
+      );
+    } finally {
+      fs.rmSync(homeDir, { force: true, recursive: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('ecc --dry-run repair ... skips the install-state reconciliation write path', () => {
+    const eccJs = path.resolve(__dirname, '..', '..', 'scripts', 'ecc.js');
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-dry-run-repair-'));
+    try {
+      const result = spawnSync(process.execPath, [eccJs, '--dry-run', 'repair', '--json'], {
+        encoding: 'utf8',
+        env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+      });
+      assert.strictEqual(result.status, 0, `Expected exit 0, got ${result.status}: ${result.stderr}`);
+      const payload = JSON.parse(result.stdout);
+      assert.strictEqual(
+        payload.installStateProjection,
+        undefined,
+        'Global --dry-run before repair must skip the (non-dry-run-only) reconciliation step'
+      );
+    } finally {
+      fs.rmSync(homeDir, { force: true, recursive: true });
+    }
+  })) passed++; else failed++;
+
   console.log(`\nResults: ${passed} passed, ${failed} failed`);
   console.log(`Passed: ${passed}`);
   console.log(`Failed: ${failed}`);

@@ -4,6 +4,7 @@ const os = require('os');
 const { repairInstalledStates } = require('./lib/install-lifecycle');
 const { SUPPORTED_INSTALL_TARGETS } = require('./lib/install-manifests');
 const { problemReportLines } = require('./lib/feedback-links');
+const { resolveDryRun } = require('./lib/dry-run');
 
 function showHelp(exitCode = 0) {
   console.log(`
@@ -40,6 +41,7 @@ function parseArgs(argv) {
     }
   }
 
+  parsed.dryRun = resolveDryRun(parsed.dryRun);
   return parsed;
 }
 

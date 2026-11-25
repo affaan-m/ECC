@@ -17,6 +17,7 @@ const {
   normalizeGuidedInstallRequest,
 } = require('./lib/multi-harness-setup');
 const { formatHookCapabilityDisclosure } = require('./lib/install/hook-consent');
+const { resolveDryRun } = require('./lib/dry-run');
 const { startTerminalSpinner } = require('./lib/terminal-spinner');
 const { showTerminalWelcome } = require('./lib/terminal-welcome');
 const { stripAnsi } = require('./lib/utils');
@@ -106,6 +107,7 @@ function parseArgs(argv) {
   if (options.allHarnesses && options.harnesses.length > 0) {
     throw new Error('--all-harnesses and --harness are mutually exclusive.');
   }
+  options = { ...options, dryRun: resolveDryRun(options.dryRun) };
   return options;
 }
 
