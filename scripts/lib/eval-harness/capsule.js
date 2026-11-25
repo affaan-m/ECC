@@ -102,6 +102,21 @@ function releaseOwnedLock(lockPath, fd, identity) {
   }
 }
 
+/**
+ * Optional journal size cap, checked under the append lock so concurrent
+ * appenders cannot each pass a pre-lock check and overshoot it.
+ */
+function assertUnderByteCap(journalPath, maxBytes) {
+  if (maxBytes === undefined) return;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+    throw new CapsuleError('capsule.bad_max_bytes', 'maxBytes must be a positive integer');
+  }
+  const size = fs.statSync(journalPath).size;
+  if (size >= maxBytes) {
+    throw new CapsuleError('capsule.byte_cap', `journal is ${size} bytes, at or over maxBytes ${maxBytes}`, { size, max_bytes: maxBytes });
+  }
+}
+
 /** Exclusive cooperative append lock. Never waits or infers stale ownership. */
 function withAppendLock(dir, operation) {
   const lockPath = path.join(dir, APPEND_LOCK_FILE);
@@ -179,6 +194,7 @@ class Capsule {
     return withAppendLock(this.dir, () => {
       const state = readCapsule(this.dir);
       if (!state.ok) throw new CapsuleError(state.code, state.reason, { failed_at: state.failed_at });
+      assertUnderByteCap(this.journalPath, options.maxBytes);
       if (!envelope.LINEAGES.includes(lineage)) {
         throw new CapsuleError('capsule.bad_lineage', `unknown lineage ${lineage}`);
       }

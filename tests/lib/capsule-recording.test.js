@@ -235,6 +235,42 @@ tests.push(['the cap is checked again after waiting for a sibling that crossed i
   assert.deepStrictEqual(readCapsule(dir).entries.map(entry => entry.payload.tool_call_id), ['toolu_01', 'toolu_sibling']);
 }]);
 
+tests.push(['a sibling that crosses the cap between the early check and the lock is caught under the lock', () => {
+  const root = makeTempDir();
+  assert.strictEqual(recordEvent(toolEvent(), recordingEnv(root), root), '');
+  const dir = path.join(root, SESSION);
+  const journal = path.join(dir, 'journal.ndjson');
+  const env = recordingEnv(root, { ECC_CAPSULE_MAX_BYTES: String(fs.statSync(journal).size + 1) });
+  const realAppend = Capsule.prototype.append;
+  let siblingAppended = false;
+  // The sibling wins the lock after this recorder's cap checks pass, so no
+  // busy error triggers a recheck: only the locked check can refuse.
+  Capsule.prototype.append = function appendAfterSibling(...args) {
+    if (!siblingAppended) {
+      siblingAppended = true;
+      realAppend.call(Capsule.open(dir), 'interaction', 'tool.call', { tool: 'Bash', tool_call_id: 'toolu_sibling', status: 'ok' }, { effect_class: 'SE4' });
+    }
+    return realAppend.apply(this, args);
+  };
+  let diagnostic;
+  try {
+    diagnostic = recordEvent(toolEvent({ tool_use_id: 'toolu_racer' }), env, root);
+  } finally {
+    Capsule.prototype.append = realAppend;
+  }
+  assert.ok(siblingAppended, 'the race path was not exercised');
+  assert.strictEqual(diagnostic, `[CapsuleRecorder] skipped: journal reached ECC_CAPSULE_MAX_BYTES (${env.ECC_CAPSULE_MAX_BYTES})`);
+  assert.deepStrictEqual(readCapsule(dir).entries.map(entry => entry.payload.tool_call_id), ['toolu_01', 'toolu_sibling']);
+}]);
+
+function waitForFile(file, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (!fs.existsSync(file)) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${file}`);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+  }
+}
+
 /** A capsule with one entry, plus the exact bytes of a valid second entry. */
 function capsuleWithNextLine() {
   const root = makeTempDir();
@@ -253,11 +289,14 @@ tests.push(['opening while a sibling append is mid-write waits for it instead of
   const half = Math.floor(nextLine.length / 2);
   fs.writeFileSync(lock, '');
   fs.appendFileSync(journal, nextLine.slice(0, half));
+  const ready = path.join(makeTempDir(), 'ready');
   const finisher = spawn(process.execPath, ['-e',
-    'const fs=require("fs");const [j,l,rest]=process.argv.slice(1);'
-    + 'setTimeout(()=>{fs.appendFileSync(j,rest);fs.rmSync(l)},150);',
-    journal, lock, nextLine.slice(half)], { stdio: 'ignore' });
+    'const fs=require("fs");const [j,l,rest,ready]=process.argv.slice(1);'
+    + 'fs.writeFileSync(ready,"");setTimeout(()=>{fs.appendFileSync(j,rest);fs.rmSync(l)},150);',
+    journal, lock, nextLine.slice(half), ready], { stdio: 'ignore' });
   try {
+    // Child startup is excluded from the recorder's ~500 ms retry window under test.
+    waitForFile(ready, 10000);
     assert.strictEqual(recordEvent(toolEvent({ tool_use_id: 'toolu_03' }), recordingEnv(root), root), '');
   } finally {
     finisher.kill();

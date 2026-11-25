@@ -198,10 +198,13 @@ function openOrCreateCapsule(dir, meta) {
   return openSettled(dir);
 }
 
+function capMessage(maxBytes) {
+  return `[CapsuleRecorder] skipped: journal reached ECC_CAPSULE_MAX_BYTES (${maxBytes})`;
+}
+
+/** Cheap pre-lock check; Capsule.append enforces the cap again under its lock. */
 function capDiagnostic(dir, maxBytes) {
-  return journalBytes(dir) >= maxBytes
-    ? `[CapsuleRecorder] skipped: journal reached ECC_CAPSULE_MAX_BYTES (${maxBytes})`
-    : '';
+  return journalBytes(dir) >= maxBytes ? capMessage(maxBytes) : '';
 }
 
 /**
@@ -214,9 +217,10 @@ function appendWithRetry(capsule, record, dir, maxBytes) {
     const capped = capDiagnostic(dir, maxBytes);
     if (capped) return capped;
     try {
-      capsule.append(record.lineage, record.kind, record.payload, { effect_class: record.effect_class });
+      capsule.append(record.lineage, record.kind, record.payload, { effect_class: record.effect_class, maxBytes });
       return '';
     } catch (error) {
+      if (error instanceof CapsuleError && error.code === 'capsule.byte_cap') return capMessage(maxBytes);
       if (!(error instanceof CapsuleError) || error.code !== 'capsule.busy' || attempt >= BUSY_RETRIES) throw error;
       sleep(BUSY_WAIT_MS);
     }
