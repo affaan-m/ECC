@@ -46,6 +46,8 @@ Separately, use `git grep --cached --no-recurse-submodules --files-with-matches`
 
 The parent repository tracks submodules by commit ID. For each initialized submodule in scope, including nested submodules, repeat both checks from the submodule root with explicit paths relative to it. If an in-scope submodule is unavailable, report its scan as blocked.
 
+Checking recorded submodule commits without fetching requires Git 2.45 or newer. Check support with `git --no-lazy-fetch --version` before the recorded-commit checks. If Git rejects the option, report the recorded-commit scan as blocked. The working-tree and index checks can still run.
+
 For an in-scope staged submodule, read its stage-0 gitlink (mode `160000`) from the parent index with `git ls-files --stage -- <submodule-path>`. If the recorded commit differs from the submodule's checked-out commit, scan that commit from the submodule root with `git --no-lazy-fetch grep --no-recurse-submodules --files-with-matches -e <pattern> <recorded-commit> -- <in-scope-paths>`. Use the same reviewed patterns and paths relative to the submodule.
 
 For an in-scope nested submodule in the recorded tree, read its gitlink from the containing recorded commit using `git --no-lazy-fetch ls-tree <containing-commit> -- <submodule-path>` and scan its recorded commit in the nested repository. Report the affected scan as blocked if the gitlink is ambiguous or a required local repository or object is unavailable.
