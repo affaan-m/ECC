@@ -2283,6 +2283,7 @@ impl Dashboard {
     pub fn toggle_output_mode(&mut self) {
         match self.output_mode {
             OutputMode::SessionOutput => {
+                self.sync_selected_worktree_patch();
                 if self.selected_diff_patch.is_some() || self.selected_diff_summary.is_some() {
                     self.output_mode = OutputMode::WorktreeDiff;
                     self.selected_pane = Pane::Output;
@@ -2314,9 +2315,9 @@ impl Dashboard {
                 self.set_operator_note("showing session output".to_string());
             }
             OutputMode::GitStatus => {
+                self.output_mode = OutputMode::GitPatch;
                 self.sync_selected_git_patch();
                 if self.selected_git_patch.is_some() {
-                    self.output_mode = OutputMode::GitPatch;
                     self.selected_pane = Pane::Output;
                     self.output_follow = false;
                     self.output_scroll_offset = self.current_diff_hunk_offset();
@@ -4706,6 +4707,44 @@ impl Dashboard {
         self.selected_diff_preview = worktree
             .and_then(|worktree| worktree::diff_file_preview(worktree, MAX_DIFF_PREVIEW_LINES).ok())
             .unwrap_or_default();
+        self.selected_merge_readiness =
+            worktree.and_then(|worktree| worktree::merge_readiness(worktree).ok());
+        self.selected_conflict_protocol = session.and_then(|selected_session| {
+            worktree
+                .zip(self.selected_merge_readiness.as_ref())
+                .and_then(|(worktree, merge_readiness)| {
+                    build_conflict_protocol(&selected_session.id, worktree, merge_readiness)
+                })
+                .or_else(|| {
+                    let incidents = self
+                        .db
+                        .list_open_conflict_incidents_for_session(&selected_session.id, 5)
+                        .unwrap_or_default();
+                    build_session_conflict_protocol(&selected_session.id, &incidents)
+                })
+        });
+        if self.output_mode == OutputMode::WorktreeDiff {
+            self.sync_selected_worktree_patch();
+            if self.selected_diff_patch.is_none() {
+                self.output_mode = OutputMode::SessionOutput;
+            }
+        }
+        if self.output_mode == OutputMode::ConflictProtocol
+            && self.selected_conflict_protocol.is_none()
+        {
+            self.output_mode = OutputMode::SessionOutput;
+        }
+        self.sync_selected_git_status();
+        if self.output_mode == OutputMode::GitPatch {
+            self.sync_selected_git_patch();
+        }
+    }
+
+    fn sync_selected_worktree_patch(&mut self) {
+        let worktree = self
+            .sessions
+            .get(self.selected_session)
+            .and_then(|session| session.worktree.as_ref());
         self.selected_diff_patch = worktree.and_then(|worktree| {
             worktree::diff_patch_preview(worktree, MAX_DIFF_PATCH_LINES)
                 .ok()
@@ -4724,32 +4763,6 @@ impl Dashboard {
         if self.selected_diff_hunk >= self.current_diff_hunk_offsets().len() {
             self.selected_diff_hunk = 0;
         }
-        self.selected_merge_readiness =
-            worktree.and_then(|worktree| worktree::merge_readiness(worktree).ok());
-        self.selected_conflict_protocol = session.and_then(|selected_session| {
-            worktree
-                .zip(self.selected_merge_readiness.as_ref())
-                .and_then(|(worktree, merge_readiness)| {
-                    build_conflict_protocol(&selected_session.id, worktree, merge_readiness)
-                })
-                .or_else(|| {
-                    let incidents = self
-                        .db
-                        .list_open_conflict_incidents_for_session(&selected_session.id, 5)
-                        .unwrap_or_default();
-                    build_session_conflict_protocol(&selected_session.id, &incidents)
-                })
-        });
-        if self.output_mode == OutputMode::WorktreeDiff && self.selected_diff_patch.is_none() {
-            self.output_mode = OutputMode::SessionOutput;
-        }
-        if self.output_mode == OutputMode::ConflictProtocol
-            && self.selected_conflict_protocol.is_none()
-        {
-            self.output_mode = OutputMode::SessionOutput;
-        }
-        self.sync_selected_git_status();
-        self.sync_selected_git_patch();
     }
 
     fn sync_selected_git_status(&mut self) {
@@ -4834,6 +4847,8 @@ impl Dashboard {
     fn refresh_after_git_status_action(&mut self, preferred_path: Option<&str>) {
         let keep_patch_view = self.output_mode == OutputMode::GitPatch;
         let preferred_hunk = self.selected_git_patch_hunk;
+        // Refresh the status list before generating a patch for the preferred path.
+        self.output_mode = OutputMode::GitStatus;
         self.refresh();
         self.selected_pane = Pane::Output;
         self.output_follow = false;
@@ -4846,12 +4861,14 @@ impl Dashboard {
                 self.selected_git_status = index;
             }
         }
-        self.sync_selected_git_patch();
-        if keep_patch_view && self.selected_git_patch.is_some() {
+        if keep_patch_view {
             self.output_mode = OutputMode::GitPatch;
-            let max_index = self.current_diff_hunk_offsets().len().saturating_sub(1);
-            self.selected_git_patch_hunk = preferred_hunk.min(max_index);
-            self.output_scroll_offset = self.current_diff_hunk_offset();
+            self.sync_selected_git_patch();
+            if self.selected_git_patch.is_some() {
+                let max_index = self.current_diff_hunk_offsets().len().saturating_sub(1);
+                self.selected_git_patch_hunk = preferred_hunk.min(max_index);
+                self.output_scroll_offset = self.current_diff_hunk_offset();
+            }
         } else {
             self.output_mode = OutputMode::GitStatus;
         }
@@ -9852,26 +9869,35 @@ mod tests {
     }
 
     #[test]
-    fn toggle_output_mode_switches_to_worktree_diff_preview() {
-        let mut dashboard = test_dashboard(
-            vec![sample_session(
-                "focus-12345678",
-                "planner",
-                SessionState::Running,
-                Some("ecc/focus"),
-                512,
-                42,
-            )],
-            0,
+    fn toggle_output_mode_switches_to_worktree_diff_preview() -> Result<()> {
+        let root = std::env::temp_dir().join(format!("ecc2-worktree-diff-view-{}", Uuid::new_v4()));
+        init_git_repo(&root)?;
+        run_git(&root, &["branch", "-M", "main"])?;
+        fs::write(root.join("README.md"), "new line\n")?;
+
+        let mut session = sample_session(
+            "focus-12345678",
+            "planner",
+            SessionState::Running,
+            Some("ecc/focus"),
+            512,
+            42,
         );
-        dashboard.selected_diff_summary = Some("1 file changed".to_string());
-        dashboard.selected_diff_patch = Some(
-            "--- Branch diff vs main ---\ndiff --git a/src/lib.rs b/src/lib.rs\n@@ -1 +1 @@\n-old line\n+new line".to_string(),
-        );
+        session.working_dir = root.clone();
+        session.worktree = Some(WorktreeInfo {
+            path: root.clone(),
+            branch: "main".to_string(),
+            base_branch: "main".to_string(),
+        });
+        let mut dashboard = test_dashboard(vec![session.clone()], 0);
+        dashboard.db.insert_session(&session)?;
+        worktree::reset_patch_call_counts();
 
         dashboard.toggle_output_mode();
 
         assert_eq!(dashboard.output_mode, OutputMode::WorktreeDiff);
+        assert_eq!(worktree::diff_patch_preview_call_count(), 1);
+        assert_eq!(worktree::git_status_patch_view_call_count(), 0);
         assert_eq!(
             dashboard.operator_note.as_deref(),
             Some("showing selected worktree diff")
@@ -9880,8 +9906,68 @@ mod tests {
         assert!(rendered.contains("Diff"));
         assert!(rendered.contains("Removals"));
         assert!(rendered.contains("Additions"));
-        assert!(rendered.contains("-old line"));
+        assert!(rendered.contains("-hello"));
         assert!(rendered.contains("+new line"));
+
+        fs::write(root.join("README.md"), "refreshed worktree line\n")?;
+        worktree::reset_patch_call_counts();
+        dashboard.refresh();
+        assert_eq!(dashboard.output_mode, OutputMode::WorktreeDiff);
+        assert_eq!(worktree::diff_patch_preview_call_count(), 1);
+        assert_eq!(worktree::git_status_patch_view_call_count(), 0);
+        let rendered = dashboard.rendered_output_text(180, 30);
+        assert!(rendered.contains("+refreshed worktree line"));
+        assert!(!rendered.contains("+new line"));
+
+        fs::write(root.join("README.md"), "hello\n")?;
+        dashboard.refresh();
+        assert_eq!(dashboard.output_mode, OutputMode::SessionOutput);
+
+        let _ = fs::remove_dir_all(root);
+        Ok(())
+    }
+
+    #[test]
+    fn refresh_skips_hidden_patches_in_session_output_and_git_status() -> Result<()> {
+        let root =
+            std::env::temp_dir().join(format!("ecc2-hidden-patch-refresh-{}", Uuid::new_v4()));
+        init_git_repo(&root)?;
+        run_git(&root, &["branch", "-M", "main"])?;
+        fs::write(root.join("README.md"), "changed but not previewed\n")?;
+
+        let mut session = sample_session(
+            "focus-12345678",
+            "planner",
+            SessionState::Running,
+            Some("ecc/focus"),
+            512,
+            42,
+        );
+        session.working_dir = root.clone();
+        session.worktree = Some(WorktreeInfo {
+            path: root.clone(),
+            branch: "main".to_string(),
+            base_branch: "main".to_string(),
+        });
+        let mut dashboard = test_dashboard(vec![session.clone()], 0);
+        dashboard.db.insert_session(&session)?;
+        assert_eq!(dashboard.output_mode, OutputMode::SessionOutput);
+
+        for mode in [OutputMode::SessionOutput, OutputMode::GitStatus] {
+            if mode == OutputMode::GitStatus {
+                dashboard.toggle_git_status_mode();
+            }
+            worktree::reset_patch_call_counts();
+            dashboard.refresh();
+            dashboard.refresh();
+            assert_eq!(dashboard.output_mode, mode);
+            assert_eq!(worktree::diff_patch_preview_call_count(), 0, "{mode:?}");
+            assert_eq!(worktree::git_status_patch_view_call_count(), 0, "{mode:?}");
+            assert_eq!(dashboard.selected_git_status_entries.len(), 1);
+        }
+
+        let _ = fs::remove_dir_all(root);
+        Ok(())
     }
 
     #[test]
@@ -9968,6 +10054,7 @@ mod tests {
     fn toggle_output_mode_from_git_status_opens_selected_file_patch() -> Result<()> {
         let root = std::env::temp_dir().join(format!("ecc2-git-patch-view-{}", Uuid::new_v4()));
         init_git_repo(&root)?;
+        run_git(&root, &["branch", "-M", "main"])?;
         fs::write(
             root.join("README.md"),
             "line 1\nline 2\nline 3\nline 4\nline 5\nline 6 updated\n",
@@ -9992,9 +10079,12 @@ mod tests {
         dashboard.db.insert_session(&stored)?;
 
         dashboard.toggle_git_status_mode();
+        worktree::reset_patch_call_counts();
         dashboard.toggle_output_mode();
 
         assert_eq!(dashboard.output_mode, OutputMode::GitPatch);
+        assert_eq!(worktree::diff_patch_preview_call_count(), 0);
+        assert_eq!(worktree::git_status_patch_view_call_count(), 1);
         assert_eq!(
             dashboard.operator_note.as_deref(),
             Some("showing selected file patch")
@@ -10003,6 +10093,20 @@ mod tests {
         let rendered = dashboard.rendered_output_text(180, 30);
         assert!(rendered.contains("Git patch README.md"));
         assert!(rendered.contains("+line 6 updated"));
+
+        fs::write(root.join("README.md"), "refreshed selected file line\n")?;
+        worktree::reset_patch_call_counts();
+        dashboard.refresh();
+        assert_eq!(dashboard.output_mode, OutputMode::GitPatch);
+        assert_eq!(worktree::diff_patch_preview_call_count(), 0);
+        assert_eq!(worktree::git_status_patch_view_call_count(), 1);
+        let rendered = dashboard.rendered_output_text(180, 30);
+        assert!(rendered.contains("+refreshed selected file line"));
+        assert!(!rendered.contains("+line 6 updated"));
+
+        fs::write(root.join("README.md"), "hello\n")?;
+        dashboard.refresh();
+        assert_eq!(dashboard.output_mode, OutputMode::GitStatus);
 
         let _ = fs::remove_dir_all(root);
         Ok(())
@@ -10050,7 +10154,10 @@ mod tests {
 
         dashboard.toggle_git_status_mode();
         dashboard.toggle_output_mode();
+        worktree::reset_patch_call_counts();
         dashboard.stage_selected_git_status();
+
+        assert_eq!(worktree::git_status_patch_view_call_count(), 1);
 
         assert_eq!(dashboard.output_mode, OutputMode::GitPatch);
         assert_eq!(
@@ -10278,7 +10385,7 @@ diff --git a/src/lib.rs b/src/lib.rs\n\
         dashboard.selected_diff_hunk_offsets_split =
             build_worktree_diff_columns(&patch, dashboard.theme_palette()).hunk_offsets;
         dashboard.selected_diff_hunk_offsets_unified = build_unified_diff_hunk_offsets(&patch);
-        dashboard.toggle_output_mode();
+        dashboard.output_mode = OutputMode::WorktreeDiff;
 
         dashboard.toggle_diff_view_mode();
 
