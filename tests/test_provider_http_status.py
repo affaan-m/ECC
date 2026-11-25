@@ -1,7 +1,8 @@
 from types import SimpleNamespace
-from typing import Any, NoReturn, TypeVar
+from typing import NoReturn, TypeVar
 
 import anthropic
+import httpx
 import openai
 import pytest
 
@@ -42,7 +43,11 @@ def status_error(
     provider_class: type[LLMProvider], status: int, message: str,
 ) -> anthropic.APIStatusError | openai.APIStatusError:
     sdk = anthropic if provider_class is ClaudeProvider else openai
-    response: Any = SimpleNamespace(status_code=status, request=SimpleNamespace(), headers={})
+    # Real httpx objects: the SDK error constructors read fields of both the
+    # request and the response (openai 3.59 scrubs sensitive request headers),
+    # so a stand-in breaks whenever an SDK release reads one more field.
+    request = httpx.Request("POST", "https://api.example.invalid/v1/test")
+    response = httpx.Response(status, request=request)
     return sdk.APIStatusError(message, response=response, body={})
 
 
