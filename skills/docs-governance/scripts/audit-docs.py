@@ -225,6 +225,8 @@ def run_git(
             ["git", *arguments],
             cwd=root,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             check=False,
             timeout=GIT_TIMEOUT_SECONDS,
