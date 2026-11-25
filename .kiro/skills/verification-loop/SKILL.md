@@ -48,6 +48,10 @@ Separately, use `git grep --cached --files-with-matches` with the same patterns 
 
 The parent repository tracks submodules by commit ID. For each initialized submodule in scope, including nested submodules, repeat both checks from the submodule root with explicit paths relative to it. If an in-scope submodule is unavailable, report its scan as blocked.
 
+For an in-scope staged submodule, read its stage-0 gitlink (mode `160000`) from the parent index with `git ls-files --stage -- <submodule-path>`. If the recorded commit differs from the submodule's checked-out commit, scan that commit from the submodule root with `git --no-lazy-fetch grep --no-recurse-submodules --files-with-matches -e <pattern> <recorded-commit> -- <in-scope-paths>`. Use the same reviewed patterns and paths relative to the submodule.
+
+For an in-scope nested submodule in the recorded tree, read its gitlink from the containing recorded commit using `git --no-lazy-fetch ls-tree <containing-commit> -- <submodule-path>` and scan its recorded commit in the nested repository. Report the affected scan as blocked if the gitlink is ambiguous or a required local repository or object is unavailable.
+
 For `git grep`, exit status 0 indicates matches, 1 indicates no matches, and a status greater than 1 indicates a check error.
 
 Report findings by rule, count, and applicable file location. Keep raw matches and private logs out of the report, tool output, PRs, and external services. Use synthetic examples to explain findings.
