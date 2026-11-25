@@ -521,3 +521,64 @@ def test_anthropic_base_url_yields_one_v1_messages_path(
     assert requests[0].url.host == expected_host
     assert requests[0].url.path == "/anthropic/v1/messages"
     assert requests[0].url.path.count("/v1/messages") == 1
+
+
+def _real_anthropic_provider(
+    monkeypatch: pytest.MonkeyPatch, bodies: list[dict[str, object]]
+) -> tuple[MiniMaxProvider, httpx2.Client]:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        bodies.append(json.loads(request.content))
+        return httpx2.Response(
+            200,
+            json={
+                "id": "msg_test",
+                "type": "message",
+                "role": "assistant",
+                "model": DEFAULT_MINIMAX_MODEL,
+                "content": [{"type": "text", "text": "ok"}],
+                "stop_reason": "end_turn",
+                "stop_sequence": None,
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        )
+
+    http_client = httpx2.Client(transport=httpx2.MockTransport(handler))
+
+    def anthropic_client(**kwargs: object) -> AnthropicSDK:
+        return AnthropicSDK(
+            api_key=cast(str, kwargs["api_key"]),
+            base_url=cast(str, kwargs["base_url"]),
+            http_client=http_client,
+        )
+
+    monkeypatch.setattr(minimax_module, "Anthropic", anthropic_client)
+    provider = MiniMaxProvider(api_key="test", base_url=MINIMAX_ANTHROPIC_BASE_URL)
+    return provider, http_client
+
+
+@pytest.mark.parametrize(
+    ("temperature", "expected"),
+    [(0.2, {"temperature": 0.2}), (1.0, {})],
+)
+def test_anthropic_endpoint_sends_temperature_through_the_current_sdk(
+    monkeypatch: pytest.MonkeyPatch,
+    temperature: float,
+    expected: dict[str, float],
+) -> None:
+    bodies: list[dict[str, object]] = []
+    provider, http_client = _real_anthropic_provider(monkeypatch, bodies)
+
+    try:
+        output = provider.generate(
+            LLMInput(
+                messages=[Message(role=Role.USER, content="hi")],
+                temperature=temperature,
+            )
+        )
+    finally:
+        http_client.close()
+
+    assert output.content == "ok"
+    assert len(bodies) == 1
+    sent = {key: bodies[0][key] for key in ("temperature",) if key in bodies[0]}
+    assert sent == expected

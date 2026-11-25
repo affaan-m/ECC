@@ -319,7 +319,9 @@ class MiniMaxProvider(LLMProvider):
         if system_parts:
             params["system"] = "\n\n".join(system_parts)
         if llm_input.temperature != 1.0:
-            params["temperature"] = llm_input.temperature
+            # MiniMax still accepts temperature, but anthropic 2.x removed the
+            # messages.create() keyword, so send it in the request body.
+            params["extra_body"] = {"temperature": llm_input.temperature}
         if llm_input.tools:
             params["tools"] = [tool.to_anthropic_tool() for tool in llm_input.tools]
         for key in ("thinking", "service_tier", "output_config"):
