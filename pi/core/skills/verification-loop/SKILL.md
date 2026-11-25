@@ -46,6 +46,8 @@ For a lightweight working-tree check, use `git grep --untracked --exclude-standa
 
 Separately, use `git grep --cached --files-with-matches` with the same patterns and paths to check what is staged in the index.
 
+The parent repository tracks submodules by commit ID. For each initialized submodule in scope, including nested submodules, repeat both checks from the submodule root with explicit paths relative to it. If an in-scope submodule is unavailable, report its scan as blocked.
+
 For `git grep`, exit status 0 indicates matches, 1 indicates no matches, and a status greater than 1 indicates a check error.
 
 Report findings by rule, count, and applicable file location. Keep raw matches and private logs out of the report, tool output, PRs, and external services. Use synthetic examples to explain findings.
