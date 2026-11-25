@@ -42,9 +42,9 @@ Run the relevant local test suites and use the project's coverage command and th
 
 Review files in scope for exposed credentials, unsafe logging, and permission changes. Run the project's configured local scanner in redacted or summary mode and interpret its exit codes according to its documented contract and configuration. For example, Gitleaks defaults to exit status 1 for a leak or an error.
 
-For a lightweight working-tree check, use `git grep --untracked --exclude-standard --files-with-matches` with the project's reviewed patterns and pass explicit in-scope paths after `--`. This includes new, non-ignored files. Use the configured local scanner in redacted or summary mode for ignored files explicitly in scope.
+For a lightweight working-tree check, use `git grep --untracked --exclude-standard --no-recurse-submodules --files-with-matches` with the project's reviewed patterns and pass explicit in-scope paths after `--`. This includes new, non-ignored files. Use the configured local scanner in redacted or summary mode for ignored files explicitly in scope.
 
-Separately, use `git grep --cached --files-with-matches` with the same patterns and paths to check what is staged in the index.
+Separately, use `git grep --cached --no-recurse-submodules --files-with-matches` with the same patterns and paths to check what is staged in the index.
 
 The parent repository tracks submodules by commit ID. For each initialized submodule in scope, including nested submodules, repeat both checks from the submodule root with explicit paths relative to it. If an in-scope submodule is unavailable, report its scan as blocked.
 
