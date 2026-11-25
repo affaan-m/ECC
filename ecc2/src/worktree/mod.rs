@@ -14,6 +14,8 @@ use crate::session::WorktreeInfo;
 #[cfg(test)]
 thread_local! {
     static GIT_STATUS_ENTRIES_CALL_COUNT: Cell<usize> = const { Cell::new(0) };
+    static DIFF_PATCH_PREVIEW_CALL_COUNT: Cell<usize> = const { Cell::new(0) };
+    static GIT_STATUS_PATCH_VIEW_CALL_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -24,6 +26,22 @@ pub(crate) fn reset_git_status_entries_call_count() {
 #[cfg(test)]
 pub(crate) fn git_status_entries_call_count() -> usize {
     GIT_STATUS_ENTRIES_CALL_COUNT.get()
+}
+
+#[cfg(test)]
+pub(crate) fn reset_patch_call_counts() {
+    DIFF_PATCH_PREVIEW_CALL_COUNT.set(0);
+    GIT_STATUS_PATCH_VIEW_CALL_COUNT.set(0);
+}
+
+#[cfg(test)]
+pub(crate) fn diff_patch_preview_call_count() -> usize {
+    DIFF_PATCH_PREVIEW_CALL_COUNT.get()
+}
+
+#[cfg(test)]
+pub(crate) fn git_status_patch_view_call_count() -> usize {
+    GIT_STATUS_PATCH_VIEW_CALL_COUNT.get()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -378,6 +396,9 @@ pub fn git_status_patch_view(
     worktree: &WorktreeInfo,
     entry: &GitStatusEntry,
 ) -> Result<Option<GitStatusPatchView>> {
+    #[cfg(test)]
+    GIT_STATUS_PATCH_VIEW_CALL_COUNT.set(GIT_STATUS_PATCH_VIEW_CALL_COUNT.get() + 1);
+
     if entry.untracked {
         return Ok(None);
     }
@@ -712,6 +733,9 @@ pub fn diff_file_preview(worktree: &WorktreeInfo, limit: usize) -> Result<Vec<St
 }
 
 pub fn diff_patch_preview(worktree: &WorktreeInfo, max_lines: usize) -> Result<Option<String>> {
+    #[cfg(test)]
+    DIFF_PATCH_PREVIEW_CALL_COUNT.set(DIFF_PATCH_PREVIEW_CALL_COUNT.get() + 1);
+
     patch_preview(worktree, &[], max_lines)
 }
 
