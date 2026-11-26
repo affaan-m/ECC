@@ -17,6 +17,7 @@ const path = require('path');
 
 const { buildRecord, deriveOutcome, extractSkillId, isSkillToolCall, run } = require('../../scripts/hooks/skill-run-tracker');
 const { readHooksConfig } = require('../../scripts/lib/hooks-config');
+const { collectSkillHealth } = require('../../scripts/lib/skill-evolution/health');
 const {
   MAX_RUN_RECORDS,
   RUNS_FILE_MODE,
@@ -196,6 +197,51 @@ test('run still records nothing for a non-skill tool', () => {
     try {
       run(payload({ tool_name: 'bash' }));
       assert.strictEqual(readSkillExecutionRecords({ homeDir }).length, 0);
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME; else process.env.HOME = previousHome;
+      if (previousUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = previousUserProfile;
+    }
+  });
+});
+
+// ── plugin namespace ─────────────────────────────────────────────────────────
+// Installed as the `ecc` plugin, Claude Code lists ECC skills as `ecc:<skill>`
+// and the model invokes them with or without that qualifier. Skill health keys
+// runs by skill directory name, so both spellings must land on the bare id.
+
+test('buildRecord drops the ecc plugin namespace from the skill id', () => {
+  const record = buildRecord(payload({ tool_input: { skill: 'ecc:tdd-workflow' } }));
+  assert.strictEqual(record.skill_id, 'tdd-workflow');
+  assert.strictEqual(record.task_description, 'Skill invocation: tdd-workflow');
+});
+
+test('buildRecord keeps ids that are not in the ecc plugin namespace', () => {
+  for (const skillId of ['tdd-workflow', 'superpowers:brainstorming', 'ecc-tools:review', 'eccentric:plan', 'ecc:']) {
+    const record = buildRecord(payload({ tool_input: { skill: skillId } }));
+    assert.strictEqual(record.skill_id, skillId);
+  }
+});
+
+test('qualified and bare runs of one skill share a skill health row', () => {
+  withTempHome(homeDir => {
+    const previousHome = process.env.HOME;
+    const previousUserProfile = process.env.USERPROFILE;
+    process.env.HOME = homeDir;
+    process.env.USERPROFILE = homeDir;
+    try {
+      const skillsRoot = path.join(homeDir, 'plugin', 'skills');
+      fs.mkdirSync(path.join(skillsRoot, 'tdd-workflow'), { recursive: true });
+      fs.writeFileSync(path.join(skillsRoot, 'tdd-workflow', 'SKILL.md'), '# tdd-workflow\n');
+
+      run(payload({ tool_input: { skill: 'ecc:tdd-workflow' } }));
+      run(payload({ tool_input: { skill: 'ecc:tdd-workflow' }, hook_event_name: 'PostToolUseFailure' }));
+      run(payload({ tool_input: { skill: 'tdd-workflow' } }));
+
+      const report = collectSkillHealth({ homeDir, skillsRoot });
+      assert.deepStrictEqual(
+        report.skills.map(skill => [skill.skill_id, skill.skill_type, skill.run_count_30d, skill.success_rate_30d]),
+        [['tdd-workflow', 'curated', 3, 0.6667]]
+      );
     } finally {
       if (previousHome === undefined) delete process.env.HOME; else process.env.HOME = previousHome;
       if (previousUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = previousUserProfile;
