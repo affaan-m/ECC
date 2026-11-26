@@ -79,6 +79,22 @@ function extractSkillId(toolInput) {
   );
 }
 
+// Claude Code qualifies a plugin's skills with the plugin name, and the model
+// spells the same skill either way: `tdd-workflow` or `ecc:tdd-workflow`.
+// Skill health groups runs by skill directory name, so a qualified id opened a
+// second, unknown-type row and left part of the runs off the skill's own row.
+// Only ECC's own namespace is dropped; another plugin's skill keeps its
+// qualifier because it is not the ECC skill of the same name.
+const ECC_PLUGIN_NAMESPACE = 'ecc:';
+
+function stripEccPluginNamespace(skillId) {
+  if (!skillId || !skillId.startsWith(ECC_PLUGIN_NAMESPACE)) {
+    return skillId;
+  }
+  const bareId = skillId.slice(ECC_PLUGIN_NAMESPACE.length);
+  return /^[A-Za-z0-9]/.test(bareId) ? bareId : skillId;
+}
+
 // Best-effort outcome: a failed tool call is recorded as "failure", everything
 // else as "success". Both PostToolUseFailure routing and an error-bearing
 // tool response are treated as failure.
@@ -126,7 +142,7 @@ function isSkillToolCall(payload) {
 }
 
 function buildRecord(payload) {
-  const skillId = extractSkillId(payload.tool_input);
+  const skillId = stripEccPluginNamespace(extractSkillId(payload.tool_input));
   if (!skillId) {
     return null; // cannot satisfy the tracker's required skill_id — skip
   }
