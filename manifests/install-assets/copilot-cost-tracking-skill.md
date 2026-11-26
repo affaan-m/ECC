@@ -18,6 +18,9 @@ The report scopes native sessions to the current workspace and reads the
 latest cumulative checkpoint or shutdown for each. It reports available
 nano-AI units, premium request counts, and per-model token metrics from that
 same snapshot. Missing measurements stay unavailable.
+When Copilot marks AI credit accounting unavailable, the report leaves the
+credit totals unset. A partial credit total is a subtotal with incomplete
+coverage. Token and request counts can still be available.
 
 Check the exit status and the JSON `complete` and `skipped` fields. An
 incomplete scan can report a known subtotal with missing or invalid entries.

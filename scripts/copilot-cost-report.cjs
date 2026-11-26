@@ -113,7 +113,19 @@ function amount(value, integer = true) {
   return value;
 }
 
-function readModelMetrics(value = {}) {
+function creditStatus(primary, snapshot) {
+  const statuses = [primary?.aiCreditsStatus, snapshot?.aiCreditsStatus];
+  if (statuses.includes('unavailable')) return 'unavailable';
+  if (statuses.includes('partial')) return 'partial';
+  return statuses[0] ?? statuses[1];
+}
+
+function availableNanoAiu(value, status) {
+  const total = amount(value);
+  return status === 'unavailable' ? null : total;
+}
+
+function readModelMetrics(value = {}, snapshot = {}) {
   const metrics = Object.entries(object(value));
   if (metrics.length > MAX_MODELS) throw new SessionEntryError();
   return Object.fromEntries(metrics.map(([model, entry]) => {
@@ -121,12 +133,28 @@ function readModelMetrics(value = {}) {
     const data = object(entry);
     const usage = data.usage === undefined ? {} : object(data.usage);
     const requests = data.requests === undefined ? {} : object(data.requests);
+    const status = creditStatus(data, Object.hasOwn(snapshot, model) ? snapshot[model] : undefined);
     return [model, {
       usage: Object.fromEntries(TOKEN_FIELDS.map(key => [key, amount(usage[key])])),
       requests: { count: amount(requests.count) },
-      totalNanoAiu: amount(data.totalNanoAiu),
+      totalNanoAiu: availableNanoAiu(data.totalNanoAiu, status),
     }];
   }));
+}
+
+function summarizeSnapshot(id, latest) {
+  const data = latest ? object(latest.data) : {};
+  const snapshot = data.accountingSnapshot;
+  const status = creditStatus(data, snapshot);
+  const totalNanoAiu = availableNanoAiu(data.totalNanoAiu, status);
+  return {
+    sessionId: id,
+    totalNanoAiu,
+    totalPremiumRequests: amount(data.totalPremiumRequests, false),
+    complete: latest?.type === 'session.shutdown' && totalNanoAiu !== null
+      && (status === undefined || status === 'complete'),
+    modelMetrics: readModelMetrics(data.modelMetrics, snapshot?.modelMetrics ?? {}),
+  };
 }
 
 function summarize(id, raw, workspace) {
@@ -149,16 +177,7 @@ function summarize(id, raw, workspace) {
 
   if (!started || workspaces.size !== 1) throw new SessionEntryError();
   if (!workspaces.has(workspace)) throw new SessionEntryError('foreign');
-
-  const data = latest ? object(latest.data) : {};
-  const totalNanoAiu = amount(data.totalNanoAiu);
-  return {
-    sessionId: id,
-    totalNanoAiu,
-    totalPremiumRequests: amount(data.totalPremiumRequests, false),
-    complete: latest?.type === 'session.shutdown' && totalNanoAiu !== null,
-    modelMetrics: readModelMetrics(data.modelMetrics),
-  };
+  return summarizeSnapshot(id, latest);
 }
 
 function parseArgs(args) {

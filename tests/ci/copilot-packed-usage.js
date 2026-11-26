@@ -116,6 +116,42 @@ function verifyInstalledUsage(root, packageRoot, env) {
   assert.equal(resumed.totalNanoAiu, 5);
   assert.deepEqual(resumed.sessions[0].modelMetrics, {});
 
+  const creditsHome = path.join(root, 'Credit availability fixture');
+  const creditsStates = path.join(creditsHome, 'session-state');
+  const creditsEnv = { COPILOT_HOME: creditsHome };
+  write(creditsStates, 'unavailable', [start('unavailable'), {
+    type: 'session.shutdown',
+    data: {
+      totalNanoAiu: 0,
+      modelMetrics: { example: { totalNanoAiu: 0, usage: { inputTokens: 124 }, requests: { count: 1 } } },
+      accountingSnapshot: { aiCreditsStatus: 'unavailable', modelMetrics: { example: { aiCreditsStatus: 'unavailable' } } },
+    },
+  }]);
+  write(creditsStates, 'partial', [start('partial'), {
+    type: 'session.shutdown', data: { totalNanoAiu: 5, aiCreditsStatus: 'partial' },
+  }]);
+  write(creditsStates, 'complete-zero', [start('complete-zero'), {
+    type: 'session.shutdown', data: { totalNanoAiu: 0, aiCreditsStatus: 'complete' },
+  }]);
+  const unavailable = report(['--session', 'unavailable'], 0, creditsEnv);
+  assert.equal(unavailable.totalNanoAiu, null);
+  assert.equal(unavailable.complete, false);
+  assert.equal(unavailable.sessions[0].totalNanoAiu, null);
+  assert.equal(unavailable.sessions[0].modelMetrics.example.totalNanoAiu, null);
+  assert.equal(unavailable.sessions[0].modelMetrics.example.usage.inputTokens, 124);
+  assert.equal(unavailable.sessions[0].modelMetrics.example.requests.count, 1);
+  const unavailableCsv = invoke(['--session', 'unavailable', '--csv'], 0, creditsEnv);
+  assert.match(unavailableCsv.stdout, /\nunavailable,,,false\n$/);
+  assert.match(unavailableCsv.stderr, /incomplete/);
+  const partialCredits = report(['--session', 'partial'], 0, creditsEnv);
+  assert.equal(partialCredits.totalNanoAiu, 5);
+  assert.equal(partialCredits.complete, false);
+  const completeZero = report(['--session', 'complete-zero'], 0, creditsEnv);
+  assert.equal(completeZero.totalNanoAiu, 0);
+  assert.equal(completeZero.complete, true);
+  assert.equal(report([], 0, creditsEnv).totalNanoAiu, 5);
+  assert.equal(report([], 0, creditsEnv).complete, false);
+
   const empty = report([], 0, { COPILOT_HOME: path.join(root, 'Empty') });
   assert.equal(empty.totalNanoAiu, null);
   assert.equal(empty.complete, false);
