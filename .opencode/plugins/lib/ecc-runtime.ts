@@ -194,7 +194,7 @@ export async function createEccRuntime(input: {
       changedFilesStore?.recordChange?.(event.path, "modified")
 
       // Auto-format JS/TS files (strict profile only: it shells out).
-      if (hookEnabled("post:edit:format", ["strict"]) && /\.(ts|tsx|js|jsx)$/.test(event.path)) {
+      if (hookEnabled("post:edit:format", ["strict"]) && /\.(?:[cm]?[jt]s|[jt]sx)$/.test(event.path)) {
         try {
           const result = await run("npx", ["prettier", "--write", event.path], { cwd: worktreePath })
           // T11: a non-zero exit is a failure, not a success. Only log
@@ -315,7 +315,7 @@ export async function createEccRuntime(input: {
         hookEnabled("post:edit:typecheck", ["strict"]) &&
         input.tool === "edit" &&
         typeof input.args?.filePath === "string" &&
-        /\.tsx?$/.test(input.args.filePath)
+        /\.(?:[cm]?ts|tsx)$/.test(input.args.filePath)
       ) {
         const result = await run("npx", ["tsc", "--noEmit"], { cwd: worktreePath }).catch(() => null)
         if (result && result.code === 0) {
