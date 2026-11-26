@@ -14,9 +14,7 @@ const {
 // `instructions/ecc/` with their Claude-style `paths:` frontmatter converted
 // to Copilot's `applyTo:` glob list. Explicitly declared package-manager
 // helpers live in `.github/ecc/scripts/`, outside Copilot's discovery roots.
-// ECC's hooks target Claude Code's event model, and commands rely on
-// slash-command argument substitution Copilot does not provide, so neither is
-// installed here.
+// The optional hooks-runtime module installs only the native lifecycle events.
 const SUPPORTED_SOURCE_PREFIXES = ['agents', 'skills', 'rules'];
 const COPILOT_HELPER_PATHS = new Set([
   'scripts/setup-package-manager.js',
@@ -25,6 +23,13 @@ const COPILOT_HELPER_PATHS = new Set([
   'scripts/lib/agent-data-home.js',
   'scripts/lib/path-safety.js',
 ]);
+
+const COPILOT_LIFECYCLE_ASSETS = [
+  'scripts/hooks/copilot-lifecycle.js',
+  'scripts/lib/copilot-sessions.js',
+  'scripts/lib/hook-flags.js',
+  'scripts/lib/memory-vault-format.js',
+];
 
 function hasPrefix(normalizedPath, prefix) {
   return normalizedPath === prefix || normalizedPath.startsWith(`${prefix}/`);
@@ -121,7 +126,8 @@ module.exports = createInstallTargetAdapter({
   kind: 'project',
   rootSegments: ['.github'],
   installStatePathSegments: ['ecc-install-state.json'],
-  supportsModule(module) {
+  supportsModule(module, input) {
+    if (module?.id === 'hooks-runtime') return input.consent?.hooks === true;
     // Selection gating stays permissive so modules that only act as dependency
     // anchors (rules-core, commands-core, platform-configs) still resolve.
     // planOperations() narrows the install to agents, skills, rules and declared helpers. An
@@ -137,7 +143,9 @@ module.exports = createInstallTargetAdapter({
     const { repoRoot, projectRoot, homeDir } = input;
     const targetRoot = adapter.resolveRoot({ repoRoot, projectRoot, homeDir });
 
+    const lifecycle = input.consent?.hooks === true && modules.find(module => module.id === 'hooks-runtime');
     const operations = modules.flatMap(module => {
+      if (module.id === 'hooks-runtime') return [];
       const paths = Array.isArray(module.paths) ? module.paths : [];
       return paths
         .filter(supportsCopilotSourcePath)
@@ -149,12 +157,27 @@ module.exports = createInstallTargetAdapter({
         ));
     });
     const helper = operations.find(operation => COPILOT_HELPER_PATHS.has(operation.sourceRelativePath));
-    if (!helper) return operations;
+    if (!helper && !lifecycle) return operations;
     // Keep managed helpers executable when the host project uses ES modules.
-    return [...operations, createManagedOperation({
-      moduleId: helper.moduleId,
+    const boundary = createManagedOperation({
+      moduleId: helper?.moduleId || lifecycle.id,
       sourceRelativePath: 'manifests/install-assets/commonjs-scripts-package.json',
       destinationPath: path.join(targetRoot, 'ecc', 'scripts', 'package.json'),
-    })];
+    });
+    if (!lifecycle) return [...operations, boundary];
+    return [
+      ...operations,
+      boundary,
+      ...COPILOT_LIFECYCLE_ASSETS.map(sourceRelativePath => createManagedOperation({
+        moduleId: lifecycle.id,
+        sourceRelativePath,
+        destinationPath: path.join(targetRoot, 'ecc', sourceRelativePath),
+      })),
+      createManagedOperation({
+        moduleId: lifecycle.id,
+        sourceRelativePath: 'manifests/install-assets/copilot-lifecycle-hooks.json',
+        destinationPath: path.join(targetRoot, 'hooks', 'ecc.json'),
+      }),
+    ];
   },
 });

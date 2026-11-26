@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": [
+          ".github/ecc/scripts/hooks/copilot-lifecycle.js",
+          "sessionStart"
+        ],
+        "cwd": ".",
+        "timeoutSec": 15
+      }
+    ],
+    "agentStop": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": [
+          ".github/ecc/scripts/hooks/copilot-lifecycle.js",
+          "agentStop"
+        ],
+        "cwd": ".",
+        "timeoutSec": 15
+      }
+    ],
+    "preCompact": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": [
+          ".github/ecc/scripts/hooks/copilot-lifecycle.js",
+          "preCompact"
+        ],
+        "cwd": ".",
+        "timeoutSec": 15
+      }
+    ],
+    "sessionEnd": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": [
+          ".github/ecc/scripts/hooks/copilot-lifecycle.js",
+          "sessionEnd"
+        ],
+        "cwd": ".",
+        "timeoutSec": 15
+      }
+    ]
+  }
+}
