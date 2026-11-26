@@ -1039,14 +1039,14 @@ def cmd_import(args) -> int:
         scope_root = GLOBAL_INSTINCTS_DIR.resolve()
     else:
         scope_root = (project["project_dir"] / "instincts").resolve() if project["id"] != "global" else GLOBAL_INSTINCTS_DIR.resolve()
-    stale_paths = []
+    stale_ids_by_file = {}
     for inst in to_update:
         inst_id = inst.get('id')
         stale = next((e for e in existing if e.get('id') == inst_id), None)
         if stale and stale.get('_source_file'):
             stale_path = Path(stale['_source_file']).resolve()
             if stale_path.exists() and str(stale_path).startswith(str(scope_root) + os.sep):
-                stale_paths.append(stale_path)
+                stale_ids_by_file.setdefault(stale_path, set()).add(inst_id)
 
     # Write new file first (safe: if this fails, stale files are preserved)
     timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -1078,12 +1078,14 @@ def cmd_import(args) -> int:
 
     output_file.write_text(output_content, encoding="utf-8")
 
-    # Remove stale files only after the new file has been written successfully
-    for stale_path in stale_paths:
-        try:
-            stale_path.unlink()
-        except OSError:
-            pass  # best-effort removal
+    # Remove the stale copies only after the new file has been written successfully.
+    # Each old file is read, checked and replaced under the registry lock, the one
+    # lock every instinct-cli process takes, so a concurrent import that updates a
+    # different instinct from the same file starts from this import's result.
+    # Like the registry lock itself, this does nothing without fcntl (Windows).
+    with _registry_lock():
+        for stale_path, inst_ids in stale_ids_by_file.items():
+            _remove_superseded_instincts(stale_path, inst_ids)
 
     print(f"\nImport complete!")
     print(f"   Scope: {target_scope}")
@@ -1612,6 +1614,66 @@ def _remove_instinct_from_source(source_file_str: str, instinct_id: str) -> None
             source_file.unlink()
     except OSError as exc:
         print(f"Warning: Failed to remove promoted instinct from {source_file}: {exc}", file=sys.stderr)
+
+
+def _remove_parsed_instincts(content: str, instinct_ids: "set[str]") -> str:
+    """Drop the blocks whose id, as parse_instinct_file reads it, is in instinct_ids.
+
+    Splits content into blocks at the same ``---`` markers the parser opens a
+    frontmatter on and parses each block on its own, so a block is matched by
+    the id the rest of the CLI sees, not by the raw text of its ``id:`` line.
+    """
+    lines = content.split('\n')
+    starts = []
+    in_frontmatter = False
+    for index, line in enumerate(lines):
+        if line.strip() == '---':
+            if not in_frontmatter:
+                starts.append(index)
+            in_frontmatter = not in_frontmatter
+    kept_lines = lines[:starts[0]] if starts else lines
+    for start, end in zip(starts, starts[1:] + [len(lines)]):
+        parsed = parse_instinct_file('\n'.join(lines[start:end]))
+        if not (parsed and parsed[0].get('id') in instinct_ids):
+            kept_lines.extend(lines[start:end])
+    remaining = '\n'.join(kept_lines)
+    return remaining if remaining.endswith('\n') else remaining + '\n'
+
+
+def _remove_superseded_instincts(stale_file: Path, instinct_ids: "set[str]") -> None:
+    """Drop updated instincts from their old file in one rewrite.
+
+    One file can hold several instincts (an import writes all of them to a
+    single file), so only the superseded blocks go. The file itself is
+    deleted only when it holds no other instinct.
+    """
+    id_list = ", ".join(sorted(instinct_ids))
+    try:
+        # utf-8-sig: a leading BOM would hide the first frontmatter marker
+        # from _remove_parsed_instincts.
+        content = stale_file.read_text(encoding="utf-8-sig")
+        kept = [i for i in parse_instinct_file(content) if i.get('id') not in instinct_ids]
+        if not kept:
+            stale_file.unlink()
+            return
+        # Not _remove_instinct_blocks: it compares the raw text of the id line, so
+        # it misses an id written with JSON escapes and can match a different
+        # instinct whose raw text happens to be the same.
+        remaining_content = _remove_parsed_instincts(content, instinct_ids)
+        # Safety net: write only a result that holds exactly the instincts meant
+        # to stay.
+        if parse_instinct_file(remaining_content) != kept:
+            print(
+                f"Warning: Could not safely remove superseded instinct(s) {id_list} from {stale_file}; "
+                "left the file unchanged.",
+                file=sys.stderr,
+            )
+            return
+        _write_text_atomic(stale_file, remaining_content)
+    except FileNotFoundError:
+        pass  # a concurrent import already removed the whole file
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"Warning: Failed to remove superseded instinct(s) {id_list} from {stale_file}: {exc}", file=sys.stderr)
 
 
 def cmd_promote(args) -> int:
