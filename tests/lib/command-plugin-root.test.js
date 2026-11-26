@@ -78,6 +78,8 @@ test('auto-update command probes for the script it runs, not just scripts/lib', 
 const commandCases = [
   ['commands/harness-audit.md', 'harness-audit', ['repo', '--format', 'json']],
   ['.opencode/commands/harness-audit.md', 'harness-audit', ['repo', '--format', 'json']],
+  ['docs/ja-JP/commands/harness-audit.md', 'harness-audit', ['repo', '--format', 'json']],
+  ['docs/zh-CN/commands/harness-audit.md', 'harness-audit', ['repo', '--format', 'json']],
   ...['claim', 'decompose', 'publish', 'review', 'sync', 'unblock', 'validate'].map(action => {
     const args = [action];
     if (action !== 'sync' && action !== 'unblock') args.push('7');
@@ -96,20 +98,50 @@ test('audit and epic command blocks run installed scripts from the current proje
     const config = path.join(temp, 'manual install');
     const checkout = path.join(temp, 'ecc checkout');
     const project = path.join(temp, 'user project');
-    fs.mkdirSync(project);
-    for (const root of [plugin, config, checkout]) {
+    const claudeProject = path.join(temp, 'Claude project');
+    const projectInstall = path.join(claudeProject, '.claude');
+    const projectSubdirectory = path.join(claudeProject, 'src');
+    const openCodeConfig = path.join(temp, "OpenCode's config");
+    const xdgConfig = path.join(temp, 'xdg');
+    const xdgInstall = path.join(xdgConfig, 'opencode');
+    const home = path.join(temp, 'home');
+    const openCodeHome = path.join(temp, 'OpenCode home');
+    const defaultInstall = path.join(openCodeHome, '.config', 'opencode');
+    const cacheConfig = path.join(temp, 'cached install');
+    const cache = path.join(cacheConfig, 'plugins', 'cache', 'ecc', 'ecc', '2.0.0');
+    const unrelatedScripts = path.join(project, '.claude', 'scripts');
+    fs.mkdirSync(unrelatedScripts, { recursive: true });
+    fs.writeFileSync(path.join(unrelatedScripts, 'harness-audit.js'), 'console.log("unrelated script");\n');
+    fs.mkdirSync(projectSubdirectory, { recursive: true });
+    for (const root of [plugin, config, checkout, projectInstall, openCodeConfig,
+      xdgInstall, defaultInstall, cache]) {
       fs.mkdirSync(path.join(root, 'scripts', 'lib'), { recursive: true });
-      fs.copyFileSync(path.join(repo, 'scripts', 'lib', 'resolve-ecc-root.js'),
-        path.join(root, 'scripts', 'lib', 'resolve-ecc-root.js'));
+      if (root !== projectInstall) {
+        fs.copyFileSync(path.join(repo, 'scripts', 'lib', 'resolve-ecc-root.js'),
+          path.join(root, 'scripts', 'lib', 'resolve-ecc-root.js'));
+      }
       for (const script of ['harness-audit', 'github-coordination']) {
         fs.writeFileSync(path.join(root, 'scripts', `${script}.js`),
-          'console.log(JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }));\n');
+          'console.log(JSON.stringify({ cwd: process.cwd(), root: require("node:path").dirname(__dirname), args: process.argv.slice(2) }));\n');
       }
     }
+    fs.mkdirSync(path.join(projectInstall, 'ecc'));
+    fs.writeFileSync(path.join(projectInstall, 'ecc', 'install-state.json'), '{}\n');
     fs.mkdirSync(path.join(checkout, '.claude-plugin'));
     fs.writeFileSync(path.join(checkout, '.claude-plugin', 'plugin.json'), '{"name":"ecc"}\n');
     const unknown = path.join(temp, 'empty config');
-    const env = { ...process.env, CLAUDE_PLUGIN_ROOT: '', CLAUDE_CONFIG_DIR: unknown };
+    const env = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      CLAUDE_PLUGIN_ROOT: '',
+      CLAUDE_CONFIG_DIR: unknown,
+      CLAUDE_PROJECT_DIR: '',
+      ANTIGRAVITY_PLUGIN_ROOT: '',
+      GEMINI_PLUGIN_ROOT: '',
+      OPENCODE_CONFIG_DIR: '',
+      XDG_CONFIG_HOME: '',
+    };
     const [windowsBash] = resolveWindowsBashCandidates(['bash.exe', 'bash'], { env });
     const shell = process.platform === 'win32' ? windowsBash : 'bash';
     assert.ok(shell, 'A native Git Bash executable is required');
@@ -123,17 +155,46 @@ test('audit and epic command blocks run installed scripts from the current proje
         .replace('<scope>', 'repo').replace('<text|json>', 'json').replace(' [--root <path>]', '')
         .replace('<issue-number>', '7').replace('<owner/repo>', 'example/project').replace('<login>', 'tester');
       const cases = [
-        [project, env, input.replace('${CLAUDE_PLUGIN_ROOT}', () => plugin.replace(/\\/g, '/'))],
-        [project, { ...env, CLAUDE_PLUGIN_ROOT: plugin }, input],
-        [project, { ...env, CLAUDE_CONFIG_DIR: config }, input],
-        [checkout, env, input],
+        [project, env, input.replace('${CLAUDE_PLUGIN_ROOT}', () => plugin.replace(/\\/g, '/')), plugin],
+        [project, { ...env, CLAUDE_PLUGIN_ROOT: plugin, CLAUDE_CONFIG_DIR: config }, input, plugin],
+        [project, { ...env, CLAUDE_CONFIG_DIR: config }, input, config],
+        [checkout, env, input, checkout],
       ];
-      for (const [cwd, runEnv, program] of cases) {
-        const result = spawnSync(shell, ['-s'], { input: program, env: runEnv, cwd, encoding: 'utf8' });
-        assert.strictEqual(result.status, 0, `${command}: ${result.stderr}`);
-        assert.deepStrictEqual(JSON.parse(result.stdout), { cwd, args }, command);
+      if (command === 'commands/harness-audit.md' || command === '.opencode/commands/harness-audit.md'
+          || command === 'commands/epic-claim.md') {
+        cases.push(
+          [project, { ...env, CLAUDE_PLUGIN_ROOT: unknown, CLAUDE_CONFIG_DIR: config }, input, config],
+          [project, { ...env, CLAUDE_CONFIG_DIR: config },
+            input.replace('${CLAUDE_PLUGIN_ROOT}', () => unknown.replace(/\\/g, '/')), config],
+          [checkout, { ...env, CLAUDE_PLUGIN_ROOT: unknown }, input, checkout],
+          [project, { ...env, ANTIGRAVITY_PLUGIN_ROOT: unknown, GEMINI_PLUGIN_ROOT: plugin }, input, plugin],
+          [project, { ...env, GEMINI_PLUGIN_ROOT: unknown, CLAUDE_CONFIG_DIR: cacheConfig }, input, cache],
+          [project, { ...env, OPENCODE_CONFIG_DIR: openCodeConfig, XDG_CONFIG_HOME: xdgConfig }, input, openCodeConfig],
+          [project, { ...env, XDG_CONFIG_HOME: xdgConfig }, input, xdgInstall],
+          [project, { ...env, HOME: openCodeHome, USERPROFILE: openCodeHome }, input, defaultInstall],
+          [claudeProject, env, input, projectInstall],
+          [projectSubdirectory, { ...env, CLAUDE_PROJECT_DIR: claudeProject }, input, projectInstall],
+        );
       }
-      assert.ok(block.includes(buildInlineResolve({ probe: `scripts/${script}.js` })), command);
+      if (process.platform === 'win32' && command === 'commands/harness-audit.md') {
+        const toGitBash = root => '/' + root[0].toLowerCase() + root.slice(2).replace(/\\/g, '/');
+        cases.push(
+          [project, { ...env, CLAUDE_PLUGIN_ROOT: toGitBash(plugin) }, input, plugin],
+          [project, { ...env, CLAUDE_CONFIG_DIR: toGitBash(config) }, input, config],
+          [project, { ...env, XDG_CONFIG_HOME: toGitBash(xdgConfig) }, input, xdgInstall],
+        );
+      }
+      for (const [cwd, runEnv, program, root] of cases) {
+        const result = spawnSync(shell, ['-s'], { input: program, env: runEnv, cwd, encoding: 'utf8' });
+        assert.strictEqual(result.status, 0, `${command} from ${root}: ${result.stderr}`);
+        assert.deepStrictEqual(JSON.parse(result.stdout), { cwd, root, args }, command);
+      }
+      const missing = spawnSync(shell, ['-s'], { input, env, cwd: project, encoding: 'utf8' });
+      assert.strictEqual(missing.status, 1, command);
+      assert.match(missing.stderr, /ECC command script not found/, command);
+      const locator = buildInlineResolve({ probe: `scripts/${script}.js`, command: true });
+      assert.ok(block.includes(locator), command);
+      assert.doesNotMatch(locator, /[!\\]/, `${command} must survive shell quoting and history expansion`);
     }
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });

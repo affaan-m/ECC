@@ -91,6 +91,32 @@ function runTests() {
     assert.strictEqual(result, '/trimmed/root');
   })) passed++; else failed++;
 
+  if (test('checks a requested probe before using an explicit environment root', () => {
+    const homeDir = createTempDir();
+    try {
+      const install = setupStandardInstall(homeDir);
+      const envRoot = path.join(homeDir, 'plugin');
+      const probe = path.join('scripts', 'harness-audit.js');
+      fs.mkdirSync(path.join(envRoot, 'scripts'), { recursive: true });
+      fs.writeFileSync(path.join(install, probe), '// installed probe');
+      assert.strictEqual(resolveEccRoot({ envRoot, probe, homeDir, configDir: install }), install);
+      fs.mkdirSync(path.join(envRoot, probe));
+      assert.strictEqual(resolveEccRoot({ envRoot, probe, homeDir, configDir: install }), install);
+      fs.rmdirSync(path.join(envRoot, probe));
+      fs.writeFileSync(path.join(envRoot, probe), '// plugin probe');
+      assert.strictEqual(resolveEccRoot({ envRoot, probe, homeDir, configDir: install }), envRoot);
+      if (process.platform === 'win32') {
+        const gitBashRoot = '/' + envRoot[0].toLowerCase() + envRoot.slice(2).replace(/\\/g, '/');
+        assert.strictEqual(
+          path.normalize(resolveEccRoot({ envRoot: gitBashRoot, probe, homeDir, configDir: install })),
+          envRoot
+        );
+      }
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('skips empty CLAUDE_PLUGIN_ROOT', () => {
     const homeDir = createTempDir();
     try {
