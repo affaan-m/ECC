@@ -115,7 +115,7 @@ test('recovers previously oversized native summaries on read and normalizes the 
 });
 
 test('malformed, oversized UTF8, conflicting aliases and unsafe identity have no side effects', ({ config, invoke, event }) => {
-  for (const value of ['{', 'è'.repeat(600000)]) assert.notStrictEqual(invoke(['sessionStart'], value).status, 0);
+  for (const value of ['{', 'è'.repeat(524289)]) assert.notStrictEqual(invoke(['sessionStart'], value).status, 0);
   for (const sessionId of ['../outside', 'a/b', 'a\\b', 'a:ads', '', 'x'.repeat(129)]) {
     assert.notStrictEqual(event('sessionStart', { sessionId }).status, 0);
   }

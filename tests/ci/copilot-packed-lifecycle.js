@@ -82,6 +82,9 @@ function verifyCopilotPackedLifecycle({ packageRoot, projectRoot, env }) {
 
   const transcriptPath = path.join(fs.realpathSync(config), 'session-state', 'second', 'events.jsonl');
   fs.mkdirSync(path.dirname(transcriptPath), { recursive: true });
+  assert.deepEqual(dispatch('agentStop', 'second', { stopReason: 'end_turn', transcriptPath }), {});
+  const missing = JSON.parse(run([hooks.sessionStart[0].args[0], 'recall', '--session', 'second']));
+  assert.equal(missing.summary, '');
   const requests = Array.from({ length: 10 }, (_, index) => ({
     type: 'user.message', data: { content: `Request ${index}: ${'計'.repeat(280)}` },
   }));

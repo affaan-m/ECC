@@ -6,6 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const { setTimeout: delay } = require('node:timers/promises');
 const { findPotentialSecrets, hasUnsafeControlCharacters } = require('./memory-vault-format');
 
 const MAX_SUMMARY_BYTES = 16 * 1024;
@@ -182,14 +183,25 @@ function checkpoint(workspace, id, summary, env = process.env) {
   return writeState(workspace, id, { summary, summarySource: 'manual' }, env);
 }
 
-function summarizeTranscript(input, env) {
+async function readTranscript(input, env) {
   if (!input.transcriptPath) return '';
-  const config = configRoot(env);
-  const parent = directory(fs.realpathSync(config), ['session-state', input.id], false);
-  const expected = parent && path.join(parent, 'events.jsonl');
+  const config = fs.realpathSync(configRoot(env));
+  const parts = ['session-state', input.id];
+  const expected = path.join(config, ...parts, 'events.jsonl');
   if (typeof input.transcriptPath !== 'string' || !path.isAbsolute(input.transcriptPath)
     || path.resolve(input.transcriptPath) !== expected) throw new Error('Transcript is outside the current Copilot session.');
-  const content = readBounded(expected, MAX_TRANSCRIPT_BYTES);
+  // Copilot may dispatch the hook before the transcript writer creates the file.
+  for (const wait of [0, 50, 100, 200]) {
+    if (wait) await delay(wait);
+    if (!directory(config, parts, false)) continue;
+    try { return readBounded(expected, MAX_TRANSCRIPT_BYTES); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  return '';
+}
+
+async function summarizeTranscript(input, env) {
+  const content = await readTranscript(input, env);
   const tasks = [];
   const files = new Set();
   const tools = new Set();
@@ -239,7 +251,7 @@ function startupContext(record, env) {
     : historicalContext({ ...record, summary: record.summary.slice(0, limit - overhead - marker.length) + marker }) };
 }
 
-function processLifecycle(event, payload, env = process.env) {
+async function processLifecycle(event, payload, env = process.env) {
   if (!EVENTS.includes(event)) throw new Error('Unknown Copilot lifecycle event.');
   const input = normalizePayload(payload);
   if (event === 'sessionStart') {
@@ -249,7 +261,7 @@ function processLifecycle(event, payload, env = process.env) {
     return output;
   }
   const summary = ['agentStop', 'preCompact'].includes(event) && env.ECC_COPILOT_TRANSCRIPT_SUMMARY === '1'
-    ? summarizeTranscript(input, env) : '';
+    ? await summarizeTranscript(input, env) : '';
   writeState(input.workspace, input.id, { lastEvent: event,
     ...(event === 'sessionEnd' ? { status: 'ended' } : {}),
     ...(summary ? { summary, summarySource: 'native-events' } : {}) }, env);

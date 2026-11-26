@@ -1852,6 +1852,8 @@ node .github/ecc/scripts/hooks/copilot-lifecycle.js checkpoint --session <id> --
 A later session can receive the checkpoint as historical context. Set
 `ECC_SESSION_START_CONTEXT=0` to disable injection. Set
 `ECC_COPILOT_TRANSCRIPT_SUMMARY=1` to opt in to local transcript summaries.
+If Copilot has not created the transcript after a short wait, ECC records the
+lifecycle event and keeps the previous summary.
 Reinstall with `--no-hooks` to remove the managed hook manifest.
 
 The packed-artifact test dispatches fixture events through the installed
