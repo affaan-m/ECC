@@ -8,13 +8,13 @@
  * dir so queued human feedback survives a server restart.
  */
 
-const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
 const { normalizeUiFeedbackItem, uiChatLineFor } = require('../ui-canvas/feedback');
 const { sanitizeAgentDescriptor } = require('./agent-identity');
+const { sessionKeyFor } = require('./session-key');
 
 const FEEDBACK_KINDS = new Set(['chat', 'annotation', 'verdict']);
 const VERDICTS = new Set(['approve', 'request-changes']);
@@ -54,10 +54,6 @@ function canonicalizeArtifactPath(filePath) {
   } catch {
     return absolute;
   }
-}
-
-function sessionKeyFor(canonicalPath) {
-  return crypto.createHash('sha256').update(canonicalPath).digest('hex').slice(0, 12);
 }
 
 function nowIso() {
@@ -252,17 +248,28 @@ function createSessionStore({ stateDir = resolveStateDir() } = {}) {
   // Deliver-and-drain: feedback is handed to exactly one await call, after
   // which the session flips back to open. An ended session keeps reporting
   // ended (with attribution) so agents know to stop polling.
-  function takeFeedback(key) {
+  function takeFeedback(key, limits) {
     const session = get(key);
-    if (!session) return { status: 'missing' };
+    if (!session || (limits?.createdAt && session.createdAt !== limits.createdAt)
+      || (limits?.mode && (session.mode ?? 'plan') !== limits.mode)) return { status: 'missing' };
     if (session.pendingFeedback.length > 0) {
-      const items = session.pendingFeedback;
+      const pending = session.pendingFeedback;
+      const items = limits ? pending.slice(0, limits.items) : pending;
       const result = { status: 'feedback', items };
-      if (session.status === 'ended') {
-        result.sessionEnded = true;
-        result.endedBy = session.endedBy;
+      while (items.length > 0) {
+        if (session.status === 'ended' && items.length === pending.length) {
+          result.sessionEnded = true;
+          result.endedBy = session.endedBy;
+        }
+        if (!limits || Buffer.byteLength(JSON.stringify(result)) <= limits.bytes) break;
+        items.pop();
+        delete result.sessionEnded;
+        delete result.endedBy;
       }
-      commitSession(key, { ...session, pendingFeedback: [], status: session.status === 'ended' ? 'ended' : 'open', updatedAt: nowIso() });
+      if (!items.length) return { status: 'unavailable' };
+      const pendingFeedback = pending.slice(items.length);
+      const status = session.status === 'ended' || pendingFeedback.length ? session.status : 'open';
+      commitSession(key, { ...session, pendingFeedback, status, updatedAt: nowIso() });
       return result;
     }
     if (session.status === 'ended') {

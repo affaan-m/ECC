@@ -276,6 +276,12 @@ jobs:
           name: ecc-ci-installer-artifact
           path: release-artifacts
 
+      - name: Verify packed Copilot Canvas
+        env:
+          ECC_RELEASE_PACKAGE: release-artifacts/${{ needs.pack-installer.outputs.package_file }}
+          ECC_RELEASE_SHA256: ${{ needs.pack-installer.outputs.package_sha256 }}
+        run: node tests/ci/copilot-packed-canvas.js
+
       - name: Verify packed install lifecycle
         env:
           ECC_RELEASE_PACKAGE: release-artifacts/${{ needs.pack-installer.outputs.package_file }}
