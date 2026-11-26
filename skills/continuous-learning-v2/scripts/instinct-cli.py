@@ -1611,6 +1611,30 @@ def _remove_instinct_from_source(source_file_str: str, instinct_id: str) -> None
         print(f"Warning: Failed to remove promoted instinct from {source_file}: {exc}", file=sys.stderr)
 
 
+def _remove_parsed_instincts(content: str, instinct_ids: "set[str]") -> str:
+    """Drop the blocks whose id, as parse_instinct_file reads it, is in instinct_ids.
+
+    Splits content into blocks at the same ``---`` markers the parser opens a
+    frontmatter on and parses each block on its own, so a block is matched by
+    the id the rest of the CLI sees, not by the raw text of its ``id:`` line.
+    """
+    lines = content.split('\n')
+    starts = []
+    in_frontmatter = False
+    for index, line in enumerate(lines):
+        if line.strip() == '---':
+            if not in_frontmatter:
+                starts.append(index)
+            in_frontmatter = not in_frontmatter
+    kept_lines = lines[:starts[0]] if starts else lines
+    for start, end in zip(starts, starts[1:] + [len(lines)]):
+        parsed = parse_instinct_file('\n'.join(lines[start:end]))
+        if not (parsed and parsed[0].get('id') in instinct_ids):
+            kept_lines.extend(lines[start:end])
+    remaining = '\n'.join(kept_lines)
+    return remaining if remaining.endswith('\n') else remaining + '\n'
+
+
 def _remove_superseded_instincts(stale_file: Path, instinct_ids: "set[str]") -> None:
     """Drop updated instincts from their old file in one rewrite.
 
@@ -1621,19 +1645,18 @@ def _remove_superseded_instincts(stale_file: Path, instinct_ids: "set[str]") -> 
     id_list = ", ".join(sorted(instinct_ids))
     try:
         # utf-8-sig: a leading BOM would hide the first frontmatter marker
-        # from _remove_instinct_blocks.
+        # from _remove_parsed_instincts.
         content = stale_file.read_text(encoding="utf-8-sig")
         kept = [i for i in parse_instinct_file(content) if i.get('id') not in instinct_ids]
         if not kept:
             stale_file.unlink()
             return
-        remaining_content = content
-        for instinct_id in sorted(instinct_ids):
-            remaining_content, _ = _remove_instinct_blocks(remaining_content, instinct_id)
-        # _remove_instinct_blocks does not decode ids the way parse_instinct_file
-        # does (JSON escapes in a quoted id), so it can miss a block or match a
-        # different instinct. Write only a result that holds exactly the
-        # instincts meant to stay.
+        # Not _remove_instinct_blocks: it compares the raw text of the id line, so
+        # it misses an id written with JSON escapes and can match a different
+        # instinct whose raw text happens to be the same.
+        remaining_content = _remove_parsed_instincts(content, instinct_ids)
+        # Safety net: write only a result that holds exactly the instincts meant
+        # to stay.
         if parse_instinct_file(remaining_content) != kept:
             print(
                 f"Warning: Could not safely remove superseded instinct(s) {id_list} from {stale_file}; "
