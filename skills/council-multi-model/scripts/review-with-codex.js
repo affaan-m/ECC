@@ -113,8 +113,79 @@ function buildCodexArgs(tempDir, outputFile) {
   ];
 }
 
-function probeCodex(spawn, args, options, label) {
-  const result = spawn('codex', args, options);
+// The quoted script path in an npm (`%dp0%\...`) or pnpm (`%~dp0\...`) cmd shim.
+const CMD_SHIM_ENTRY = /"%(?:dp0%|~dp0)\\([^"%]+\.[cm]?js)"/gi;
+const CODEX_PACKAGE_SEGMENT = '\\node_modules\\@openai\\codex\\';
+
+function windowsPathDirs(env) {
+  const pathValue = env.PATH || env.Path || env.path || '';
+  return pathValue
+    .split(';')
+    .map((dir) => dir.trim().replace(/^"(.*)"$/, '$1'))
+    .filter(Boolean)
+    // cmd.exe resolves a relative entry against the caller's directory; the
+    // spawns run from a temp dir, so the launcher must be absolute.
+    .map((dir) => path.win32.resolve(dir));
+}
+
+function readShimEntry(shimPath, readFile, exists) {
+  let shim;
+  try {
+    shim = String(readFile(shimPath, 'utf8'));
+  } catch {
+    return null;
+  }
+  const shimDir = path.win32.dirname(shimPath);
+  for (const match of shim.matchAll(CMD_SHIM_ENTRY)) {
+    const entry = path.win32.join(shimDir, match[1]);
+    if (entry.toLowerCase().includes(CODEX_PACKAGE_SEGMENT) && exists(entry)) return entry;
+  }
+  return null;
+}
+
+/**
+ * Picks how to start Codex without a shell. npm installs Codex on Windows as a
+ * `codex.cmd` shim, which spawn cannot run without `shell: true`, and a shell
+ * would have to re-quote the temp paths in the arguments. So PATH is walked in
+ * order, as cmd.exe would: `codex.exe` runs as-is, and a `codex.cmd` shim is
+ * replaced by node running the @openai/codex script it points to. A shim that
+ * points elsewhere is skipped; if no launchable Codex follows, that is an
+ * error rather than "not installed". Other platforms, and a Windows PATH with
+ * neither file, keep the bare `codex`.
+ */
+function resolveCodexLauncher(dependencies = {}) {
+  const fallback = { command: 'codex', prefixArgs: [] };
+  if ((dependencies.platform || process.platform) !== 'win32') return fallback;
+
+  const exists = dependencies.existsSync || fs.existsSync;
+  const readFile = dependencies.readFileSync || fs.readFileSync;
+  const execPath = dependencies.execPath || process.execPath;
+  let unlaunchableShim = null;
+  for (const dir of windowsPathDirs(dependencies.env || process.env)) {
+    const exePath = path.win32.join(dir, 'codex.exe');
+    if (exists(exePath)) return { command: exePath, prefixArgs: [] };
+
+    const shimPath = path.win32.join(dir, 'codex.cmd');
+    if (!exists(shimPath)) continue;
+    const entry = readShimEntry(shimPath, readFile, exists);
+    if (entry) return { command: execPath, prefixArgs: [entry] };
+    unlaunchableShim = unlaunchableShim || shimPath;
+  }
+  if (unlaunchableShim) {
+    throw new Error(
+      `Codex CLI was found at ${unlaunchableShim} but could not be launched: `
+      + 'it does not point to an installed @openai/codex script'
+    );
+  }
+  return fallback;
+}
+
+function spawnCodex(spawn, launcher, args, options) {
+  return spawn(launcher.command, [...launcher.prefixArgs, ...args], options);
+}
+
+function probeCodex(spawn, launcher, args, options, label) {
+  const result = spawnCodex(spawn, launcher, args, options);
   if (result.error) {
     if (result.error.code === 'ENOENT') throw new Error('Codex CLI is not installed');
     throw new Error(`Codex ${label} probe failed: ${result.error.message}`);
@@ -128,6 +199,7 @@ function probeCodex(spawn, args, options, label) {
 
 function verifyToollessSupport(dependencies = {}) {
   const spawn = dependencies.spawnSync || spawnSync;
+  const launcher = dependencies.launcher || resolveCodexLauncher(dependencies);
   const options = {
     cwd: os.tmpdir(),
     env: buildEnvironment(dependencies.env || process.env),
@@ -136,7 +208,7 @@ function verifyToollessSupport(dependencies = {}) {
     maxBuffer: 256 * 1024,
     windowsHide: true,
   };
-  const versionText = probeCodex(spawn, ['--version'], options, 'version');
+  const versionText = probeCodex(spawn, launcher, ['--version'], options, 'version');
   const versionMatch = versionText.match(/^codex-cli\s+([^\s]+)$/m);
   if (!versionMatch) {
     throw new Error('Codex version could not be verified for tool-less review');
@@ -148,7 +220,7 @@ function verifyToollessSupport(dependencies = {}) {
     );
   }
 
-  const featuresText = probeCodex(spawn, ['features', 'list'], options, 'feature');
+  const featuresText = probeCodex(spawn, launcher, ['features', 'list'], options, 'feature');
   const stages = new Map();
   for (const line of featuresText.split('\n')) {
     const match = line.trim().match(
@@ -191,7 +263,8 @@ function runReview(prompt, options, dependencies = {}) {
   const spawn = dependencies.spawnSync || spawnSync;
   const environment = buildEnvironment(dependencies.env || process.env);
   const verifySupport = dependencies.verifyToollessSupport || verifyToollessSupport;
-  verifySupport({ spawnSync: spawn, env: environment });
+  const launcher = resolveCodexLauncher({ ...dependencies, env: environment });
+  verifySupport({ spawnSync: spawn, env: environment, launcher });
   const makeTemp = dependencies.mkdtempSync || fs.mkdtempSync;
   const readFile = dependencies.readFileSync || fs.readFileSync;
   const remove = dependencies.rmSync || fs.rmSync;
@@ -199,7 +272,7 @@ function runReview(prompt, options, dependencies = {}) {
   const outputFile = path.join(tempDir, 'last-message.txt');
 
   try {
-    const result = spawn('codex', buildCodexArgs(tempDir, outputFile), {
+    const result = spawnCodex(spawn, launcher, buildCodexArgs(tempDir, outputFile), {
       cwd: tempDir,
       env: environment,
       input: prompt,
@@ -299,6 +372,7 @@ module.exports = {
   buildEnvironment,
   parseArgs,
   providerLabel,
+  resolveCodexLauncher,
   runStdinReview,
   runReview,
   verifyToollessSupport,
