@@ -18,10 +18,57 @@ const {
   buildEnvironment,
   parseArgs,
   providerLabel,
+  resolveCodexLauncher,
   runStdinReview,
   runReview,
   verifyToollessSupport,
 } = require(ADAPTER);
+
+const WIN_NPM_DIR = 'C:\\Users\\dev\\AppData\\Roaming\\npm';
+const WIN_NPM_SHIM = `${WIN_NPM_DIR}\\codex.cmd`;
+const WIN_NPM_ENTRY = `${WIN_NPM_DIR}\\node_modules\\@openai\\codex\\bin\\codex.js`;
+const WIN_NODE = 'C:\\Program Files\\nodejs\\node.exe';
+// Tail of the shim `npm install -g @openai/codex` writes on Windows.
+const NPM_CODEX_SHIM = [
+  '@ECHO off',
+  'GOTO start',
+  ':find_dp0',
+  'SET dp0=%~dp0',
+  'EXIT /b',
+  ':start',
+  'SETLOCAL',
+  'CALL :find_dp0',
+  'IF EXIST "%dp0%\\node.exe" (',
+  '  SET "_prog=%dp0%\\node.exe"',
+  ') ELSE (',
+  '  SET "_prog=node"',
+  '  SET PATHEXT=%PATHEXT:;.JS;=;%',
+  ')',
+  'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  '
+    + '"%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*',
+].join('\r\n');
+
+function fakeWindowsFs(files) {
+  const lookup = new Map(Object.entries(files).map(([file, body]) => [file.toLowerCase(), body]));
+  return {
+    existsSync: (file) => lookup.has(String(file).toLowerCase()),
+    readFileSync: (file) => {
+      const key = String(file).toLowerCase();
+      if (!lookup.has(key)) {
+        const error = new Error(`ENOENT: no such file or directory, open '${file}'`);
+        error.code = 'ENOENT';
+        throw error;
+      }
+      return lookup.get(key);
+    },
+  };
+}
+
+function featureListOutput() {
+  return REQUIRED_TOOLLESS_FEATURES
+    .map((feature) => `${feature.padEnd(36)} stable             true`)
+    .join('\n');
+}
 
 function immediateStdin(chunks) {
   return {
@@ -152,6 +199,153 @@ function runTests() {
       },
     }), /cannot guarantee tool-less review.*shell_tool/);
     assert.strictEqual(probeCalls, 2);
+  })) passed += 1; else failed += 1;
+
+  if (test('launches the npm codex.cmd entry through node on Windows for both probes', () => {
+    const calls = [];
+    const version = verifyToollessSupport({
+      platform: 'win32',
+      execPath: WIN_NODE,
+      env: { PATH: `C:\\Windows\\system32;${WIN_NPM_DIR}`, PATHEXT: '.COM;.EXE;.BAT;.CMD' },
+      ...fakeWindowsFs({ [WIN_NPM_SHIM]: NPM_CODEX_SHIM, [WIN_NPM_ENTRY]: '' }),
+      spawnSync: (command, args, options) => {
+        calls.push({ command, args, options });
+        if (args[1] === '--version') {
+          return { status: 0, stdout: `codex-cli ${SUPPORTED_CODEX_VERSION}\n`, stderr: '' };
+        }
+        return { status: 0, stdout: featureListOutput(), stderr: '' };
+      },
+    });
+    assert.strictEqual(version, SUPPORTED_CODEX_VERSION);
+    assert.deepStrictEqual(calls.map(({ command, args }) => [command, args]), [
+      [WIN_NODE, [WIN_NPM_ENTRY, '--version']],
+      [WIN_NODE, [WIN_NPM_ENTRY, 'features', 'list']],
+    ]);
+    for (const { options } of calls) assert.ok(!options.shell, 'probe must not use a shell');
+  })) passed += 1; else failed += 1;
+
+  if (test('launches the review through node on Windows without a shell, args intact', () => {
+    let invocation;
+    let verifiedWith;
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc council & review '));
+    const shimFs = fakeWindowsFs({ [WIN_NPM_SHIM]: NPM_CODEX_SHIM, [WIN_NPM_ENTRY]: '' });
+    const result = runReview('review this draft', {
+      consent: true,
+      hostProvider: 'anthropic',
+      timeoutMs: 20_000,
+    }, {
+      platform: 'win32',
+      execPath: WIN_NODE,
+      env: { PATH: WIN_NPM_DIR, USERPROFILE: 'C:\\Users\\dev' },
+      existsSync: shimFs.existsSync,
+      readFileSync: (file, encoding) => (
+        String(file).startsWith(tempDir) ? fs.readFileSync(file, encoding) : shimFs.readFileSync(file)
+      ),
+      verifyToollessSupport: (deps) => { verifiedWith = deps; },
+      mkdtempSync: () => tempDir,
+      spawnSync: (command, args, options) => {
+        invocation = { command, args, options };
+        const outputIndex = args.indexOf('--output-last-message') + 1;
+        fs.writeFileSync(args[outputIndex], 'critical fault', 'utf8');
+        return { status: 0, stderr: '' };
+      },
+      rmSync: (target, options) => fs.rmSync(target, options),
+    });
+    assert.strictEqual(result, 'cross-provider external critique\ncritical fault');
+    assert.strictEqual(invocation.command, WIN_NODE);
+    assert.deepStrictEqual(invocation.args, [
+      WIN_NPM_ENTRY,
+      ...buildCodexArgs(tempDir, path.join(tempDir, 'last-message.txt')),
+    ]);
+    assert.ok(!invocation.options.shell, 'review must not use a shell');
+    assert.deepStrictEqual(verifiedWith.launcher, { command: WIN_NODE, prefixArgs: [WIN_NPM_ENTRY] });
+    assert.strictEqual(fs.existsSync(tempDir), false);
+  })) passed += 1; else failed += 1;
+
+  if (test('reports Codex as found but not launchable when the shim entry is missing', () => {
+    const scenarios = [
+      fakeWindowsFs({ [WIN_NPM_SHIM]: NPM_CODEX_SHIM }),
+      fakeWindowsFs({ [WIN_NPM_SHIM]: '@ECHO off\r\n"%~dp0\\unrelated.exe" %*' }),
+    ];
+    for (const shimFs of scenarios) {
+      let spawned = false;
+      assert.throws(() => verifyToollessSupport({
+        platform: 'win32',
+        execPath: WIN_NODE,
+        env: { PATH: WIN_NPM_DIR },
+        ...shimFs,
+        spawnSync: () => { spawned = true; },
+      }), (error) => {
+        assert.match(error.message, /Codex CLI was found at .*codex\.cmd but could not be launched/);
+        assert.doesNotMatch(error.message, /not installed/);
+        return true;
+      });
+      assert.strictEqual(spawned, false);
+    }
+  })) passed += 1; else failed += 1;
+
+  if (test('resolves Windows launchers in PATH order and keeps codex elsewhere', () => {
+    const pnpmDir = 'C:\\Users\\dev\\AppData\\Local\\pnpm';
+    const pnpmEntry = `${pnpmDir}\\global\\5\\node_modules\\@openai\\codex\\bin\\codex.js`;
+    assert.deepStrictEqual(resolveCodexLauncher({
+      platform: 'win32',
+      execPath: WIN_NODE,
+      env: { PATH: `"${pnpmDir}";;${WIN_NPM_DIR}` },
+      ...fakeWindowsFs({
+        [`${pnpmDir}\\codex.CMD`]: '@SETLOCAL\r\n"%_prog%" '
+          + '"%~dp0\\global\\5\\node_modules\\@openai\\codex\\bin\\codex.js" %*',
+        [pnpmEntry]: '',
+        [WIN_NPM_SHIM]: NPM_CODEX_SHIM,
+        [WIN_NPM_ENTRY]: '',
+      }),
+    }), { command: WIN_NODE, prefixArgs: [pnpmEntry] });
+
+    const wrapperDir = 'C:\\ProgramData\\chocolatey\\bin';
+    assert.deepStrictEqual(resolveCodexLauncher({
+      platform: 'win32',
+      execPath: WIN_NODE,
+      env: { PATH: `${wrapperDir};${WIN_NPM_DIR}` },
+      ...fakeWindowsFs({
+        [`${wrapperDir}\\codex.cmd`]: '@ECHO off\r\n"%~dp0\\..\\lib\\codex\\wrapper.exe" %*',
+        [WIN_NPM_SHIM]: NPM_CODEX_SHIM,
+        [WIN_NPM_ENTRY]: '',
+      }),
+    }), { command: WIN_NODE, prefixArgs: [WIN_NPM_ENTRY] });
+
+    const nativeDir = 'C:\\Tools\\codex';
+    assert.deepStrictEqual(resolveCodexLauncher({
+      platform: 'win32',
+      env: { PATH: `${nativeDir};${WIN_NPM_DIR}` },
+      ...fakeWindowsFs({ [`${nativeDir}\\codex.exe`]: '', [WIN_NPM_SHIM]: NPM_CODEX_SHIM }),
+    }), { command: `${nativeDir}\\codex.exe`, prefixArgs: [] });
+
+    assert.deepStrictEqual(resolveCodexLauncher({
+      platform: 'win32',
+      env: { PATH: 'C:\\Windows\\system32' },
+      ...fakeWindowsFs({}),
+    }), { command: 'codex', prefixArgs: [] });
+
+    for (const platform of ['darwin', 'linux']) {
+      assert.deepStrictEqual(resolveCodexLauncher({
+        platform,
+        env: { PATH: '/usr/local/bin' },
+        existsSync: () => { throw new Error('PATH must not be scanned off Windows'); },
+      }), { command: 'codex', prefixArgs: [] });
+    }
+  })) passed += 1; else failed += 1;
+
+  if (test('still reports a missing Codex CLI on Windows as not installed', () => {
+    assert.throws(() => verifyToollessSupport({
+      platform: 'win32',
+      env: { PATH: 'C:\\Windows\\system32' },
+      ...fakeWindowsFs({}),
+      spawnSync: (command) => {
+        assert.strictEqual(command, 'codex');
+        const error = new Error('spawnSync codex ENOENT');
+        error.code = 'ENOENT';
+        return { error };
+      },
+    }), /Codex CLI is not installed/);
   })) passed += 1; else failed += 1;
 
   if (test('passes only an allowlisted environment to Codex', () => {
