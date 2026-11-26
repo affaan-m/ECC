@@ -952,6 +952,38 @@ async function main() {
       }),
     ],
     [
+      "strict edits format and typecheck JavaScript and TypeScript module files",
+      async () => withTempProject([], async (projectDir) => {
+        const previousProfile = process.env.ECC_HOOK_PROFILE
+        process.env.ECC_HOOK_PROFILE = "strict"
+        try {
+          const hooks = await ECCHooksPlugin({ client: createClient(), $: createFailingShell(), directory: projectDir })
+          const ran = (tool) => spawnCalls.some((call) => call.args.join(" ").includes(tool))
+
+          for (const file of ["src/a.mjs", "src/a.cjs", "src/a.mts", "src/a.cts"]) {
+            resetSpawns()
+            await hooks["file.edited"]({ path: file })
+            assert.ok(ran("prettier"), `${file} must be formatted`)
+          }
+          resetSpawns()
+          await hooks["file.edited"]({ path: "src/a.mjs.map" })
+          assert.ok(!ran("prettier"), "a source map must not be formatted")
+
+          for (const file of ["src/a.mts", "src/a.cts"]) {
+            resetSpawns()
+            await hooks["tool.execute.after"]({ tool: "edit", args: { filePath: file } }, {})
+            assert.ok(ran("tsc"), `${file} must be typechecked`)
+          }
+          resetSpawns()
+          await hooks["tool.execute.after"]({ tool: "edit", args: { filePath: "src/a.mjs" } }, {})
+          assert.ok(!ran("tsc"), "a JavaScript module must not be typechecked")
+        } finally {
+          resetSpawns()
+          restoreEnv({ ECC_HOOK_PROFILE: previousProfile })
+        }
+      }),
+    ],
+    [
       "detached notification registers its error listener before returning (T03) and hides windows (T14)",
       async () => withTempProject([], async (projectDir) => {
         const client = createClient()
