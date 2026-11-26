@@ -51,7 +51,7 @@ const DEFAULT_SKILL_PROBE = path.join('skills', 'continuous-learning-v2');
  * Resolve the ECC source root directory.
  *
  * Tries, in order:
- *   1. CLAUDE_PLUGIN_ROOT env var (set by Claude Code for hooks, or by user)
+ *   1. Plugin roots supplied by Claude, Antigravity, or Gemini
  *   2. Standard install location (~/.claude/) — when scripts exist there
  *   3. Known plugin roots under ~/.claude/plugins/ (current + legacy slugs)
  *   4. Plugin cache auto-detection — scans ~/.claude/plugins/cache/{ecc,everything-claude-code}/
@@ -60,10 +60,8 @@ const DEFAULT_SKILL_PROBE = path.join('skills', 'continuous-learning-v2');
  * @param {object} [options]
  * @param {string} [options.homeDir]  Override home directory (for testing)
  * @param {string} [options.envRoot]  Override CLAUDE_PLUGIN_ROOT (for testing)
- * @param {string} [options.probe]    Relative path used to verify a candidate
- *                                    root contains what the caller needs. When
- *                                    given, it is honored exactly (script
- *                                    consumers pass their own script path). When
+ * @param {string} [options.probe]    Relative path to the file that a candidate
+ *                                    root must contain. When
  *                                    omitted, a candidate must contain BOTH the
  *                                    ECC script tree and a sentinel ECC skill,
  *                                    so a partial install (scripts without
@@ -71,9 +69,26 @@ const DEFAULT_SKILL_PROBE = path.join('skills', 'continuous-learning-v2');
  * @returns {string} Resolved ECC root path
  */
 function resolveEccRoot(options = {}) {
-  const envRoot = options.envRoot !== undefined
-    ? options.envRoot
-    : (process.env.CLAUDE_PLUGIN_ROOT || process.env.ANTIGRAVITY_PLUGIN_ROOT || process.env.GEMINI_PLUGIN_ROOT || '');
+  // With a named probe, a partial install must not hide later candidates.
+  // Skill consumers without a probe retain the explicit override and require
+  // both a script and an ECC skill when discovering a root (#2544).
+  const isRoot = options.probe
+    ? (dir) => {
+      try {
+        return fs.statSync(path.join(dir, options.probe)).isFile();
+      } catch {
+        return false;
+      }
+    }
+    : (dir) => fs.existsSync(path.join(dir, DEFAULT_SCRIPT_PROBE))
+            && fs.existsSync(path.join(dir, DEFAULT_SKILL_PROBE));
+  const envRoots = options.envRoot !== undefined
+    ? [options.envRoot]
+    : [process.env.CLAUDE_PLUGIN_ROOT, process.env.ANTIGRAVITY_PLUGIN_ROOT, process.env.GEMINI_PLUGIN_ROOT];
+  const envRoot = options.probe
+    ? envRoots.map((dir) => normalizePluginRootForPlatform(dir && dir.trim()))
+      .find((dir) => dir && isRoot(dir))
+    : envRoots.find(Boolean);
 
   if (envRoot && envRoot.trim()) {
     return envRoot.trim();
@@ -93,17 +108,6 @@ function resolveEccRoot(options = {}) {
       ? path.join(homeDir, rawDir.slice(2))
       : rawDir;
   const claudeDir = expandedDir ? path.resolve(expandedDir) : path.join(homeDir, '.claude');
-
-  // Decide whether a candidate directory is a usable ECC root. An explicit
-  // caller probe is honored exactly (script consumers know the artifact they
-  // need). With the default probe the caller is a skill consumer, so a
-  // candidate must contain both ECC's scripts and a sentinel ECC skill —
-  // otherwise a scripts-only ~/.claude short-circuits and every skill path
-  // resolves to a location that does not exist (#2544).
-  const isRoot = options.probe
-    ? (dir) => fs.existsSync(path.join(dir, options.probe))
-    : (dir) => fs.existsSync(path.join(dir, DEFAULT_SCRIPT_PROBE))
-            && fs.existsSync(path.join(dir, DEFAULT_SKILL_PROBE));
 
   // Standard install — files are copied directly into ~/.claude/
   if (isRoot(claudeDir)) {
@@ -168,13 +172,15 @@ function normalizePluginRootForPlatform(rootDir, platform = process.platform) {
  *
  * This minified form contains no spread, no nested array literals, and no
  * escaped double quotes, so it survives `node -e "..."` quoting on every shell.
- * When CLAUDE_PLUGIN_ROOT is set (as Claude Code does for plugin hooks and
- * commands) it is used directly. Otherwise the inline probes the same set of
- * locations resolveEccRoot() knows about — ~/.claude, the exact plugin roots
+ * The default form uses CLAUDE_PLUGIN_ROOT directly when set. Otherwise it
+ * probes the locations resolveEccRoot() knows about — ~/.claude, exact plugin roots
  * under ~/.claude/plugins/, and the versioned plugin cache — only far enough to
  * load the committed resolve-ecc-root module, then delegates the authoritative
  * decision to resolveEccRoot(). This keeps discovery behaviour identical to the
  * old inline while centralising the real logic in one tested module.
+ * With a command probe, check for a runnable file directly. This lets
+ * commands find the installed script without loading JavaScript merely to
+ * decide which root to use.
  *
  * Usage in commands:
  *   const _r = <paste INLINE_RESOLVE>;
@@ -197,7 +203,7 @@ function getInlineWslConversion() {
 
 function buildInlineResolve(options = {}) {
   const wslConversion = getInlineWslConversion();
-  let probeArg = '';
+  let probePath;
   if (options && options.probe) {
     const segments = String(options.probe).split(/[\\/]/).filter(Boolean);
     for (const seg of segments) {
@@ -205,9 +211,30 @@ function buildInlineResolve(options = {}) {
         throw new Error(`Invalid probe segment: ${seg}`);
       }
     }
-    probeArg = `{probe:p.join(${segments.map((s) => `'${s}'`).join(',')})}`;
+    probePath = `p.join(${segments.map((s) => `'${s}'`).join(',')})`;
   }
-  return `(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=(process.env.CLAUDE_CONFIG_DIR||'').trim()||p.join(o.homedir(),'.claude');if(d==='~')d=o.homedir();else if(d.charAt(0)==='~'&&(d.charAt(1)==='/'||d.charCodeAt(1)===92))d=p.join(o.homedir(),d.slice(2));${wslConversion}d=p.resolve(d);function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot(${probeArg})}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}function D(x){try{return f.readdirSync(x,{withFileTypes:true}).filter(function(z){return z.isDirectory()}).map(function(z){return z.name})}catch(e){if(e.code==='ENOENT')return [];throw e}}var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=D(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=D(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}return d})()`;
+  const command = options?.command && probePath;
+  const probeArg = probePath ? `{probe:${probePath}}` : '';
+  const inspect = command
+    ? `function N(x){if(o.platform()==='win32'&&x.charAt(0)==='/'&&x.charAt(1).match(/[A-Za-z]/)&&(x.length===2||x.charAt(2)==='/'))return x.charAt(1).toUpperCase()+':/'+x.slice(3);return x}`
+      + `function F(x){try{return f.statSync(x).isFile()}catch(_){return false}}`
+      + `function L(x){x=(x||'').trim();if(x==='')return null;x=p.resolve(N(x));return F(p.join(x,${probePath}))?x:null}`
+    : `function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot(${probeArg})}catch(_){return null}}`;
+  const first = command
+    ? `var r=L(process.env.CLAUDE_PLUGIN_ROOT)||L(process.env.ANTIGRAVITY_PLUGIN_ROOT)||L(process.env.GEMINI_PLUGIN_ROOT)||L(d)||L(p.join(o.homedir(),'.gemini','config','plugins','ecc'));if(r)return r;`
+    : 'var r=L(d);if(r)return r;';
+  const fallback = command
+    ? `var x=(process.env.OPENCODE_CONFIG_DIR||'').trim(),z=N((process.env.XDG_CONFIG_HOME||'').trim());r=L(x||(z?p.join(z,'opencode'):p.join(o.homedir(),'.config','opencode')));if(r)return r;`
+      + `var a=N((process.env.CLAUDE_PROJECT_DIR||'').trim())||process.cwd(),q=p.join(a,'.claude');return F(p.join(q,'ecc','install-state.json'))||F(p.join(q,'scripts','lib','resolve-ecc-root.js'))?L(q)||'':''`
+    : 'return d';
+  return `(function(){var p=require('path'),f=require('fs'),o=require('os');${command ? '' : "var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();"}`
+    + `var d=(process.env.CLAUDE_CONFIG_DIR||'').trim()||p.join(o.homedir(),'.claude');`
+    + `if(d==='~')d=o.homedir();else if(d.charAt(0)==='~'&&(d.charAt(1)==='/'||d.charCodeAt(1)===92))d=p.join(o.homedir(),d.slice(2));`
+    + `${wslConversion}d=p.resolve(${command ? 'N(d)' : 'd'});${inspect}${first}`
+    + `var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}`
+    + `function D(x){try{return f.readdirSync(x,{withFileTypes:true}).filter(function(z){return z.isDirectory()}).map(function(z){return z.name})}catch(e){if(e.code==='ENOENT')return [];throw e}}`
+    + `var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=D(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=D(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}`
+    + `${fallback}})()`;
 }
 
 const INLINE_RESOLVE = buildInlineResolve();
