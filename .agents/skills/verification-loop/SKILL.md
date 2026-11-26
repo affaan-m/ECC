@@ -1,14 +1,14 @@
 ---
 name: verification-loop
-description: "A comprehensive verification system for Claude Code sessions. Use when verifying a Claude Code session's work before claiming it is complete."
+description: Verify coding changes with project-pinned build, type, lint, test, security, and diff checks before handoff or a PR.
 license: MIT
 ---
 
 # Verification Loop Skill
 
-A comprehensive verification system for Claude Code sessions.
+Verify the completed work with the project's local checks.
 
-## When to Use
+## When to Activate
 
 Invoke this skill:
 - After completing a feature or significant code change
@@ -18,72 +18,47 @@ Invoke this skill:
 
 ## Verification Phases
 
-### Phase 1: Build Verification
-```bash
-# Check if project builds
-npm run build 2>&1 | tail -20
-# OR
-pnpm build 2>&1 | tail -20
-```
+Review the repository's check definitions and use its installed, pinned toolchain. Select commands for the affected project and use the host's native shell. Review changed or unfamiliar scripts before running them. If a required command is missing, report the prerequisite and use the repository's pinned setup only when installation is in scope.
 
-If build fails, STOP and fix before continuing.
+### Phase 1: Build Verification
+
+Run the configured build for the affected package, such as `npm run build` or `pnpm build` when the corresponding script is present. Check its actual exit status before summarizing its output. Stop dependent checks when build fails and report the cause or fix it within the task scope.
 
 ### Phase 2: Type Check
-```bash
-# TypeScript projects
-npx tsc --noEmit 2>&1 | head -30
 
-# Python projects
-pyright . 2>&1 | head -30
-```
-
-Report all type errors. Fix critical ones before continuing.
+Run the repository's configured type-check command, such as `npm run typecheck` when defined. A known, already installed local type checker can be used for the affected modules. Report type errors without downloading a floating tool as a fallback.
 
 ### Phase 3: Lint Check
-```bash
-# JavaScript/TypeScript
-npm run lint 2>&1 | head -30
 
-# Python
-ruff check . 2>&1 | head -30
-```
+Run the configured lint target, such as `npm run lint` or a pinned, installed `ruff` for Python. Report the exit status, relevant diagnostics, and any warnings. Summarize or truncate logs only after saving the status of the original command.
 
 ### Phase 4: Test Suite
-```bash
-# Run tests with coverage
-npm run test -- --coverage 2>&1 | tail -50
 
-# Check coverage threshold
-# Target: 80% minimum
-```
-
-Report:
-- Total tests: X
-- Passed: X
-- Failed: X
-- Coverage: X%
+Run the relevant local test suites and use the project's coverage command and threshold when applicable. Record executed, passed, failed, and skipped tests and measured coverage. Identify checks that were blocked, cached, or found no tests.
 
 ### Phase 5: Security Scan
-```bash
-# Check for secrets
-grep -rn "sk-" --include="*.ts" --include="*.js" . 2>/dev/null | head -10
-grep -rn "api_key" --include="*.ts" --include="*.js" . 2>/dev/null | head -10
 
-# Check for console.log
-grep -rn "console.log" --include="*.ts" --include="*.tsx" src/ 2>/dev/null | head -10
-```
+Review files in scope for exposed credentials, unsafe logging, and permission changes. Run the project's configured local scanner in redacted or summary mode and interpret its exit codes according to its documented contract and configuration. For example, Gitleaks defaults to exit status 1 for a leak or an error.
+
+For a lightweight working-tree check, use `git grep --untracked --exclude-standard --no-recurse-submodules --files-with-matches` with the project's reviewed patterns and pass explicit in-scope paths after `--`. This includes new, non-ignored files. Use the configured local scanner in redacted or summary mode for ignored files explicitly in scope.
+
+Separately, use `git grep --cached --no-recurse-submodules --files-with-matches` with the same patterns and paths to check what is staged in the index.
+
+The parent repository tracks submodules by commit ID. For each initialized submodule in scope, including nested submodules, repeat both checks from the submodule root with explicit paths relative to it. If an in-scope submodule is unavailable, report its scan as blocked.
+
+Checking recorded submodule commits without fetching requires Git 2.45 or newer. Check support with `git --no-lazy-fetch --version` before the recorded-commit checks. If Git rejects the option, report the recorded-commit scan as blocked. The working-tree and index checks can still run.
+
+For each in-scope submodule recorded in the parent index, read its stage-0 gitlink (mode `160000`) with `git ls-files --stage -- <submodule-path>`. Scan that recorded commit from the submodule root with `git --no-lazy-fetch grep --no-recurse-submodules --files-with-matches -e <pattern> <recorded-commit> -- <in-scope-paths>`, even when it matches the submodule's checked-out commit. Use the same reviewed patterns and paths relative to the submodule.
+
+For an in-scope nested submodule in the recorded tree, read its gitlink from the containing recorded commit using `git --no-lazy-fetch ls-tree <containing-commit> -- <submodule-path>` and scan its recorded commit in the nested repository. Report the affected scan as blocked if the gitlink is ambiguous or a required local repository or object is unavailable.
+
+For each `git grep` check, save its exit status and inspect stderr locally before classifying the result. If stderr reports a read error or another scan failure, report the affected scan as blocked or failed regardless of the exit status. Otherwise, exit status 0 indicates matches, 1 indicates no matches, and a status greater than 1 indicates a check error.
+
+Report findings by rule, count, and applicable file location. Keep raw matches and private logs out of the report, tool output, PRs, and external services. Use synthetic examples to explain findings.
 
 ### Phase 6: Diff Review
-```bash
-# Show what changed
-git diff --stat
-git diff HEAD~1 --name-only
-```
 
-Review each changed file for:
-- Unintended changes
-- Missing error handling
-- Potential edge cases
+Check the diff against the intended base, including staged or unstaged changes in scope. Review unintended changes, missing error handling, and edge cases.
 
 ## Target Acceptance
 
@@ -132,7 +107,7 @@ Set a mental checkpoint:
 - After finishing a component
 - Before moving to next task
 
-Run: /verify
+Use the verification-loop skill, or /verify where the host provides that command.
 ```
 
 ## Integration with Hooks
