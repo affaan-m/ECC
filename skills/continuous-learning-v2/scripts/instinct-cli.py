@@ -1039,14 +1039,14 @@ def cmd_import(args) -> int:
         scope_root = GLOBAL_INSTINCTS_DIR.resolve()
     else:
         scope_root = (project["project_dir"] / "instincts").resolve() if project["id"] != "global" else GLOBAL_INSTINCTS_DIR.resolve()
-    stale_paths = []
+    stale_entries = []
     for inst in to_update:
         inst_id = inst.get('id')
         stale = next((e for e in existing if e.get('id') == inst_id), None)
         if stale and stale.get('_source_file'):
             stale_path = Path(stale['_source_file']).resolve()
             if stale_path.exists() and str(stale_path).startswith(str(scope_root) + os.sep):
-                stale_paths.append(stale_path)
+                stale_entries.append((stale_path, inst_id))
 
     # Write new file first (safe: if this fails, stale files are preserved)
     timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -1078,12 +1078,9 @@ def cmd_import(args) -> int:
 
     output_file.write_text(output_content, encoding="utf-8")
 
-    # Remove stale files only after the new file has been written successfully
-    for stale_path in stale_paths:
-        try:
-            stale_path.unlink()
-        except OSError:
-            pass  # best-effort removal
+    # Remove the stale copies only after the new file has been written successfully
+    for stale_path, inst_id in stale_entries:
+        _remove_superseded_instinct(stale_path, inst_id)
 
     print(f"\nImport complete!")
     print(f"   Scope: {target_scope}")
@@ -1612,6 +1609,28 @@ def _remove_instinct_from_source(source_file_str: str, instinct_id: str) -> None
             source_file.unlink()
     except OSError as exc:
         print(f"Warning: Failed to remove promoted instinct from {source_file}: {exc}", file=sys.stderr)
+
+
+def _remove_superseded_instinct(stale_file: Path, instinct_id: str) -> None:
+    """Drop an updated instinct from its old file.
+
+    One file can hold several instincts (an import writes all of them to a
+    single file), so only the superseded block goes. The file itself is
+    deleted only when it holds no other instinct.
+    """
+    try:
+        # utf-8-sig: a leading BOM would hide the first frontmatter marker
+        # from _remove_instinct_blocks.
+        content = stale_file.read_text(encoding="utf-8-sig")
+        others = [i for i in parse_instinct_file(content) if i.get('id') != instinct_id]
+        if not others:
+            stale_file.unlink()
+            return
+        remaining_content, removed = _remove_instinct_blocks(content, instinct_id)
+        if removed:
+            _write_text_atomic(stale_file, remaining_content)
+    except (OSError, UnicodeDecodeError):
+        pass  # best-effort removal
 
 
 def cmd_promote(args) -> int:
