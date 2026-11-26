@@ -1078,9 +1078,14 @@ def cmd_import(args) -> int:
 
     output_file.write_text(output_content, encoding="utf-8")
 
-    # Remove the stale copies only after the new file has been written successfully
-    for stale_path, inst_ids in stale_ids_by_file.items():
-        _remove_superseded_instincts(stale_path, inst_ids)
+    # Remove the stale copies only after the new file has been written successfully.
+    # Each old file is read, checked and replaced under the registry lock, the one
+    # lock every instinct-cli process takes, so a concurrent import that updates a
+    # different instinct from the same file starts from this import's result.
+    # Like the registry lock itself, this does nothing without fcntl (Windows).
+    with _registry_lock():
+        for stale_path, inst_ids in stale_ids_by_file.items():
+            _remove_superseded_instincts(stale_path, inst_ids)
 
     print(f"\nImport complete!")
     print(f"   Scope: {target_scope}")
@@ -1665,6 +1670,8 @@ def _remove_superseded_instincts(stale_file: Path, instinct_ids: "set[str]") -> 
             )
             return
         _write_text_atomic(stale_file, remaining_content)
+    except FileNotFoundError:
+        pass  # a concurrent import already removed the whole file
     except (OSError, UnicodeDecodeError) as exc:
         print(f"Warning: Failed to remove superseded instinct(s) {id_list} from {stale_file}: {exc}", file=sys.stderr)
 

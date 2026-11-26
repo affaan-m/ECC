@@ -152,9 +152,10 @@ function rawBlock(idLine, confidence, action) {
   return ['---', idLine, 'trigger: "when it applies"', `confidence: ${confidence}`, '---', '', action, ''].join('\n');
 }
 
-// Run cmd_import in-process, after applying `patchLines` to the loaded module
-// `m`, and report its status, its stderr and the atomic rewrites it performed.
-function importInProcess(root, sourcePath, patchLines = []) {
+// Run cmd_import in-process and report its status, its stderr and the atomic
+// rewrites it performed. `before` lines run against the loaded module `m`
+// ahead of the import, `after` lines once it returns; both may fill `extra`.
+function importInProcess(root, sourcePath, { before = [], after = [] } = {}) {
   const code = [
     'import argparse, importlib.util, json',
     `spec = importlib.util.spec_from_file_location('icli', ${JSON.stringify(cliPath)})`,
@@ -166,10 +167,12 @@ function importInProcess(root, sourcePath, patchLines = []) {
     '    rewrites.append(file_path.name)',
     '    write(file_path, content)',
     'm._write_text_atomic = counting',
-    ...patchLines,
+    'extra = {}',
+    ...before,
     `args = argparse.Namespace(source=${JSON.stringify(sourcePath)}, scope='global', min_confidence=None, dry_run=False, force=True)`,
     'status = m.cmd_import(args)',
-    "print(json.dumps({'status': status, 'rewrites': rewrites}))",
+    ...after,
+    "print(json.dumps({'status': status, 'rewrites': rewrites, 'extra': extra}))",
   ].join('\n');
   const result = spawnSync(PYTHON3, ['-c', code], {
     cwd: root,
@@ -486,15 +489,94 @@ test('a rewrite that would not keep exactly the other instincts is refused and r
     const update = writeSource(path.join(root, 'sources'), 'update.yaml', [['prefer-functional', 0.9]]);
 
     // Stand in for a block remover that drops a sibling's action text.
-    const result = importInProcess(root, update, [
-      'remove = m._remove_parsed_instincts',
-      "m._remove_parsed_instincts = lambda content, ids: remove(content, ids).replace('Action for always-test-first.', '')",
-    ]);
+    const result = importInProcess(root, update, {
+      before: [
+        'remove = m._remove_parsed_instincts',
+        "m._remove_parsed_instincts = lambda content, ids: remove(content, ids).replace('Action for always-test-first.', '')",
+      ],
+    });
 
     assert.strictEqual(result.status, 0);
     assert.deepStrictEqual(result.rewrites, []);
     assert.match(result.stderr, /Warning: Could not safely remove superseded instinct\(s\) prefer-functional from .*team\.yaml/);
     assert.strictEqual(fs.readFileSync(staleFile, 'utf8'), original);
+  } finally {
+    cleanupDir(root);
+  }
+});
+
+test('two imports updating different instincts from one file do not restore each other\'s old copy', () => {
+  // The cleanup lock is fcntl-based, as the registry lock is; without fcntl
+  // (Windows) it does nothing and this interleaving is not prevented.
+  if (process.platform === 'win32') {
+    console.log('    (skipped: no fcntl lock on Windows)');
+    return;
+  }
+  const root = createTempDir();
+  try {
+    const personalDir = path.join(root, 'instincts', 'personal');
+    fs.mkdirSync(personalDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(personalDir, 'team.yaml'),
+      ['prefer-functional', 'always-test-first', 'grep-before-edit'].map(id => instinctBlock(id, 0.6)).join('\n')
+    );
+    const sources = path.join(root, 'sources');
+    const updateA = writeSource(sources, 'update-a.yaml', [['prefer-functional', 0.9]]);
+    const updateB = writeSource(sources, 'update-b.yaml', [['always-test-first', 0.9]]);
+
+    // Hold this import between reading the old file and replacing it, and run
+    // a second import of the other instinct in that gap. Unserialized, the
+    // second import finishes in the gap and this one then writes back the
+    // old always-test-first it read earlier.
+    const result = importInProcess(root, updateA, {
+      before: [
+        'import subprocess, sys',
+        'held = m._write_text_atomic',
+        'def hold_then_write(file_path, content):',
+        `    extra['proc'] = subprocess.Popen([sys.executable, ${JSON.stringify(cliPath)}, 'import', ${JSON.stringify(updateB)}, '--scope', 'global', '--force'], stdout=subprocess.DEVNULL)`,
+        '    try:',
+        "        extra['proc'].wait(timeout=1.5)",
+        '    except subprocess.TimeoutExpired:',
+        '        pass',
+        '    held(file_path, content)',
+        'm._write_text_atomic = hold_then_write',
+      ],
+      after: ["extra = {'second_import_status': extra['proc'].wait(timeout=60)}"],
+    });
+
+    assert.strictEqual(result.status, 0);
+    assert.strictEqual(result.extra.second_import_status, 0);
+    assert.deepStrictEqual(storedInstincts(path.join(root, 'instincts')), [
+      'always-test-first=0.9',
+      'grep-before-edit=0.6',
+      'prefer-functional=0.9',
+    ]);
+  } finally {
+    cleanupDir(root);
+  }
+});
+
+test('an old file that another import already removed is not reported as a failure', () => {
+  const root = createTempDir();
+  try {
+    const personalDir = path.join(root, 'instincts', 'personal');
+    fs.mkdirSync(personalDir, { recursive: true });
+    fs.writeFileSync(path.join(personalDir, 'solo.yaml'), instinctBlock('prefer-functional', 0.6));
+    const update = writeSource(path.join(root, 'sources'), 'update.yaml', [['prefer-functional', 0.9]]);
+
+    const result = importInProcess(root, update, {
+      before: [
+        'cleanup = m._remove_superseded_instincts',
+        'def removed_meanwhile(stale_file, instinct_ids):',
+        '    stale_file.unlink()',
+        '    cleanup(stale_file, instinct_ids)',
+        'm._remove_superseded_instincts = removed_meanwhile',
+      ],
+    });
+
+    assert.strictEqual(result.status, 0);
+    assert.strictEqual(result.stderr, '');
+    assert.deepStrictEqual(storedInstincts(path.join(root, 'instincts')), ['prefer-functional=0.9']);
   } finally {
     cleanupDir(root);
   }
