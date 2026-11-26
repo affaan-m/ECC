@@ -402,8 +402,14 @@ _clv2_project_cache_prepare() {
   # The entry is line-based, so a key that spans lines cannot be stored.
   case "$key" in *$'\n'*|*$'\r'*) return 1 ;; esac
 
+  # The filename is a truncated, sanitized form of the key: the key embeds
+  # absolute paths whose sanitized form can exceed filesystem name limits on
+  # deep TMPDIRs. The full key is stored inside the entry and verified on
+  # load, so the filename only needs to be stable; a collision between two
+  # long keys degrades to a safe miss, never a wrong hit.
   local name="${key//[^A-Za-z0-9._-]/_}"
-  [ "${#name}" -gt 200 ] && return 1
+  name="${name:0:200}"
+  [ -n "$name" ] || return 1
 
   printf -v _CLV2_PROJECT_CACHE_DAY '%(%Y%m%d)T' -1
   _CLV2_PROJECT_CACHE_KEY="$key"
@@ -416,15 +422,25 @@ _clv2_project_cache_prepare() {
 # between the selected starting directory and that root requires fresh Git.
 _clv2_project_cache_same_root() {
   local expected="$1"
-  local start="${CLAUDE_PROJECT_DIR:-}"
-  [ -n "$start" ] && [ -d "$start" ] || start="."
-  local probe="$start" depth=0
+  # Detection starts git discovery at CLAUDE_PROJECT_DIR when it is set and
+  # exists, otherwise at PWD (an explicit non-git dir becomes an env-nogit
+  # root that is never cached, so it cannot reach this check). Walk that
+  # directory's physical ancestor chain with cd -P semantics, matching how
+  # git resolves ancestors: reaching the expected root returns 0, any .git
+  # marker on the way means a nearer repository would shadow it (return 1),
+  # and hitting the filesystem root means nothing shadows it.
+  local start="${CLAUDE_PROJECT_DIR:-$PWD}"
+  [ -d "$start" ] || start="$PWD"
+  local probe depth
+  probe="$(cd -P -- "$start" 2>/dev/null && pwd -P)" || return 1
+  [ -n "$probe" ] || return 1
+  depth=0
   while [ "$depth" -lt 512 ]; do
     [ "$probe" -ef "$expected" ] && return 0
     if [ -e "$probe/.git" ] || [ -L "$probe/.git" ]; then return 1; fi
     [ "$probe" -ef "$probe/.." ] && return 1
-    # Let the filesystem resolve aliases and .. without a cd/pwd subprocess.
-    probe="$probe/.."
+    probe="$(cd -P -- "$probe/.." 2>/dev/null && pwd -P)" || return 1
+    [ -n "$probe" ] || return 1
     depth=$((depth + 1))
   done
   return 1
