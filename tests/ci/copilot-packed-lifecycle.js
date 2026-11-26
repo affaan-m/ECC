@@ -13,7 +13,7 @@ function verifyCopilotPackedLifecycle({ packageRoot, projectRoot, env }) {
   const installState = path.join(github, 'ecc-install-state.json');
   const userHook = path.join(github, 'hooks', 'user.json');
   const config = path.join(env.HOME, 'copilot-lifecycle');
-  const environment = { ...env, COPILOT_HOME: config, ECC_HOOK_PROFILE: 'standard' };
+  const environment = { ...env, COPILOT_HOME: config, ECC_HOOK_PROFILE: 'standard', ECC_COPILOT_TRANSCRIPT_SUMMARY: '1' };
 
   function run(args, input, shouldSucceed = true) {
     const result = spawnSync(process.execPath, args, {
@@ -79,6 +79,26 @@ function verifyCopilotPackedLifecycle({ packageRoot, projectRoot, env }) {
   assert.deepEqual(dispatch('sessionEnd', 'first', { reason: 'complete' }), {});
   assert.match(dispatch('sessionStart', 'second', { source: 'new' }).additionalContext,
     /Release fixture checkpoint/);
+
+  const transcriptPath = path.join(fs.realpathSync(config), 'session-state', 'second', 'events.jsonl');
+  fs.mkdirSync(path.dirname(transcriptPath), { recursive: true });
+  const requests = Array.from({ length: 10 }, (_, index) => ({
+    type: 'user.message', data: { content: `Request ${index}: ${'計'.repeat(280)}` },
+  }));
+  const edits = Array.from({ length: 30 }, (_, index) => ({
+    type: 'tool.execution_start',
+    data: { toolName: 'edit', arguments: { path: path.join(`file${index}`, ...Array(3).fill('画'.repeat(58)), 'notes.md') } },
+  }));
+  fs.writeFileSync(transcriptPath, [...requests, ...edits].map(entry => JSON.stringify(entry)).join('\n') + '\n');
+
+  assert.deepEqual(dispatch('preCompact', 'second', { trigger: 'auto', transcriptPath }), {});
+  const recall = JSON.parse(run([hooks.sessionStart[0].args[0], 'recall', '--session', 'second']));
+  assert.match(recall.summary, /Request 9/);
+  assert.match(recall.summary, /Tools observed: edit/);
+  assert.match(recall.summary, /\[truncated\]$/);
+  assert.ok(Buffer.byteLength(recall.summary) <= 16 * 1024);
+  assert.ok(!recall.summary.includes('\uFFFD'), 'the summary does not split a UTF-8 character');
+  assert.match(dispatch('sessionStart', 'second', { source: 'resume' }).additionalContext, /Request 9/);
 
   run(installArgs(workflow));
   assert.equal(fs.readFileSync(manifest, 'utf8'), managedContent);

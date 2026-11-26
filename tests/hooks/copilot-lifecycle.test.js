@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { checkpoint, recall } = require('../../scripts/lib/copilot-sessions');
+const { checkpoint, recall, projectDirectory, MAX_SUMMARY_BYTES } = require('../../scripts/lib/copilot-sessions');
 const runtime = path.resolve(__dirname, '../../scripts/hooks/copilot-lifecycle.js');
 let passed = 0;
 let failed = 0;
@@ -91,6 +91,27 @@ test('resume restores only current session, never another workspace or unrelated
   const other = path.join(root, 'other'); fs.mkdirSync(other);
   assert.deepStrictEqual(event('sessionStart', { cwd: other, sessionId: 's3', source: 'new' }).output, {});
   assert.strictEqual(invoke(['recall']).output.workspace, fs.realpathSync(cwd));
+});
+
+test('recovers previously oversized native summaries on read and normalizes the next state write', ({ cwd, env, invoke, event }) => {
+  invoke(['checkpoint', '--session', 's1', '--stdin'], 'Initial checkpoint.');
+  const dir = projectDirectory(fs.realpathSync(cwd), env);
+  const file = path.join(dir, fs.readdirSync(dir)[0]);
+  const record = { ...JSON.parse(fs.readFileSync(file, 'utf8')), summary: '計'.repeat(8000) };
+
+  fs.writeFileSync(file, JSON.stringify({ ...record, summarySource: 'manual' }));
+  assert.notStrictEqual(invoke(['recall', '--session', 's1']).status, 0);
+
+  const legacy = JSON.stringify({ ...record, summarySource: 'native-events' });
+  fs.writeFileSync(file, legacy);
+  const recalled = invoke(['recall', '--session', 's1']);
+  assert.strictEqual(recalled.status, 0, recalled.stderr);
+  assert.ok(Buffer.byteLength(recalled.output.summary) <= MAX_SUMMARY_BYTES);
+  assert.match(recalled.output.summary, /^計+ \[truncated\]$/);
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), legacy);
+
+  assert.strictEqual(event('sessionStart', { source: 'resume' }).status, 0);
+  assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).summary, recalled.output.summary);
 });
 
 test('malformed, oversized UTF8, conflicting aliases and unsafe identity have no side effects', ({ config, invoke, event }) => {

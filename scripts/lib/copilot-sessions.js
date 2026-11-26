@@ -103,14 +103,25 @@ function safeSummary(text) {
     && !/\b(?:password|api[_-]?key|access[_-]?token|secret)\s*[:=]\s*\S+/i.test(text);
 }
 
+function boundNativeSummary(summary) {
+  if (Buffer.byteLength(summary) <= MAX_SUMMARY_BYTES) return summary;
+  const marker = ' [truncated]';
+  const budget = MAX_SUMMARY_BYTES - Buffer.byteLength(marker);
+  // Streaming decode discards a trailing partial UTF-8 sequence at the byte limit.
+  const prefix = new TextDecoder().decode(Buffer.from(summary).subarray(0, budget), { stream: true });
+  return prefix + marker;
+}
+
 function validateState(record, workspace, filename) {
   if (!record || record.schema !== 'ecc.copilot.session.v1' || record.workspace !== workspace
     || `${hash(sessionId(record.sessionId))}.json` !== filename
     || typeof record.updatedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(record.updatedAt)
     || !Number.isFinite(Date.parse(record.updatedAt))
-    || typeof record.summary !== 'string' || Buffer.byteLength(record.summary) > MAX_SUMMARY_BYTES
     || !safeSummary(record.summary) || !['active', 'ended'].includes(record.status)) throw new Error('Invalid Copilot session state.');
-  return record;
+  if (Buffer.byteLength(record.summary) <= MAX_SUMMARY_BYTES) return record;
+  // Older versions could persist an oversized summary derived from native events.
+  if (record.summarySource !== 'native-events') throw new Error('Invalid Copilot session state.');
+  return { ...record, summary: boundNativeSummary(record.summary) };
 }
 
 function readState(dir, id, workspace) {
@@ -201,9 +212,10 @@ function summarizeTranscript(input, env) {
     }
   }
   if (!tasks.length) return '';
-  return ['Observed user requests (not completion evidence):', ...tasks.slice(-10).map(task => `- ${task}`),
+  const summary = ['Observed user requests (not completion evidence):', ...tasks.slice(-10).map(task => `- ${task}`),
     `Tools observed: ${[...tools].join(', ') || 'none'}`,
     `Edit targets observed (success unverified): ${[...files].slice(0, 30).join(', ') || 'none'}`].join('\n');
+  return boundNativeSummary(summary);
 }
 
 function historicalContext(record) {
