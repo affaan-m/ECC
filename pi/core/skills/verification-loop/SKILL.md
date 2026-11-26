@@ -54,7 +54,7 @@ For an in-scope staged submodule, read its stage-0 gitlink (mode `160000`) from 
 
 For an in-scope nested submodule in the recorded tree, read its gitlink from the containing recorded commit using `git --no-lazy-fetch ls-tree <containing-commit> -- <submodule-path>` and scan its recorded commit in the nested repository. Report the affected scan as blocked if the gitlink is ambiguous or a required local repository or object is unavailable.
 
-For `git grep`, exit status 0 indicates matches, 1 indicates no matches, and a status greater than 1 indicates a check error.
+For each `git grep` check, save its exit status and inspect stderr locally before classifying the result. If stderr reports a read error or another scan failure, report the affected scan as blocked or failed regardless of the exit status. Otherwise, exit status 0 indicates matches, 1 indicates no matches, and a status greater than 1 indicates a check error.
 
 Report findings by rule, count, and applicable file location. Keep raw matches and private logs out of the report, tool output, PRs, and external services. Use synthetic examples to explain findings.
 
