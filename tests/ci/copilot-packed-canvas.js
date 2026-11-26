@@ -208,6 +208,26 @@ async function verifyInstalledCanvas(root, packageRoot, env) {
       assert.deepEqual(requests, [['POST', '/api/feedback-batch']]);
       assert.equal((await unbind(id)).removed, true);
     });
+
+    setServer(port);
+    const oldPlan = path.join(workspace, 'Previous plan.md');
+    const newPlan = path.join(workspace, 'Next plan.md');
+    fs.writeFileSync(oldPlan, '# Previous plan\n');
+    fs.writeFileSync(newPlan, '# Next plan\n');
+    store.open(oldPlan);
+    const next = store.open(newPlan).session;
+    const bindFile = (sessionId, artifact) => invoke('bind', '--session', sessionId,
+      '--file', path.basename(artifact), '--state-dir', stateDir);
+    assert.equal((await bindFile('previous', oldPlan)).bound, true);
+    fs.unlinkSync(oldPlan);
+
+    assert.equal((await bindFile('next', newPlan)).bound, true);
+    await assert.rejects(bindFile('next-copy', newPlan));
+    store.queueFeedback(next.key, [{ kind: 'chat', text: 'Feedback for the next plan' }]);
+    assert.equal((await feedback('next')).items[0].text, 'Feedback for the next plan');
+    await assert.rejects(feedback('previous'));
+    assert.equal((await unbind('previous')).removed, true);
+    assert.equal((await unbind('next')).removed, true);
   } finally {
     await reviewServer.close();
   }

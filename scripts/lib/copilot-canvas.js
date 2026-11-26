@@ -102,13 +102,16 @@ function bindingPath(workspace, id, env = process.env, create = false) {
   const directory = privateDirectory(fs.realpathSync(workspace), env, create);
   return directory ? path.join(directory, `${hash(sessionId(id))}.json`) : null;
 }
-function serverInfo(stateDir) {
-  const value = object(JSON.parse(readBounded(path.join(stateDir, 'server.json'), MAX_BYTES)));
+function serverIdentity(value) {
+  object(value);
   if (Object.keys(value).some(key => !['pid', 'port', 'version', 'startedAt'].includes(key))
     || !Number.isSafeInteger(value.pid) || value.pid < 1 || !Number.isSafeInteger(value.port)
     || value.port < 1 || value.port > 65535 || typeof value.version !== 'string'
     || !/^[A-Za-z0-9._-]{1,64}$/.test(value.version) || !iso(value.startedAt)) throw new Error('Invalid canvas server identity.');
   return { pid: value.pid, port: value.port, version: value.version, startedAt: value.startedAt };
+}
+function serverInfo(stateDir) {
+  return serverIdentity(JSON.parse(readBounded(path.join(stateDir, 'server.json'), MAX_BYTES)));
 }
 function canvasSession(receipt) {
   const state = object(JSON.parse(readBounded(path.join(receipt.stateDir, 'sessions.json'), 4 * 1024 * 1024)));
@@ -117,16 +120,24 @@ function canvasSession(receipt) {
     || (receipt.canvasCreatedAt && selected.createdAt !== receipt.canvasCreatedAt)) throw new Error('Canvas session identity is unavailable.');
   return selected;
 }
-function validateReceipt(value, workspace, id) {
+function validateReceiptIdentity(value, workspace, id) {
   object(value);
   if (value.schema !== 'ecc.copilot.canvas-binding.v1' || Object.keys(value).some(key => !RECEIPT_KEYS.includes(key))
     || value.workspace !== workspace || value.sessionId !== id || !iso(value.canvasCreatedAt)
-    || typeof value.stateDir !== 'string' || !path.isAbsolute(value.stateDir)
-    || fs.realpathSync(value.stateDir) !== value.stateDir || value.key !== sessionKeyFor(artifactPath(workspace, value.artifact))
+    || typeof value.stateDir !== 'string' || path.resolve(value.stateDir) !== value.stateDir
+    || typeof value.artifact !== 'string' || path.resolve(value.artifact) !== value.artifact || !inside(workspace, value.artifact)
+    || value.key !== sessionKeyFor(value.artifact)
     || !Array.isArray(value.delivered) || value.delivered.length > 512
     || new Set(value.delivered).size !== value.delivered.length
     || value.delivered.some(item => typeof item !== 'string' || !/^fb-[0-9]{1,16}$/.test(item))) throw new Error('Invalid canvas receipt.');
-  if (!value.server || JSON.stringify(value.server) !== JSON.stringify(serverInfo(value.stateDir))) throw new Error('Canvas server identity changed; explicitly bind again.');
+  serverIdentity(value.server);
+}
+function validateReceipt(value, workspace, id) {
+  validateReceiptIdentity(value, workspace, id);
+  if (fs.realpathSync(value.stateDir) !== value.stateDir || artifactPath(workspace, value.artifact) !== value.artifact) {
+    throw new Error('Invalid canvas receipt.');
+  }
+  if (JSON.stringify(value.server) !== JSON.stringify(serverInfo(value.stateDir))) throw new Error('Canvas server identity changed; explicitly bind again.');
   return { receipt: value, session: canvasSession(value) };
 }
 function readReceipt(file, workspace, id) {
@@ -168,8 +179,8 @@ function bind(workspace, options, env = process.env) {
       if (existing.length > 1000) throw new Error('Canvas receipt scan quota exceeded.');
       for (const name of existing) {
         const other = JSON.parse(readBounded(path.join(path.dirname(file), name), MAX_BYTES));
+        validateReceiptIdentity(other, canonical, other?.sessionId);
         if (!/^[a-f0-9]{64}\.json$/.test(name) || name !== `${hash(sessionId(other.sessionId))}.json`) throw new Error('Invalid canvas receipt identity.');
-        validateReceipt(other, canonical, other.sessionId);
         if (other.key === receipt.key && other.stateDir === receipt.stateDir) throw new Error('Artifact is bound to another native session; explicitly unbind first.');
       }
       atomicWrite(file, receipt); return receipt;
