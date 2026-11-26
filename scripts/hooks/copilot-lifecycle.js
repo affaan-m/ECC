@@ -11,9 +11,9 @@ async function readInput() {
   let bytes = 0;
   for await (const chunk of process.stdin) {
     bytes += chunk.length;
-    if (bytes <= MAX_INPUT_BYTES) chunks.push(chunk);
+    if (bytes > MAX_INPUT_BYTES) throw new Error('Copilot lifecycle input exceeds 1 MiB.');
+    chunks.push(chunk);
   }
-  if (bytes > MAX_INPUT_BYTES) throw new Error('Copilot lifecycle input exceeds 1 MiB.');
   return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
 }
 
