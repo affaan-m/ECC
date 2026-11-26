@@ -62,7 +62,11 @@ function verifyInstalledLearning(project, packageRoot, env) {
   const github = path.join(project, '.github');
   const launcher = path.join(github, 'ecc', 'scripts', 'copilot-learning.py');
   const skill = path.join(github, 'skills', 'continuous-learning-v2', 'SKILL.md');
-  assert.ok(fs.readFileSync(skill, 'utf8').includes('copilot-learning.py'), 'installed skill must use the Copilot launcher');
+  const installedSkill = fs.readFileSync(skill, 'utf8');
+  const [, frontmatter = ''] = installedSkill.split(/^---\r?$/m, 2);
+  assert.match(frontmatter, /^disable-model-invocation:\s*true\s*$/m);
+  assert.match(frontmatter, /^user-invocable:\s*true\s*$/m);
+  assert.ok(installedSkill.includes('copilot-learning.py'), 'installed skill must use the Copilot launcher');
   assert.equal(fs.existsSync(path.join(github, 'hooks')), false);
 
   const invoke = (args, input, status, cwd = project, environment = env) => JSON.parse(run(python, [launcher, ...args], {

@@ -1,6 +1,8 @@
 ---
 name: continuous-learning-v2
 description: Review, import, and manage project-scoped ECC instincts in GitHub Copilot CLI.
+disable-model-invocation: true
+user-invocable: true
 ---
 
 # Continuous Learning for Copilot CLI
