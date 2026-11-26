@@ -122,7 +122,10 @@ function windowsPathDirs(env) {
   return pathValue
     .split(';')
     .map((dir) => dir.trim().replace(/^"(.*)"$/, '$1'))
-    .filter(Boolean);
+    .filter(Boolean)
+    // cmd.exe resolves a relative entry against the caller's directory; the
+    // spawns run from a temp dir, so the launcher must be absolute.
+    .map((dir) => path.win32.resolve(dir));
 }
 
 function readShimEntry(shimPath, readFile, exists) {

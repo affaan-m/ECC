@@ -300,6 +300,16 @@ function runTests() {
       }),
     }), { command: WIN_NODE, prefixArgs: [pnpmEntry] });
 
+    // A relative PATH entry resolves against the caller's directory, not the temp cwd.
+    const relativeDir = path.win32.resolve('tools\\npm');
+    const relativeEntry = `${relativeDir}\\node_modules\\@openai\\codex\\bin\\codex.js`;
+    assert.deepStrictEqual(resolveCodexLauncher({
+      platform: 'win32',
+      execPath: WIN_NODE,
+      env: { PATH: 'tools\\npm' },
+      ...fakeWindowsFs({ [`${relativeDir}\\codex.cmd`]: NPM_CODEX_SHIM, [relativeEntry]: '' }),
+    }), { command: WIN_NODE, prefixArgs: [relativeEntry] });
+
     const wrapperDir = 'C:\\ProgramData\\chocolatey\\bin';
     assert.deepStrictEqual(resolveCodexLauncher({
       platform: 'win32',
