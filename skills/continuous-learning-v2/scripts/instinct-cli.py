@@ -1039,14 +1039,14 @@ def cmd_import(args) -> int:
         scope_root = GLOBAL_INSTINCTS_DIR.resolve()
     else:
         scope_root = (project["project_dir"] / "instincts").resolve() if project["id"] != "global" else GLOBAL_INSTINCTS_DIR.resolve()
-    stale_entries = []
+    stale_ids_by_file = {}
     for inst in to_update:
         inst_id = inst.get('id')
         stale = next((e for e in existing if e.get('id') == inst_id), None)
         if stale and stale.get('_source_file'):
             stale_path = Path(stale['_source_file']).resolve()
             if stale_path.exists() and str(stale_path).startswith(str(scope_root) + os.sep):
-                stale_entries.append((stale_path, inst_id))
+                stale_ids_by_file.setdefault(stale_path, set()).add(inst_id)
 
     # Write new file first (safe: if this fails, stale files are preserved)
     timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -1079,8 +1079,8 @@ def cmd_import(args) -> int:
     output_file.write_text(output_content, encoding="utf-8")
 
     # Remove the stale copies only after the new file has been written successfully
-    for stale_path, inst_id in stale_entries:
-        _remove_superseded_instinct(stale_path, inst_id)
+    for stale_path, inst_ids in stale_ids_by_file.items():
+        _remove_superseded_instincts(stale_path, inst_ids)
 
     print(f"\nImport complete!")
     print(f"   Scope: {target_scope}")
@@ -1611,26 +1611,39 @@ def _remove_instinct_from_source(source_file_str: str, instinct_id: str) -> None
         print(f"Warning: Failed to remove promoted instinct from {source_file}: {exc}", file=sys.stderr)
 
 
-def _remove_superseded_instinct(stale_file: Path, instinct_id: str) -> None:
-    """Drop an updated instinct from its old file.
+def _remove_superseded_instincts(stale_file: Path, instinct_ids: "set[str]") -> None:
+    """Drop updated instincts from their old file in one rewrite.
 
     One file can hold several instincts (an import writes all of them to a
-    single file), so only the superseded block goes. The file itself is
+    single file), so only the superseded blocks go. The file itself is
     deleted only when it holds no other instinct.
     """
+    id_list = ", ".join(sorted(instinct_ids))
     try:
         # utf-8-sig: a leading BOM would hide the first frontmatter marker
         # from _remove_instinct_blocks.
         content = stale_file.read_text(encoding="utf-8-sig")
-        others = [i for i in parse_instinct_file(content) if i.get('id') != instinct_id]
-        if not others:
+        kept = [i for i in parse_instinct_file(content) if i.get('id') not in instinct_ids]
+        if not kept:
             stale_file.unlink()
             return
-        remaining_content, removed = _remove_instinct_blocks(content, instinct_id)
-        if removed:
-            _write_text_atomic(stale_file, remaining_content)
-    except (OSError, UnicodeDecodeError):
-        pass  # best-effort removal
+        remaining_content = content
+        for instinct_id in sorted(instinct_ids):
+            remaining_content, _ = _remove_instinct_blocks(remaining_content, instinct_id)
+        # _remove_instinct_blocks does not decode ids the way parse_instinct_file
+        # does (JSON escapes in a quoted id), so it can miss a block or match a
+        # different instinct. Write only a result that holds exactly the
+        # instincts meant to stay.
+        if parse_instinct_file(remaining_content) != kept:
+            print(
+                f"Warning: Could not safely remove superseded instinct(s) {id_list} from {stale_file}; "
+                "left the file unchanged.",
+                file=sys.stderr,
+            )
+            return
+        _write_text_atomic(stale_file, remaining_content)
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"Warning: Failed to remove superseded instinct(s) {id_list} from {stale_file}: {exc}", file=sys.stderr)
 
 
 def cmd_promote(args) -> int:

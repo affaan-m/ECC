@@ -108,27 +108,80 @@ function importFile(root, sourcePath, scope, options) {
   return result;
 }
 
-// Every `id: confidence` pair stored under an instincts directory, across
-// personal/ and inherited/, sorted so the assertion does not depend on which
-// file an instinct lives in.
-function storedInstincts(instinctsDir) {
+// Every instinct stored under an instincts directory, across personal/ and
+// inherited/, with the text that follows its frontmatter.
+function readStoredInstincts(instinctsDir) {
   const found = [];
   for (const sub of ['personal', 'inherited']) {
     const dir = path.join(instinctsDir, sub);
     if (!fs.existsSync(dir)) continue;
     for (const name of fs.readdirSync(dir)) {
-      const content = fs.readFileSync(path.join(dir, name), 'utf8').replace(/\r\n/g, '\n');
-      const blocks = content.matchAll(/^id: (.+)\n(?:.*\n)*?confidence: (.+)$/gm);
-      for (const match of blocks) {
-        found.push(`${match[1]}=${match[2]}`);
+      let content = fs.readFileSync(path.join(dir, name), 'utf8').replace(/\r\n/g, '\n');
+      if (content.charCodeAt(0) === 0xfeff) content = content.slice(1);
+      const blocks = content.matchAll(/^---\n((?:.*\n)*?)---\n((?:(?!---\n).*\n?)*)/gm);
+      for (const [, frontmatter, body] of blocks) {
+        const id = (frontmatter.match(/^id: (.+)$/m) || [])[1];
+        const confidence = (frontmatter.match(/^confidence: (.+)$/m) || [])[1];
+        found.push({ id, confidence, body: body.trim() });
       }
     }
   }
-  return found.sort();
+  return found;
+}
+
+// The stored `id=confidence` pairs, sorted so the assertion does not depend on
+// which file an instinct lives in. Each instinct must still carry its own
+// action text: a kept id with a lost or swapped body is not a kept instinct.
+function storedInstincts(instinctsDir) {
+  const stored = readStoredInstincts(instinctsDir);
+  for (const instinct of stored) {
+    assert.strictEqual(instinct.body, `Action for ${instinct.id}.`, `action text of ${instinct.id}`);
+  }
+  return stored.map(instinct => `${instinct.id}=${instinct.confidence}`).sort();
 }
 
 function listFiles(dir) {
   return fs.existsSync(dir) ? fs.readdirSync(dir).sort() : [];
+}
+
+// Built from the code point so the fixture text is unambiguous: this is one
+// backslash, written into instinct files ahead of a `u00e9`-style escape.
+const BACKSLASH = String.fromCharCode(92);
+
+function rawBlock(idLine, confidence, action) {
+  return ['---', idLine, 'trigger: "when it applies"', `confidence: ${confidence}`, '---', '', action, ''].join('\n');
+}
+
+// Run cmd_import in-process and count the atomic rewrites it performs.
+function importCountingRewrites(root, sourcePath) {
+  const code = [
+    'import argparse, importlib.util, json',
+    `spec = importlib.util.spec_from_file_location('icli', ${JSON.stringify(cliPath)})`,
+    'm = importlib.util.module_from_spec(spec)',
+    'spec.loader.exec_module(m)',
+    'rewrites = []',
+    'write = m._write_text_atomic',
+    'def counting(file_path, content):',
+    '    rewrites.append(file_path.name)',
+    '    write(file_path, content)',
+    'm._write_text_atomic = counting',
+    `args = argparse.Namespace(source=${JSON.stringify(sourcePath)}, scope='global', min_confidence=None, dry_run=False, force=True)`,
+    'status = m.cmd_import(args)',
+    "print(json.dumps({'status': status, 'rewrites': rewrites}))",
+  ].join('\n');
+  const result = spawnSync(PYTHON3, ['-c', code], {
+    cwd: root,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      CLV2_HOMUNCULUS_DIR: root,
+      HOME: path.join(root, 'home'),
+      USERPROFILE: path.join(root, 'home'),
+      CLAUDE_PROJECT_DIR: '',
+    },
+  });
+  assert.strictEqual(result.status, 0, result.stderr || result.stdout);
+  return JSON.parse(result.stdout.trim().split(/\r?\n/).pop());
 }
 
 console.log('\n=== Testing instinct-cli.py import updates ===\n');
@@ -280,6 +333,119 @@ test('an update keeps the other instincts in a file that starts with a BOM or us
     } finally {
       cleanupDir(root);
     }
+  }
+});
+
+test('updating several instincts from one file rewrites that file once', () => {
+  const root = createTempDir();
+  try {
+    const personalDir = path.join(root, 'instincts', 'personal');
+    fs.mkdirSync(personalDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(personalDir, 'team.yaml'),
+      ['prefer-functional', 'always-test-first', 'grep-before-edit'].map(id => instinctBlock(id, 0.6)).join('\n')
+    );
+    const update = writeSource(path.join(root, 'sources'), 'update.yaml', [
+      ['prefer-functional', 0.9],
+      ['grep-before-edit', 0.9],
+    ]);
+
+    const result = importCountingRewrites(root, update);
+    assert.strictEqual(result.status, 0);
+    assert.deepStrictEqual(result.rewrites, ['team.yaml']);
+    assert.deepStrictEqual(storedInstincts(path.join(root, 'instincts')), [
+      'always-test-first=0.6',
+      'grep-before-edit=0.9',
+      'prefer-functional=0.9',
+    ]);
+  } finally {
+    cleanupDir(root);
+  }
+});
+
+test('a failed rewrite of the old file is reported and leaves that file intact', () => {
+  // Needs a directory the process cannot write to: not expressible with POSIX
+  // modes on Windows, and root ignores them.
+  if (process.platform === 'win32' || (typeof process.getuid === 'function' && process.getuid() === 0)) {
+    console.log('    (skipped: needs an unwritable directory)');
+    return;
+  }
+  const root = createTempDir();
+  const personalDir = path.join(root, 'instincts', 'personal');
+  try {
+    fs.mkdirSync(personalDir, { recursive: true });
+    const staleFile = path.join(personalDir, 'team.yaml');
+    const original = [instinctBlock('prefer-functional', 0.6), instinctBlock('always-test-first', 0.7)].join('\n');
+    fs.writeFileSync(staleFile, original);
+    const update = writeSource(path.join(root, 'sources'), 'update.yaml', [['prefer-functional', 0.9]]);
+
+    fs.chmodSync(personalDir, 0o555);
+    const result = importFile(root, update, 'global');
+
+    assert.match(result.stderr, /Warning: Failed to remove superseded instinct\(s\) prefer-functional from .*team\.yaml: /);
+    assert.strictEqual(fs.readFileSync(staleFile, 'utf8'), original);
+    assert.deepStrictEqual(storedInstincts(path.join(root, 'instincts')), [
+      'always-test-first=0.7',
+      'prefer-functional=0.6',
+      'prefer-functional=0.9',
+    ]);
+  } finally {
+    fs.chmodSync(personalDir, 0o755);
+    cleanupDir(root);
+  }
+});
+
+test('an old copy whose id is written with a JSON escape is reported, not silently kept', () => {
+  const root = createTempDir();
+  try {
+    const personalDir = path.join(root, 'instincts', 'personal');
+    fs.mkdirSync(personalDir, { recursive: true });
+    const staleFile = path.join(personalDir, 'team.yaml');
+    // The escape sequence spells "p": the parser reads this id as prefer-functional.
+    const original = [
+      rawBlock(`id: "${BACKSLASH}u0070refer-functional"`, 0.6, 'Action for prefer-functional.'),
+      rawBlock('id: always-test-first', 0.7, 'Action for always-test-first.'),
+    ].join('\n');
+    fs.writeFileSync(staleFile, original);
+    const update = writeSource(path.join(root, 'sources'), 'update.yaml', [['prefer-functional', 0.9]]);
+
+    const result = importFile(root, update, 'global');
+
+    assert.match(result.stdout, /Updated: 1/);
+    assert.match(result.stderr, /Warning: Could not safely remove superseded instinct\(s\) prefer-functional from .*team\.yaml/);
+    assert.strictEqual(fs.readFileSync(staleFile, 'utf8'), original);
+  } finally {
+    cleanupDir(root);
+  }
+});
+
+test('updating an id never removes a different instinct whose raw id text looks the same', () => {
+  const root = createTempDir();
+  try {
+    const personalDir = path.join(root, 'instincts', 'personal');
+    fs.mkdirSync(personalDir, { recursive: true });
+    const staleFile = path.join(personalDir, 'team.yaml');
+    // Two different ids to the parser: the first decodes to "caf" + e-acute,
+    // the second is the literal text caf, backslash, u00e9.
+    const literalIdLine = `id: "caf${BACKSLASH}${BACKSLASH}u00e9"`;
+    const original = [
+      rawBlock(`id: "caf${BACKSLASH}u00e9"`, 0.6, 'Action for the decoded id.'),
+      rawBlock(literalIdLine, 0.6, 'Action for the literal id.'),
+    ].join('\n');
+    fs.writeFileSync(staleFile, original);
+    const sources = path.join(root, 'sources');
+    fs.mkdirSync(sources, { recursive: true });
+    const update = path.join(sources, 'update.yaml');
+    fs.writeFileSync(update, rawBlock(literalIdLine, 0.9, 'Action for the literal id.'));
+
+    const result = importFile(root, update, 'global');
+
+    assert.match(result.stdout, /Updated: 1/);
+    assert.match(result.stderr, /Warning: Could not safely remove superseded instinct\(s\) /);
+    assert.strictEqual(fs.readFileSync(staleFile, 'utf8'), original);
+    assert.match(fs.readFileSync(staleFile, 'utf8'), /Action for the decoded id\./);
+  } finally {
+    cleanupDir(root);
   }
 });
 
