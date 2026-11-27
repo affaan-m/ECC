@@ -490,6 +490,22 @@ writers are merged on save (checked keys by union, counts by maximum, gates by
 newest `at`, batch locks by newest `at`). Marking a target checked and recording its event happen in one
 state write, so an event is never half-recorded.
 
+State files are integrity-protected with an HMAC-SHA256 signature (`_sig`)
+bound to the session key and keyed by a per-directory secret (`.hmac-key`,
+mode 0600 on POSIX) created lazily on first save. Both `loadState()` and the
+concurrent-writer merge in `saveState()` reject unsigned, tampered, or
+cross-session-replayed files fail-closed: the state is treated as empty, the
+gate denies, and a one-time warning is written to stderr. The signature is
+verified before `last_active` is trusted, so expiry never acts on an
+unverifiable timestamp, and a failed verification never deletes or renames
+the file — the next successful save replaces it atomically. Residual risk:
+because the hook and the gated agent share a host and OS user account, a
+local key file is defense-in-depth rather than a hard security boundary — a
+determined agent with unrestricted shell access can read `.hmac-key` and
+forge a valid signature. Airtight isolation requires harness-managed
+protected storage or a separate privilege boundary outside the agent's
+execution context. Rollback of an older signed state file is out of scope.
+
 ## MultiEdit paths
 
 A MultiEdit call names its file once, in `tool_input.file_path`, and its

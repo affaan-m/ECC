@@ -1665,26 +1665,266 @@ function getStateFile(data) {
   return activeStateFile;
 }
 
+// --- GateGuard state-file integrity (#4140) ---
+//
+// The gated agent can write to STATE_DIR, so a state file that merely parses
+// is not evidence the hook wrote it. State files carry an HMAC-SHA256
+// signature (`_sig`) over the whole payload, keyed by a per-directory secret
+// (`.hmac-key`, 0600 on POSIX) and bound to the session key, so a forged,
+// tampered, or cross-session-replayed file fails verification. Verification
+// failure fails closed: the state is treated as empty and the gate denies.
+// This is defense-in-depth, not a security boundary — a process running as
+// the same OS user can read `.hmac-key` and forge signatures, so airtight
+// isolation would need harness-managed protected storage. See
+// docs/gateguard/design-notes.md#state-file-is-untrusted.
+const HMAC_KEY_FILE = '.hmac-key';
+const HMAC_DOMAIN = 'gateguard-state-v1';
+const HMAC_HEX_RE = /^[0-9a-f]{64}$/;
+let warnedIntegrityFailure = false;
+
+function warnIntegrityOnce() {
+  if (warnedIntegrityFailure) return;
+  warnedIntegrityFailure = true;
+  try {
+    process.stderr.write('[gateguard-fact-force] State file failed integrity verification; ignoring untrusted state.\n');
+  } catch (_) {
+    /* stderr write failure is non-fatal */
+  }
+}
+
+// Deterministic serialization for signing: object keys sorted, array order
+// preserved, `undefined`/function/symbol values skipped the way JSON.stringify
+// skips them. `skipTopLevelKey` excludes the signature field itself, and only
+// at depth 0, without copying the object (so a `__proto__` key in the payload
+// cannot change the object's prototype while being serialized).
+function canonicalJson(value, skipTopLevelKey = null) {
+  if (value && typeof value === 'object' && typeof value.toJSON === 'function') {
+    value = value.toJSON();
+  }
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    const items = value.map(item => (item === undefined || typeof item === 'function' || typeof item === 'symbol' ? 'null' : canonicalJson(item)));
+    return `[${items.join(',')}]`;
+  }
+  const pairs = [];
+  for (const key of Object.keys(value).sort()) {
+    if (skipTopLevelKey !== null && key === skipTopLevelKey) continue;
+    const field = value[key];
+    if (field === undefined || typeof field === 'function' || typeof field === 'symbol') continue;
+    pairs.push(`${JSON.stringify(key)}:${canonicalJson(field)}`);
+  }
+  return `{${pairs.join(',')}}`;
+}
+
+function computeStateHmac(key, sessionKey, stateObj) {
+  return crypto.createHmac('sha256', key).update(`${HMAC_DOMAIN}\0${sessionKey}\0`).update(canonicalJson(stateObj, '_sig')).digest();
+}
+
+// Read the integrity key without creating anything. A symlink is rejected:
+// honoring #3655's symlink vector for the key file itself. O_NOFOLLOW is
+// POSIX-only; where it is unavailable the check falls back to an lstat
+// rejection before opening (a swap between the check and the open is
+// accepted there — the directory itself is user-scoped on Windows).
+function readKeyOnce(keyPath, nofollow) {
+  let fd;
+  try {
+    if (nofollow) {
+      fd = fs.openSync(keyPath, fs.constants.O_RDONLY | nofollow);
+    } else {
+      const linkStat = fs.lstatSync(keyPath);
+      if (linkStat.isSymbolicLink() || !linkStat.isFile()) return null;
+      fd = fs.openSync(keyPath, fs.constants.O_RDONLY);
+    }
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) return null;
+    return fs.readFileSync(fd, 'utf8').trim();
+  } catch (err) {
+    if (nofollow && err && (err.code === 'EINVAL' || err.code === 'ENOTSUP' || err.code === 'EOPNOTSUPP')) {
+      try {
+        const linkStat = fs.lstatSync(keyPath);
+        if (linkStat.isSymbolicLink() || !linkStat.isFile()) return null;
+        return fs.readFileSync(keyPath, 'utf8').trim();
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  }
+}
+
+function readKeyIfExists() {
+  const keyPath = path.join(STATE_DIR, HMAC_KEY_FILE);
+  const nofollow = fs.constants.O_NOFOLLOW || 0;
+  // A concurrent creator using the plain-write fallback can leave a
+  // transiently empty file; re-read briefly before concluding the key is
+  // missing. A non-empty malformed key is corruption, not a race, and fails
+  // at once. Any failure here fails closed downstream, never throws.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const hex = readKeyOnce(keyPath, nofollow);
+    if (hex !== '') return HMAC_HEX_RE.test(hex) ? Buffer.from(hex, 'hex') : null;
+  }
+  return null;
+}
+
+// A key file the hook will never trust: malformed contents, a symlink, or a
+// non-regular file. Replacing it (rather than failing the save) keeps a
+// corrupt key from converting a fail-closed verification into a fail-open
+// persist failure. The replacement is the atomic rename of the 0600 temp
+// file, so no reader sees a partial key.
+function keyFileIsReplaceable(keyPath) {
+  try {
+    const linkStat = fs.lstatSync(keyPath);
+    if (linkStat.isSymbolicLink() || !linkStat.isFile()) return true;
+    const content = fs.readFileSync(keyPath, 'utf8').trim();
+    return content !== '' && !HMAC_HEX_RE.test(content);
+  } catch (_) {
+    return false;
+  }
+}
+
+function replaceUntrustedKey(keyPath, tmpPath) {
+  if (!keyFileIsReplaceable(keyPath)) return false;
+  fs.renameSync(tmpPath, keyPath);
+  return true;
+}
+
+// A concurrent first run may have published the key while this run was
+// creating its own. Prefer the published key; if the file holds nothing a
+// hook run will trust (malformed contents, a symlink), replace it with the
+// fresh key instead of failing the save open.
+function recoverExistingKey(keyPath, tmpPath, key, err) {
+  const raced = readKeyIfExists();
+  if (raced) return raced;
+  if (replaceUntrustedKey(keyPath, tmpPath)) return key;
+  throw err;
+}
+
+// Read the integrity key, creating it when a save needs one. Reads must
+// never create it: a state file with no key file cannot have been signed by
+// this hook. Publication is atomic on POSIX (write temp, hard-link into
+// place) so a concurrent reader never sees a partial key; where hard links
+// are unavailable (Windows/FAT) the fallback is an exclusive create, and
+// losers re-read the winner's key.
+function getOrCreateKey() {
+  const existing = readKeyIfExists();
+  if (existing) return existing;
+
+  fs.mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
+  const keyPath = path.join(STATE_DIR, HMAC_KEY_FILE);
+  const key = crypto.randomBytes(32);
+  const keyHex = key.toString('hex');
+  const tmpPath = path.join(STATE_DIR, `${HMAC_KEY_FILE}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`);
+  try {
+    fs.writeFileSync(tmpPath, keyHex, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    try {
+      fs.linkSync(tmpPath, keyPath);
+      return key;
+    } catch (err) {
+      if (err && err.code === 'EEXIST') return recoverExistingKey(keyPath, tmpPath, key, err);
+      if (err && (err.code === 'EPERM' || err.code === 'ENOTSUP' || err.code === 'EXDEV')) {
+        try {
+          fs.writeFileSync(keyPath, keyHex, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+          return key;
+        } catch (wxErr) {
+          if (wxErr && wxErr.code === 'EEXIST') return recoverExistingKey(keyPath, tmpPath, key, wxErr);
+          throw wxErr;
+        }
+      }
+      throw err;
+    }
+  } finally {
+    try {
+      fs.unlinkSync(tmpPath);
+    } catch (_) {
+      /* ignore */
+    }
+  }
+}
+
+// The single verified-read path for state files. Both loadState() and the
+// concurrent-writer merge in saveState() read through here, so a forged file
+// cannot resurrect through the merge. Statuses: 'ok' (verified), 'missing'
+// (no file — a fresh session), 'invalid' (read but untrusted, or unreadable:
+// either way the contents cannot be trusted). Only a file that was actually
+// read and failed verification warns: a broken STATE_DIR surfaces through
+// the persist-failure warning when a save is attempted, and warning here
+// would conflate that with a forgery.
+function readVerifiedState(filePath, sessionKey) {
+  let raw;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch (err) {
+    return { state: null, status: err && err.code === 'ENOENT' ? 'missing' : 'invalid' };
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (_) {
+    warnIntegrityOnce();
+    return { state: null, status: 'invalid' };
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    warnIntegrityOnce();
+    return { state: null, status: 'invalid' };
+  }
+
+  const sig = parsed._sig;
+  if (typeof sig !== 'string' || !HMAC_HEX_RE.test(sig)) {
+    warnIntegrityOnce();
+    return { state: null, status: 'invalid' };
+  }
+
+  const key = readKeyIfExists();
+  if (!key) {
+    warnIntegrityOnce();
+    return { state: null, status: 'invalid' };
+  }
+
+  const expected = computeStateHmac(key, sessionKey, parsed);
+  if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), expected)) {
+    warnIntegrityOnce();
+    return { state: null, status: 'invalid' };
+  }
+
+  // A new object without the signature field; the parsed object is never
+  // mutated.
+  const state = {};
+  for (const field of Object.keys(parsed)) {
+    if (field !== '_sig') state[field] = parsed[field];
+  }
+  return { state, status: 'ok' };
+}
+
 function loadState() {
   const stateFile = getStateFile();
-  try {
-    if (fs.existsSync(stateFile)) {
-      const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-      const lastActive = state.last_active || 0;
-      if (Date.now() - lastActive > activeIdleWindowMs) {
-        try {
-          fs.unlinkSync(stateFile);
-        } catch (_) {
-          /* ignore */
-        }
-        return { checked: [], last_active: Date.now() };
-      }
-      return state;
-    }
-  } catch (_) {
-    /* ignore */
+  const { state, status } = readVerifiedState(stateFile, activeSessionKey);
+  if (status !== 'ok') {
+    return { checked: [], last_active: Date.now() };
   }
-  return { checked: [], last_active: Date.now() };
+  // The signature is verified before last_active is trusted: an expired file
+  // is unlinked only when its timestamp is authenticated. Unverifiable files
+  // are left in place — never deleted or renamed on the read path.
+  if (Date.now() - (state.last_active || 0) > activeIdleWindowMs) {
+    try {
+      fs.unlinkSync(stateFile);
+    } catch (_) {
+      /* ignore */
+    }
+    return { checked: [], last_active: Date.now() };
+  }
+  return state;
 }
 
 function pruneCheckedEntries(checked) {
@@ -1722,8 +1962,11 @@ function saveState(state) {
     let mergedReadonlyPasses = getRoutineReadonlyPassCount(state);
 
     try {
-      if (fs.existsSync(stateFile)) {
-        const diskState = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      // The merge reads through the verified reader: an unverifiable disk
+      // file contributes nothing, so forged entries cannot resurrect when a
+      // concurrent writer saves.
+      const { state: diskState, status } = readVerifiedState(stateFile, activeSessionKey);
+      if (status === 'ok' && diskState) {
         if (Array.isArray(diskState.checked)) {
           mergedChecked = Array.from(new Set([...diskState.checked, ...mergedChecked]));
         }
@@ -1760,9 +2003,16 @@ function saveState(state) {
       routine_readonly_passes: mergedReadonlyPasses
     };
 
+    // The signature is attached at serialization, not on the merged state
+    // object, so the finalState literal stays the single source of the
+    // payload shape. Key creation failure throws into the persist-failure
+    // path below: no unsigned file is ever written.
+    const key = getOrCreateKey();
+    const signature = computeStateHmac(key, activeSessionKey, finalState).toString('hex');
+
     // Atomic write: temp file + rename prevents partial reads
     tmpFile = `${stateFile}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
-    fs.writeFileSync(tmpFile, JSON.stringify(finalState, null, 2), 'utf8');
+    fs.writeFileSync(tmpFile, JSON.stringify({ ...finalState, _sig: signature }, null, 2), 'utf8');
     try {
       fs.renameSync(tmpFile, stateFile);
     } catch (error) {

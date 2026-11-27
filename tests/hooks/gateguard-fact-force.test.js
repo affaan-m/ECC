@@ -3,6 +3,7 @@
  */
 
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
@@ -48,10 +49,10 @@ function clearState() {
 function writeExpiredState() {
   try {
     fs.mkdirSync(stateDir, { recursive: true });
-    const expired = {
+    const expired = signTestState({
       checked: ['some_file.js', '__bash_session__'],
       last_active: Date.now() - (8 * 60 + 1) * 60 * 1000
-    };
+    });
     fs.writeFileSync(stateFile, JSON.stringify(expired), 'utf8');
   } catch (_) {
     /* ignore */
@@ -60,7 +61,73 @@ function writeExpiredState() {
 
 function writeState(state) {
   fs.mkdirSync(stateDir, { recursive: true });
-  fs.writeFileSync(stateFile, JSON.stringify(state), 'utf8');
+  fs.writeFileSync(stateFile, JSON.stringify(signTestState(state)), 'utf8');
+}
+
+// --- Signed state fixtures (#4140) ---
+//
+// The hook rejects state files without a valid HMAC-SHA256 signature, so
+// fixtures must be signed the way the hook signs them: canonical JSON over
+// the whole payload (keys sorted, `_sig` excluded), prefixed with the domain
+// separator and the session key, keyed by the per-directory secret in
+// `.hmac-key`. This signer mirrors the hook's construction deliberately:
+// fixtures the hook must trust are built with the same inputs, while
+// forgery tests construct their own bytes.
+const HMAC_KEY_FILE = '.hmac-key';
+const HMAC_DOMAIN = 'gateguard-state-v1';
+const HMAC_HEX_RE = /^[0-9a-f]{64}$/;
+
+function testCanonicalJson(value, skipTopLevelKey = null) {
+  if (value && typeof value === 'object' && typeof value.toJSON === 'function') {
+    value = value.toJSON();
+  }
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    const items = value.map(item => (item === undefined || typeof item === 'function' || typeof item === 'symbol' ? 'null' : testCanonicalJson(item)));
+    return `[${items.join(',')}]`;
+  }
+  const pairs = [];
+  for (const key of Object.keys(value).sort()) {
+    if (skipTopLevelKey !== null && key === skipTopLevelKey) continue;
+    const field = value[key];
+    if (field === undefined || typeof field === 'function' || typeof field === 'symbol') continue;
+    pairs.push(`${JSON.stringify(key)}:${testCanonicalJson(field)}`);
+  }
+  return `{${pairs.join(',')}}`;
+}
+
+function ensureTestKey() {
+  const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+  try {
+    const existing = fs.readFileSync(keyPath, 'utf8').trim();
+    if (HMAC_HEX_RE.test(existing)) return Buffer.from(existing, 'hex');
+  } catch (_) {
+    /* missing or unreadable: generate below */
+  }
+  const key = crypto.randomBytes(32);
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(keyPath, key.toString('hex'), { encoding: 'utf8', mode: 0o600 });
+  return key;
+}
+
+function signStateForSession(sessionKey, key, state) {
+  const sig = crypto.createHmac('sha256', key).update(`${HMAC_DOMAIN}\0${sessionKey}\0`).update(testCanonicalJson(state, '_sig')).digest('hex');
+  return { ...state, _sig: sig };
+}
+
+function signTestState(state) {
+  return signStateForSession(TEST_SESSION_ID, ensureTestKey(), state);
+}
+
+function persistedStateVerifies() {
+  const keyHex = fs.readFileSync(path.join(stateDir, HMAC_KEY_FILE), 'utf8').trim();
+  if (!HMAC_HEX_RE.test(keyHex)) return false;
+  const parsed = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  if (typeof parsed._sig !== 'string') return false;
+  const expected = crypto.createHmac('sha256', Buffer.from(keyHex, 'hex')).update(`${HMAC_DOMAIN}\0${TEST_SESSION_ID}\0`).update(testCanonicalJson(parsed, '_sig')).digest('hex');
+  return parsed._sig === expected;
 }
 
 function runHook(input, env = {}) {
@@ -1897,6 +1964,7 @@ function runTests() {
   if (
     test('merges state written by another process during save', () => {
       const hook = loadDirectHook();
+      const key = ensureTestKey();
       const originalMkdirSync = fs.mkdirSync;
       let injected = false;
 
@@ -1904,12 +1972,16 @@ function runTests() {
         const result = originalMkdirSync.apply(fs, arguments);
         if (!injected && path.resolve(String(target)) === path.resolve(stateDir)) {
           injected = true;
+          // The "other process" is another hook instance, so the state it
+          // writes is signed; an unsigned injection would be rejected.
           fs.writeFileSync(
             stateFile,
-            JSON.stringify({
-              checked: ['/src/concurrent.js'],
-              last_active: Date.now()
-            }),
+            JSON.stringify(
+              signStateForSession(TEST_SESSION_ID, key, {
+                checked: ['/src/concurrent.js'],
+                last_active: Date.now()
+              })
+            ),
             'utf8'
           );
         }
@@ -6549,6 +6621,7 @@ function runTests() {
 
   gateCase('merges dir_gates and counters written by another process during save', () => {
     const hook = loadDirectHook({ CLAUDE_PROJECT_DIR: projectRoot, CLAUDE_TRANSCRIPT_PATH: '' });
+    const key = ensureTestKey();
     const originalMkdirSync = fs.mkdirSync;
     const now = Date.now();
     let injected = false;
@@ -6556,20 +6629,24 @@ function runTests() {
       const result = originalMkdirSync.apply(fs, arguments);
       if (!injected && path.resolve(String(target)) === path.resolve(stateDir)) {
         injected = true;
+        // The "other process" is another hook instance, so the state it
+        // writes is signed; an unsigned injection would be rejected.
         fs.writeFileSync(
           stateFile,
-          JSON.stringify({
-            checked: ['/src/concurrent.js'],
-            last_active: now,
-            fact_force_denials: 7,
-            dir_gates: {
-              [dirGateKey('/other/dir')]: { turn: 'u-other', at: now, first: '/other/dir/a.js', ordinal: 7 },
-              [dirGateKey(`${projectRoot}/src/conc`)]: { turn: 'u-old', at: 1, first: 'stale', ordinal: 1 }
-            },
-            denials_by_class: { code: 5, prose: 2 },
-            credited_by_class: { test: 3 },
-            sibling_allows: 9
-          }),
+          JSON.stringify(
+            signStateForSession(TEST_SESSION_ID, key, {
+              checked: ['/src/concurrent.js'],
+              last_active: now,
+              fact_force_denials: 7,
+              dir_gates: {
+                [dirGateKey('/other/dir')]: { turn: 'u-other', at: now, first: '/other/dir/a.js', ordinal: 7 },
+                [dirGateKey(`${projectRoot}/src/conc`)]: { turn: 'u-old', at: 1, first: 'stale', ordinal: 1 }
+              },
+              denials_by_class: { code: 5, prose: 2 },
+              credited_by_class: { test: 3 },
+              sibling_allows: 9
+            })
+          ),
           'utf8'
         );
       }
@@ -7047,16 +7124,27 @@ function runTests() {
     const now = Date.now();
     const legacy = classGateKey('code', 'src/pp');
     fs.mkdirSync(stateDir, { recursive: true });
-    fs.writeFileSync(
-      stateFile,
-      '{"checked":[],"last_active":' + now + ',"dir_gates":{"__proto__":{"turn":null,"at":1,"first":"x","ordinal":1},' +
-        '"constructor":{"turn":null,"at":' + (now - 1000) + ',"first":"x","ordinal":1},' +
-        '"prototype":{"turn":null,"at":' + (now - 1000) + ',"first":"x","ordinal":1},' +
-        JSON.stringify(legacy) + ':{"turn":null,"at":' + (now - 1000) + ',"first":"forged","ordinal":"NaN"}},' +
-        '"denials_by_class":{"__proto__":{"polluted":1},"constructor":5,"prototype":4,"code":7},' +
-        '"credited_by_class":{"constructor":2},"sibling_allows":0}',
-      'utf8'
-    );
+    // The hostile payload is built as a raw string so the prototype keys
+    // survive as JSON keys; it is then signed, because an unsigned file
+    // would be rejected before the getters ever see it.
+    const hostileJson =
+      '{"checked":[],"last_active":' +
+      now +
+      ',"dir_gates":{"__proto__":{"turn":null,"at":1,"first":"x","ordinal":1},' +
+      '"constructor":{"turn":null,"at":' +
+      (now - 1000) +
+      ',"first":"x","ordinal":1},' +
+      '"prototype":{"turn":null,"at":' +
+      (now - 1000) +
+      ',"first":"x","ordinal":1},' +
+      JSON.stringify(legacy) +
+      ':{"turn":null,"at":' +
+      (now - 1000) +
+      ',"first":"forged","ordinal":"NaN"}},' +
+      '"denials_by_class":{"__proto__":{"polluted":1},"constructor":5,"prototype":4,"code":7},' +
+      '"credited_by_class":{"constructor":2},"sibling_allows":0}';
+    const signedHostile = signStateForSession(TEST_SESSION_ID, ensureTestKey(), JSON.parse(hostileJson));
+    fs.writeFileSync(stateFile, JSON.stringify(signedHostile), 'utf8');
     assertClassDenied(classWrite('src/pp/a.js'), 'NaN ordinal gate not honored');
     assert.strictEqual({}.polluted, undefined, 'Object.prototype not polluted');
     const raw = fs.readFileSync(stateFile, 'utf8');
@@ -7584,7 +7672,12 @@ function runTests() {
   const idleSeed = (fileName, ageMs) => {
     fs.mkdirSync(stateDir, { recursive: true });
     const file = path.join(stateDir, fileName);
-    fs.writeFileSync(file, JSON.stringify({ checked: ['__bash_session__'], last_active: Date.now() - ageMs }), 'utf8');
+    const sessionKey = fileName.replace(/^state-/, '').replace(/\.json$/, '');
+    const signed = signStateForSession(sessionKey, ensureTestKey(), {
+      checked: ['__bash_session__'],
+      last_active: Date.now() - ageMs
+    });
+    fs.writeFileSync(file, JSON.stringify(signed), 'utf8');
     return file;
   };
   const HOUR = 60 * 60 * 1000;
@@ -7605,7 +7698,9 @@ function runTests() {
     const [file] = idleStateFiles();
     assert.ok(/^state-tx-/.test(file), file);
     const state = JSON.parse(fs.readFileSync(path.join(stateDir, file), 'utf8'));
-    fs.writeFileSync(path.join(stateDir, file), JSON.stringify({ ...state, last_active: Date.now() - 2 * HOUR }), 'utf8');
+    const sessionKey = file.replace(/^state-/, '').replace(/\.json$/, '');
+    const resigned = signStateForSession(sessionKey, ensureTestKey(), { ...state, last_active: Date.now() - 2 * HOUR });
+    fs.writeFileSync(path.join(stateDir, file), JSON.stringify(resigned), 'utf8');
     assert.strictEqual(roDecision(roBash('npm test', { transcript_path: transcript }, idleEnvNoIds)), undefined);
   });
 
@@ -8027,6 +8122,507 @@ function runTests() {
       ]) {
         assert.ok(!reason.includes(leaked), `condensed default denial must not contain ${leaked}`);
       }
+    })
+  )
+    passed++;
+  else failed++;
+
+  // --- State-file integrity (#4140) ---
+  //
+  // The gated agent can write to STATE_DIR, so a state file that merely
+  // parses is not evidence the hook wrote it. State files carry an
+  // HMAC-SHA256 signature (`_sig`) over the whole payload, keyed by a
+  // per-directory secret and bound to the session key. Every test below
+  // seeds a checked target and then varies exactly one trust input, so a
+  // deny proves the tampered input was rejected (an accepted file would
+  // allow the already-checked Edit).
+  clearState();
+  if (
+    test('rejects a forged checked entry in an unsigned state file (#4140)', () => {
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify({ checked: ['/src/forged.js'], last_active: Date.now() }), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/forged.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'unsigned forgery must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+      assert.ok(!result.stderr.includes('/src/forged.js'), 'warning must not leak state contents');
+      const keyHex = fs.readFileSync(path.join(stateDir, HMAC_KEY_FILE), 'utf8').trim();
+      assert.ok(!result.stderr.includes(keyHex), 'warning must not leak the key');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('honours validly signed checked state without warning (#4140)', () => {
+      writeState({ checked: ['/src/signed.js'], last_active: Date.now() });
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/signed.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.notStrictEqual(decisionOf(result), 'deny', 'validly signed state must be honoured');
+      assert.ok(!result.stderr.includes('integrity verification'), 'valid state must not warn');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects a state file whose payload was tampered after signing (#4140)', () => {
+      const signed = signTestState({ checked: [], last_active: Date.now() });
+      signed.checked.push('/src/tampered.js');
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/tampered.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'stale signature must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects a state file whose signature was tampered (#4140)', () => {
+      const signed = signTestState({ checked: ['/src/mac-tampered.js'], last_active: Date.now() });
+      const last = signed._sig.slice(-1);
+      signed._sig = `${signed._sig.slice(0, -1)}${last === '0' ? '1' : '0'}`;
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/mac-tampered.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'tampered signature must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects legacy unsigned state instead of grandfathering it (#4140)', () => {
+      const key = ensureTestKey();
+      assert.ok(key, 'fixture key should exist');
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify({ checked: ['/src/legacy.js'], last_active: Date.now() }), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/legacy.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'unsigned legacy state must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('fails closed when the integrity key is deleted (#4140)', () => {
+      writeState({ checked: ['/src/key-deleted.js'], last_active: Date.now() });
+      const allowed = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/key-deleted.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.notStrictEqual(decisionOf(allowed), 'deny', 'signed fixture must allow before the key is deleted');
+      fs.unlinkSync(path.join(stateDir, HMAC_KEY_FILE));
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/key-deleted.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'state without its key must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+      assert.ok(fs.existsSync(stateFile), 'verification failure must not delete the state file');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('fails closed when the integrity key is rotated (#4140)', () => {
+      writeState({ checked: ['/src/key-rotated.js'], last_active: Date.now() });
+      fs.writeFileSync(path.join(stateDir, HMAC_KEY_FILE), crypto.randomBytes(32).toString('hex'), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/key-rotated.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'state signed under the old key must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+      assert.ok(fs.existsSync(stateFile), 'verification failure must not delete the state file');
+      assert.ok(persistedStateVerifies(), 'the next save should self-heal with a signature under the new key');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('fails closed when the state file was never signed under any key (#4140)', () => {
+      const ephemeral = crypto.randomBytes(32);
+      const signed = signStateForSession(TEST_SESSION_ID, ephemeral, {
+        checked: ['/src/no-key.js'],
+        last_active: Date.now()
+      });
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      assert.ok(!fs.existsSync(keyPath), 'no key file should exist for this fixture');
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/no-key.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'state with no key file must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('does not resurrect forged entries through the save merge (#4140)', () => {
+      const targetA = '/src/merge-target-a.js';
+      const targetB = '/src/merge-target-b.js';
+      const first = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: targetA, old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(first), 'deny', 'first touch must be denied');
+      assert.ok(persistedStateVerifies(), 'hook should persist signed state');
+      const forged = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      forged.checked.push(targetA);
+      fs.writeFileSync(stateFile, JSON.stringify(forged), 'utf8');
+      const second = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: targetB, old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(second), 'deny', 'unrelated first touch must be denied');
+      assert.ok(persistedStateVerifies(), 'save must replace the forgery with signed state');
+      const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      assert.ok(!persisted.checked.includes(targetA), 'forged entry must not survive the merge');
+      const retry = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: targetA, old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(retry), 'deny', 'forged target must still be denied');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects a signed state file with a tampered last_active (#4140)', () => {
+      const signed = signTestState({ checked: ['/src/time-tampered.js'], last_active: Date.now() });
+      signed.last_active += 60 * 60 * 1000;
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/time-tampered.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'tampered last_active must invalidate the signature');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('fails closed on a malformed integrity key without throwing (#4140)', () => {
+      writeState({ checked: ['/src/bad-key.js'], last_active: Date.now() });
+      fs.writeFileSync(path.join(stateDir, HMAC_KEY_FILE), 'not-a-key', 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/bad-key.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(result.code, 0, 'malformed key must not crash the hook');
+      assert.strictEqual(decisionOf(result), 'deny', 'malformed key must fail closed');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+      assert.ok(!result.stderr.includes('RangeError'), 'warning must not leak an exception');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('initialises fresh state without an integrity warning when no state or key exists (#4140)', () => {
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      assert.ok(!fs.existsSync(stateFile), 'no state file should exist');
+      assert.ok(!fs.existsSync(keyPath), 'no key file should exist');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/fresh.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'fresh first touch must be denied');
+      assert.ok(!result.stderr.includes('integrity verification'), 'fresh sessions must not warn');
+      assert.ok(fs.existsSync(keyPath), 'first save should create the integrity key');
+      assert.ok(persistedStateVerifies(), 'first save should write a verifiable signature');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects tampering with an unknown extra field (#4140)', () => {
+      const signed = signTestState({ checked: ['/src/extra-field.js'], last_active: Date.now() });
+      signed.future_field = { n: 1 };
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/extra-field.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'whole-payload signing must cover unknown fields');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects tampering with a batch_denials field (#4140)', () => {
+      const signed = signTestState({
+        checked: ['/src/batch-denials.js'],
+        last_active: Date.now(),
+        batch_denials: { key1: { batch: 'b1', at: 1 } }
+      });
+      signed.batch_denials.key1.at = 999;
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/batch-denials.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'whole-payload signing must cover batch_denials');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects a state file replayed from another session (#4140)', () => {
+      const key = ensureTestKey();
+      const payload = { checked: ['/src/replayed.js'], last_active: Date.now() };
+      const otherFile = path.join(stateDir, 'state-replay-session-b.json');
+      const editInput = {
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/replayed.js', old_string: 'a', new_string: 'b' }
+      };
+      fs.writeFileSync(otherFile, JSON.stringify(signStateForSession('replay-session-a', key, payload)), 'utf8');
+      const replayed = runHook(editInput, { CLAUDE_SESSION_ID: 'replay-session-b' });
+      assert.strictEqual(decisionOf(replayed), 'deny', 'cross-session replay must be denied');
+      assert.ok(replayed.stderr.includes('integrity verification'), 'should warn about the rejected state');
+      fs.writeFileSync(otherFile, JSON.stringify(signStateForSession('replay-session-b', key, payload)), 'utf8');
+      const legit = runHook(editInput, { CLAUDE_SESSION_ID: 'replay-session-b' });
+      assert.notStrictEqual(decisionOf(legit), 'deny', 'correctly bound state must be honoured');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects malformed _sig shapes without throwing (#4140)', () => {
+      const shapes = [null, 123, {}, 'deadbeef', 'g'.repeat(64), ''];
+      for (const shape of shapes) {
+        clearState();
+        ensureTestKey();
+        fs.mkdirSync(stateDir, { recursive: true });
+        fs.writeFileSync(stateFile, JSON.stringify({ checked: ['/src/bad-sig.js'], last_active: Date.now(), _sig: shape }), 'utf8');
+        const result = runHook({
+          tool_name: 'Edit',
+          tool_input: { file_path: '/src/bad-sig.js', old_string: 'a', new_string: 'b' }
+        });
+        assert.strictEqual(result.code, 0, `shape ${JSON.stringify(shape)} must not crash the hook`);
+        assert.strictEqual(decisionOf(result), 'deny', `shape ${JSON.stringify(shape)} must be denied`);
+        assert.ok(!result.stderr.includes('RangeError'), 'malformed _sig must not leak an exception');
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects a symlinked integrity key file (#4140)', () => {
+      if (process.platform === 'win32') {
+        assert.ok(true, 'symlink rejection is POSIX-only');
+        return;
+      }
+      const realKeyPath = path.join(stateDir, 'real-key');
+      const realKey = crypto.randomBytes(32);
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(realKeyPath, realKey.toString('hex'), 'utf8');
+      fs.symlinkSync(realKeyPath, path.join(stateDir, HMAC_KEY_FILE));
+      const signed = signStateForSession(TEST_SESSION_ID, realKey, {
+        checked: ['/src/symlink-key.js'],
+        last_active: Date.now()
+      });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/symlink-key.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'symlinked key must not be followed');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('warns exactly once per process on integrity failure without leaking contents (#4140)', () => {
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify({ checked: ['/src/warn-once.js'], last_active: Date.now() }), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/warn-once.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'unsigned state must be denied');
+      const warnings = (result.stderr.match(/failed integrity verification/g) || []).length;
+      assert.strictEqual(warnings, 1, 'exactly one integrity warning per process');
+      assert.ok(!result.stderr.includes('/src/warn-once.js'), 'warning must not leak state contents');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('preserves idle expiry for validly signed state (#4140)', () => {
+      writeExpiredState();
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: 'some_file.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'expired state must reset to a fresh first touch');
+      assert.ok(!result.stderr.includes('integrity verification'), 'valid signature must not warn on expiry');
+      const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      assert.ok(!persisted.checked.includes('some_file.js'), 'expired checked entries must not survive');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('integrity failure takes precedence over idle expiry (#4140)', () => {
+      const signed = signTestState({ checked: ['/src/stale.js'], last_active: Date.now() });
+      signed.last_active = Date.now() - 9 * 60 * 60 * 1000;
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/stale.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'unverifiable state must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'verification must run before expiry handling');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('creates one consistent integrity key under concurrent first runs (#4140)', () => {
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const payload = JSON.stringify({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/race.js', old_string: 'a', new_string: 'b' }
+      });
+      const driver = [
+        "const { spawn } = require('child_process');",
+        'for (let i = 0; i < 8; i++) {',
+        `  const child = spawn('node', [${JSON.stringify(runner)}, 'pre:edit-write:gateguard-fact-force', 'scripts/hooks/gateguard-fact-force.js', 'standard,strict'], {`,
+        `    cwd: ${JSON.stringify(repoRoot)},`,
+        '    env: { ...process.env,',
+        `      GATEGUARD_STATE_DIR: ${JSON.stringify(stateDir)},`,
+        `      CLAUDE_SESSION_ID: ${JSON.stringify(TEST_SESSION_ID)},`,
+        "      ECC_HOOK_PROFILE: 'standard',",
+        "      GATEGUARD_EXTERNAL_CONTRACT_QUESTION: '' },",
+        "    stdio: ['pipe', 'ignore', 'ignore'] });",
+        `  child.stdin.end(${JSON.stringify(payload)});`,
+        '}'
+      ].join('\n');
+      const raced = spawnSync('node', ['-e', driver], { encoding: 'utf8', timeout: 30000 });
+      assert.strictEqual(raced.status, 0, raced.stderr);
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      assert.ok(fs.existsSync(keyPath), 'concurrent runs must leave exactly one key file');
+      assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'key file must hold one valid key');
+      const leftovers = fs.readdirSync(stateDir).filter(entry => entry.includes(`${HMAC_KEY_FILE}.tmp.`));
+      assert.strictEqual(leftovers.length, 0, 'no key temp files must be left behind');
+      assert.ok(persistedStateVerifies(), 'concurrent saves must converge on the surviving key');
+      // The first-touch deny marks the target checked and counts the denial
+      // (deny-once-then-retry), so the settled edit is allowed through the
+      // verified path. The bypass would be a checked entry with no denial
+      // recorded; assert the denial is there.
+      const settledInput = {
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/race.js', old_string: 'a', new_string: 'b' }
+      };
+      const settled = runHook(settledInput);
+      assert.deepStrictEqual(parseOutput(settled.stdout), settledInput, 'settled edit must be the JSON pass-through allow');
+      const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      assert.ok(persisted.fact_force_denials >= 1, 'checked entry must arrive with a recorded denial, not a forgery');
+      assert.ok(persisted.checked.includes('/src/race.js'));
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('keeps the integrity key file at 0600 on POSIX (#4140)', () => {
+      runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/key-mode.js', old_string: 'a', new_string: 'b' }
+      });
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      assert.ok(fs.existsSync(keyPath), 'key file should exist after a save');
+      if (process.platform !== 'win32') {
+        assert.strictEqual(fs.statSync(keyPath).mode & 0o777, 0o600, 'key file must be owner-only');
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('does not prune the integrity key file when backdated past the idle window (#4140)', () => {
+      runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/key-prune.js', old_string: 'a', new_string: 'b' }
+      });
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const before = fs.readFileSync(keyPath, 'utf8');
+      const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      fs.utimesSync(keyPath, old, old);
+      runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/key-prune-again.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.ok(fs.existsSync(keyPath), 'backdated key file must survive pruning');
+      assert.strictEqual(fs.readFileSync(keyPath, 'utf8'), before, 'key contents must be untouched by pruning');
+      assert.ok(persistedStateVerifies(), 'state must still verify after the pruning pass');
     })
   )
     passed++;
