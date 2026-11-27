@@ -1,0 +1,57 @@
+{
+  "schema_version": "ecc.evaluator-rag.scenario.v1",
+  "scenario_id": "ci-failure-diagnosis",
+  "title": "Diagnose CI failures from captured logs before proposing fixes",
+  "mode": "read_only_prototype",
+  "objective": "Given a failed CI run on a PR or maintainer branch, retrieve the exact failing job, captured log excerpt, changed-file context, and prior known-fix evidence before promoting a fix playbook.",
+  "sources": [
+    {
+      "kind": "repo_doc",
+      "path": "docs/ECC-2.0-GA-ROADMAP.md",
+      "purpose": "Records ECC-Tools CI failure-mode predictive follow-ups and the evaluator/RAG corpus expansion need"
+    },
+    {
+      "kind": "repo_doc",
+      "path": "docs/architecture/evaluator-rag-prototype.md",
+      "purpose": "Defines the artifact contract and promotion rules for evaluator/RAG scenarios"
+    },
+    {
+      "kind": "github_actions",
+      "command": "gh run view <run-id> --log-failed",
+      "purpose": "Primary evidence for the failing job, failing step, and deterministic error text"
+    },
+    {
+      "kind": "github_pr",
+      "command": "gh pr view <pr-number> --json files,statusCheckRollup,headRefName,baseRefName",
+      "purpose": "Changed-file and check-rollup context for scoping the fix"
+    },
+    {
+      "kind": "repo_test",
+      "command": "node tests/run-all.js",
+      "purpose": "Local regression gate after a candidate fix is implemented outside the read-only evaluator run"
+    }
+  ],
+  "retrieval_questions": [
+    "Which job, step, platform, runtime, and package manager failed?",
+    "What is the smallest failing log excerpt that explains the failure?",
+    "Which changed files are plausibly connected to the failing step?",
+    "Is there a prior known-fix, troubleshooting note, or fixture that matches this failure mode?",
+    "Which local command reproduces or guards the failure before a fix can merge?"
+  ],
+  "forbidden_actions": [
+    "rerunning CI until it passes without diagnosing the failure",
+    "pushing speculative fixes without a captured failing log excerpt",
+    "editing unrelated files to make the matrix green",
+    "weakening or deleting tests to silence a failure",
+    "merging or publishing while required checks are red",
+    "creating release tags or posting announcements from this evaluator run"
+  ],
+  "acceptance_gates": [
+    "failing job and step are named",
+    "captured log excerpt is linked or summarized",
+    "changed-file context is compared to the failing step",
+    "known-fix or no-known-fix status is recorded",
+    "local reproduction or regression command is named",
+    "at least one rerun-only candidate is rejected"
+  ]
+}

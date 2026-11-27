@@ -1,0 +1,489 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
+
+const repoRoot = path.resolve(__dirname, '..', '..');
+const scanScript = path.join(repoRoot, 'skills', 'skill-stocktake', 'scripts', 'scan.sh');
+const quickDiffScript = path.join(repoRoot, 'skills', 'skill-stocktake', 'scripts', 'quick-diff.sh');
+
+let passed = 0;
+let failed = 0;
+
+function test(description, fn) {
+  try {
+    fn();
+    console.log(`  ✓ ${description}`);
+    passed++;
+  } catch (error) {
+    console.log(`  ✗ ${description}: ${error.message}`);
+    failed++;
+  }
+}
+
+function writeSkill(skillDir, name) {
+  fs.mkdirSync(skillDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(skillDir, 'SKILL.md'),
+    `---\nname: ${name}\ndescription: test fixture\n---\n# ${name}\n`,
+  );
+}
+
+function runBash(scriptPath, args, env) {
+  return spawnSync('bash', [scriptPath, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+  });
+}
+
+console.log('\nSkill stocktake discovery tests:');
+
+test('both scanners use canonical, error-visible, NUL-delimited discovery', () => {
+  for (const scriptPath of [scanScript, quickDiffScript]) {
+    const source = fs.readFileSync(scriptPath, 'utf8');
+    assert.match(source, /find -L "\$dir"/);
+    assert.match(source, /-name "SKILL\.md" -type f -print0/);
+    assert.match(source, /sort_nul_file "\$find_out"/);
+    assert.match(source, /records\.sort\(Buffer\.compare\)/);
+    assert.doesNotMatch(source, /sort -z/, `${path.basename(scriptPath)} still requires GNU sort`);
+    assert.match(source, /read -r -d '' file/);
+    assert.doesNotMatch(source, /find [^\n]*2>\/dev\/null/, `${path.basename(scriptPath)} still hides find errors`);
+  }
+});
+
+if (process.platform === 'win32') {
+  console.log('  ↷ POSIX symlink and newline-path integration cases skipped on Windows');
+} else {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-stocktake-'));
+  try {
+    const projectSkills = path.join(tempRoot, 'project', '.claude', 'skills');
+    const directSkill = path.join(projectSkills, 'direct skill');
+    const linkedTarget = path.join(tempRoot, 'shared', 'linked-skill');
+    const newlineSkill = path.join(projectSkills, 'newline\nskill');
+    const resultsPath = path.join(tempRoot, 'results.json');
+    const observationsPath = path.join(tempRoot, 'observations.jsonl');
+
+    writeSkill(directSkill, 'direct-skill');
+    writeSkill(linkedTarget, 'linked-skill');
+    writeSkill(newlineSkill, 'newline-skill');
+    fs.symlinkSync(linkedTarget, path.join(projectSkills, 'linked-skill'), 'dir');
+    fs.mkdirSync(path.join(directSkill, 'references'), { recursive: true });
+    fs.writeFileSync(path.join(directSkill, 'references', 'notes.md'), '# supporting notes\n');
+    fs.writeFileSync(
+      resultsPath,
+      JSON.stringify({ evaluated_at: '2099-01-01T00:00:00Z', skills: [] }),
+    );
+    fs.writeFileSync(
+      observationsPath,
+      `${JSON.stringify({
+        tool: 'Read',
+        path: path.join(newlineSkill, 'SKILL.md'),
+        timestamp: new Date().toISOString(),
+      })}\n${JSON.stringify({
+        tool: 'Read',
+        path: path.join(directSkill, 'SKILL.md'),
+        timestamp: new Date().toISOString(),
+      })}\n`,
+    );
+
+    const env = {
+      SKILL_STOCKTAKE_GLOBAL_DIR: path.join(tempRoot, 'missing-global'),
+      SKILL_STOCKTAKE_PROJECT_DIR: projectSkills,
+      SKILL_STOCKTAKE_OBSERVATIONS: observationsPath,
+    };
+
+    test('scan follows symlinked skills and ignores nested Markdown assets', () => {
+      const result = runBash(scanScript, [], env);
+      assert.strictEqual(result.status, 0, result.stderr);
+      const output = JSON.parse(result.stdout);
+      assert.strictEqual(output.scan_summary.project.count, 3);
+      assert.deepStrictEqual(
+        output.skills.map(skill => skill.name).sort(),
+        ['direct-skill', 'linked-skill', 'newline-skill'],
+      );
+      const newlineEntry = output.skills.find(skill => skill.name === 'newline-skill');
+      assert.strictEqual(newlineEntry.use_7d, 1);
+      assert.strictEqual(newlineEntry.use_30d, 1);
+      const spaceEntry = output.skills.find(skill => skill.name === 'direct-skill');
+      assert.strictEqual(spaceEntry.use_7d, 1);
+      assert.strictEqual(spaceEntry.use_30d, 1);
+    });
+
+    test('quick diff keeps newline-containing skill paths as one record', () => {
+      const result = runBash(quickDiffScript, [resultsPath], env);
+      assert.strictEqual(result.status, 0, result.stderr);
+      const output = JSON.parse(result.stdout);
+      assert.strictEqual(output.length, 3);
+      assert.strictEqual(
+        output.filter(entry => entry.path.includes('newline\nskill/SKILL.md')).length,
+        1,
+      );
+      assert.ok(output.every(entry => entry.is_new === true));
+    });
+
+    test('quick diff recognizes a cached newline-containing path', () => {
+      fs.writeFileSync(
+        resultsPath,
+        JSON.stringify({
+          evaluated_at: '2099-01-01T00:00:00Z',
+          skills: [{ path: path.join(newlineSkill, 'SKILL.md') }],
+        }),
+      );
+      const result = runBash(quickDiffScript, [resultsPath], env);
+      assert.strictEqual(result.status, 0, result.stderr);
+      const output = JSON.parse(result.stdout);
+      assert.strictEqual(output.length, 2);
+      assert.ok(output.every(entry => !entry.path.includes('newline\nskill/SKILL.md')));
+    });
+  } catch (error) {
+    console.log(`  ✗ fixture setup: ${error.message}`);
+    failed++;
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+if (process.platform !== 'win32') {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-stocktake-inventory-'));
+  try {
+    const globalSkills = path.join(tempRoot, 'global', '.claude', 'skills');
+    const projectSkills = path.join(tempRoot, 'project', '.claude', 'skills');
+    const liveSkills = [
+      [path.join(globalSkills, 'active'), 'global-active'],
+      [path.join(globalSkills, '.trash-archive'), 'global-trash-archive'],
+      [path.join(projectSkills, 'active'), 'project-active'],
+      [path.join(projectSkills, '.trashcan'), 'project-trashcan'],
+      [path.join(projectSkills, 'space skill'), 'space-skill'],
+      [path.join(projectSkills, 'newline\nskill'), 'newline-skill'],
+    ];
+    for (const [skillDir, name] of liveSkills) writeSkill(skillDir, name);
+    for (const [scope, skillsDir] of [['global', globalSkills], ['project', projectSkills]]) {
+      writeSkill(path.join(skillsDir, '.trash', 'deleted'), `${scope}-deleted`);
+      writeSkill(path.join(skillsDir, 'bundle', '.trash', 'nested'), `${scope}-nested-deleted`);
+    }
+    const linkedTarget = path.join(tempRoot, 'shared', 'linked');
+    const linkedSkill = path.join(projectSkills, 'linked');
+    writeSkill(linkedTarget, 'linked-skill');
+    fs.symlinkSync(linkedTarget, linkedSkill, 'dir');
+    const expectedPaths = [...liveSkills.map(([skillDir]) => path.join(skillDir, 'SKILL.md')),
+      path.join(linkedSkill, 'SKILL.md')].sort();
+    const resultsPath = path.join(tempRoot, 'results.json');
+    fs.writeFileSync(resultsPath, JSON.stringify({ evaluated_at: '2099-01-01T00:00:00Z', skills: [] }));
+    const emptyObservations = path.join(tempRoot, 'empty-observations.jsonl');
+    fs.writeFileSync(emptyObservations, '');
+    const env = {
+      SKILL_STOCKTAKE_GLOBAL_DIR: globalSkills,
+      SKILL_STOCKTAKE_PROJECT_DIR: projectSkills,
+      SKILL_STOCKTAKE_OBSERVATIONS: path.join(tempRoot, 'missing-observations.jsonl'),
+    };
+
+    test('scan excludes root and nested .trash directories in both scopes, preserving live skills', () => {
+      const result = runBash(scanScript, [], env);
+      assert.strictEqual(result.status, 0, result.stderr);
+      const output = JSON.parse(result.stdout);
+      assert.deepStrictEqual(output.skills.map(skill => skill.path).sort(), expectedPaths);
+      assert.strictEqual(output.scan_summary.global.count, 2);
+      assert.strictEqual(output.scan_summary.project.count, 5);
+    });
+
+    test('quick diff excludes .trash in both scopes while preserving similarly named and linked skills', () => {
+      const result = runBash(quickDiffScript, [resultsPath], env);
+      assert.strictEqual(result.status, 0, result.stderr);
+      const output = JSON.parse(result.stdout);
+      assert.deepStrictEqual(output.map(skill => skill.path).sort(), expectedPaths);
+      assert.ok(output.every(skill => skill.is_new === true));
+    });
+
+    for (const [scope, skillsDir] of [['global', globalSkills], ['project', projectSkills]]) {
+      test(`scan rejects incomplete ${scope} discovery and cleans temporary files`, () => {
+        const binDir = path.join(tempRoot, `${scope}-bin`);
+        const scanTmp = path.join(tempRoot, `${scope}-scan-tmp`);
+        fs.mkdirSync(binDir);
+        fs.mkdirSync(scanTmp);
+        const findResult = spawnSync('bash', ['-c', 'command -v find'], { encoding: 'utf8' });
+        assert.strictEqual(findResult.status, 0, findResult.stderr);
+        const realFind = findResult.stdout.trim();
+        assert.ok(path.isAbsolute(realFind), 'Resolve the real find before overriding PATH');
+        // Directory cycles do not fail consistently across GNU and BSD find.
+        // Emit a real partial record, then fail only the selected scope.
+        fs.writeFileSync(path.join(binDir, 'find'), [
+          '#!/usr/bin/env bash',
+          'if [[ "$2" == "$ECC_TEST_FIND_DIR" ]]; then',
+          '  printf "%s\\0" "$ECC_TEST_FIND_PARTIAL"',
+          '  printf "fixture find failure: %s\\n" "$ECC_TEST_FIND_DIR" >&2',
+          '  exit 1',
+          'fi',
+          'exec "$ECC_TEST_REAL_FIND" "$@"',
+          '',
+        ].join('\n'), { mode: 0o755 });
+        const result = runBash(scanScript, [], {
+          ...env, TMPDIR: scanTmp,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
+          ECC_TEST_FIND_DIR: skillsDir,
+          ECC_TEST_FIND_PARTIAL: path.join(skillsDir, 'active', 'SKILL.md'),
+          ECC_TEST_REAL_FIND: realFind,
+        });
+        assert.strictEqual(result.status, 1, 'A failed find must not publish a partial inventory');
+        assert.strictEqual(result.stdout, '', 'Incomplete discovery must not produce inventory JSON');
+        assert.match(result.stderr, /Error: find encountered errors while scanning/);
+        assert.ok(result.stderr.includes(`fixture find failure: ${skillsDir}`), 'Preserve find stderr');
+        assert.deepStrictEqual(fs.readdirSync(scanTmp), [], 'Clean discovery files on failure');
+      });
+    }
+
+    for (const name of ['project-active', 'space-skill', 'newline-skill']) {
+      test(`scan reports unknown usage for ${name} when observations are missing`, () => {
+        const result = runBash(scanScript, [], env);
+        assert.strictEqual(result.status, 0, result.stderr);
+        const skill = JSON.parse(result.stdout).skills.find(entry => entry.name === name);
+        assert.ok(skill, `missing live skill: ${name}`);
+        assert.strictEqual(skill.use_7d, null);
+        assert.strictEqual(skill.use_30d, null);
+      });
+    }
+
+    test('scan reports numeric zero for unobserved skills when an empty observation file exists', () => {
+      const result = runBash(scanScript, [], { ...env, SKILL_STOCKTAKE_OBSERVATIONS: emptyObservations });
+      assert.strictEqual(result.status, 0, result.stderr);
+      const output = JSON.parse(result.stdout);
+      assert.ok(output.skills.length > 0);
+      for (const skill of output.skills) {
+        assert.strictEqual(skill.use_7d, 0, skill.path);
+        assert.strictEqual(skill.use_30d, 0, skill.path);
+      }
+    });
+
+    test('scan rejects truncated observations instead of reporting unavailable usage', () => {
+      const brokenObservations = path.join(tempRoot, 'truncated-observations.jsonl');
+      fs.writeFileSync(brokenObservations, `${JSON.stringify({
+        tool: 'Read', path: path.join(globalSkills, 'active', 'SKILL.md'),
+        timestamp: new Date().toISOString(),
+      })}\n{"tool":`);
+      const result = runBash(scanScript, [], { ...env, SKILL_STOCKTAKE_OBSERVATIONS: brokenObservations });
+      assert.notStrictEqual(result.status, 0, 'A partial observation log must fail visibly');
+      assert.strictEqual(result.stdout, '', 'A failed scan must not publish incomplete inventory');
+      assert.match(result.stderr, /observation|parse error/i);
+    });
+
+    test('scan counts literal backslashes in skill paths without interpreting escape sequences', () => {
+      const skillsDir = path.join(tempRoot, 'backslash-skills');
+      const skillDir = path.join(skillsDir, String.raw`literal\tname\nending`);
+      writeSkill(skillDir, 'backslash-skill');
+      const skillPath = path.join(skillDir, 'SKILL.md');
+      const observationsPath = path.join(tempRoot, 'backslash-observations.jsonl');
+      const observations = [0, 1, 10, 40].map(days => ({
+        tool: 'Read',
+        path: skillPath,
+        timestamp: new Date(Date.now() - days * 86400000).toISOString(),
+      }));
+      fs.writeFileSync(observationsPath, `${observations.map(record => JSON.stringify(record)).join('\n')}\n`);
+      const result = runBash(scanScript, [], {
+        SKILL_STOCKTAKE_GLOBAL_DIR: path.join(tempRoot, 'missing-global'),
+        SKILL_STOCKTAKE_PROJECT_DIR: skillsDir,
+        SKILL_STOCKTAKE_OBSERVATIONS: observationsPath,
+      });
+      assert.strictEqual(result.status, 0, result.stderr);
+      const skills = JSON.parse(result.stdout).skills;
+      assert.strictEqual(skills.length, 1);
+      assert.strictEqual(skills[0].path, skillPath);
+      assert.strictEqual(skills[0].use_7d, 2);
+      assert.strictEqual(skills[0].use_30d, 3);
+    });
+
+    test('scan does not count a newline-delimited path fragment as an observed skill', () => {
+      const skillPath = path.join(globalSkills, 'active', 'SKILL.md');
+      // This is one real file outside the inventory. Its newline is immediately
+      // followed by the complete path of a different, unobserved tracked skill.
+      const unrelatedPath = `${tempRoot}/unrelated\n${skillPath}`;
+      fs.mkdirSync(path.dirname(unrelatedPath), { recursive: true });
+      fs.writeFileSync(unrelatedPath, '# unrelated file\n');
+      const observationsPath = path.join(tempRoot, 'newline-fragment-observations.jsonl');
+      fs.writeFileSync(observationsPath, `${JSON.stringify({
+        tool: 'Read', path: unrelatedPath, timestamp: new Date().toISOString(),
+      })}\n`);
+      assert.notStrictEqual(unrelatedPath, skillPath);
+      assert.ok(fs.statSync(unrelatedPath).isFile());
+      const result = runBash(scanScript, [], { ...env, SKILL_STOCKTAKE_OBSERVATIONS: observationsPath });
+      assert.strictEqual(result.status, 0, result.stderr);
+      const skill = JSON.parse(result.stdout).skills.find(entry => entry.path === skillPath);
+      assert.ok(skill, 'the unobserved skill must remain in the inventory');
+      assert.strictEqual(skill.use_7d, 0);
+      assert.strictEqual(skill.use_30d, 0);
+    });
+
+    test('scan preserves exact usage counts and date windows for normal and whitespace paths', () => {
+      const observationsPath = path.join(tempRoot, 'matching-observations.jsonl');
+      const observedPaths = [path.join(linkedSkill, 'SKILL.md'),
+        ...liveSkills.filter(([, name]) => ['space-skill', 'newline-skill'].includes(name))
+          .map(([skillDir]) => path.join(skillDir, 'SKILL.md'))];
+      const timestamp = days => new Date(Date.now() - days * 86400000).toISOString();
+      const observations = observedPaths.flatMap(skillPath => [
+        { tool: 'Read', path: skillPath, timestamp: timestamp(0) },
+        { tool: 'Read', path: skillPath, timestamp: timestamp(1) },
+        { tool: 'Read', path: skillPath, timestamp: timestamp(10) },
+        { tool: 'Read', path: skillPath, timestamp: timestamp(40) },
+        { tool: 'Write', path: skillPath, timestamp: timestamp(0) },
+        { tool: 'Read', path: `${skillPath}.backup`, timestamp: timestamp(0) },
+      ]);
+      fs.writeFileSync(observationsPath, `${observations.map(record => JSON.stringify(record)).join('\n')}\n`);
+      const result = runBash(scanScript, [], { ...env, SKILL_STOCKTAKE_OBSERVATIONS: observationsPath });
+      assert.strictEqual(result.status, 0, result.stderr);
+      const output = JSON.parse(result.stdout);
+      for (const skillPath of observedPaths) {
+        const skill = output.skills.find(entry => entry.path === skillPath);
+        assert.ok(skill, `missing observed skill: ${skillPath}`);
+        assert.strictEqual(skill.use_7d, 2, skillPath);
+        assert.strictEqual(skill.use_30d, 3, skillPath);
+      }
+      const unobserved = output.skills.find(entry => entry.name === 'global-active');
+      assert.strictEqual(unobserved.use_7d, 0);
+      assert.strictEqual(unobserved.use_30d, 0);
+    });
+  } catch (error) {
+    console.log(`  ✗ inventory fixture setup: ${error.message}`);
+    failed++;
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+if (process.platform !== 'win32') {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-stocktake-order-'));
+  try {
+    const projectSkills = path.join(tempRoot, 'project', '.claude', 'skills');
+    const names = Array.from({ length: 12 }, (_, index) => `skill-${String.fromCharCode(97 + index)}`);
+    for (const name of names) writeSkill(path.join(projectSkills, name), name);
+    const expectedPaths = names.map(name => path.join(projectSkills, name, 'SKILL.md'));
+    const resultsPath = path.join(tempRoot, 'results.json');
+    fs.writeFileSync(resultsPath, JSON.stringify({ evaluated_at: '2099-01-01T00:00:00Z', skills: [] }));
+    const env = {
+      SKILL_STOCKTAKE_GLOBAL_DIR: path.join(tempRoot, 'missing-global'),
+      SKILL_STOCKTAKE_PROJECT_DIR: projectSkills,
+      SKILL_STOCKTAKE_OBSERVATIONS: path.join(tempRoot, 'missing-observations.jsonl'),
+    };
+
+    test('scan keeps sorted discovery order past nine skills', () => {
+      const result = runBash(scanScript, [], env);
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.deepStrictEqual(JSON.parse(result.stdout).skills.map(skill => skill.path), expectedPaths);
+    });
+
+    test('quick diff keeps sorted discovery order past nine skills', () => {
+      const result = runBash(quickDiffScript, [resultsPath], env);
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.deepStrictEqual(JSON.parse(result.stdout).map(skill => skill.path), expectedPaths);
+    });
+  } catch (error) {
+    console.log(`  ✗ ordering fixture setup: ${error.message}`);
+    failed++;
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+if (process.platform !== 'win32') {
+  const skillSource = fs.readFileSync(path.join(repoRoot, 'skills', 'skill-stocktake', 'SKILL.md'), 'utf8');
+  const inventorySection = skillSource.split('### Phase 1')[1].split('### Phase 2')[0];
+  const inventoryBlock = inventorySection.match(/```bash\n([\s\S]*?)\n```/)[1];
+  for (const scenario of ['changed', 'missing mtime', 'null mtime', 'matching', 'legacy matching']) {
+    test('documented resume reevaluates stale skills and preserves current evaluations (' + scenario + ')', () => {
+      const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-stocktake-resume-'));
+      try {
+        const home = path.join(tempRoot, 'home');
+        const skills = path.join(home, '.claude', 'skills');
+        const stocktake = path.join(skills, 'skill-stocktake');
+        fs.mkdirSync(stocktake, { recursive: true });
+        fs.cpSync(path.dirname(scanScript), path.join(stocktake, 'scripts'), { recursive: true });
+        const skillDir = path.join(skills, 'live');
+        writeSkill(skillDir, 'live');
+        const skillPath = path.join(skillDir, 'SKILL.md');
+        fs.utimesSync(skillPath, new Date('2025-01-01T00:00:00Z'), new Date('2025-01-01T00:00:00Z'));
+        const env = {
+          ...process.env,
+          HOME: home,
+          SKILL_STOCKTAKE_GLOBAL_DIR: skills,
+          SKILL_STOCKTAKE_PROJECT_DIR: path.join(tempRoot, 'missing-project'),
+          SKILL_STOCKTAKE_OBSERVATIONS: path.join(tempRoot, 'missing-observations'),
+        };
+        const runInventory = () => spawnSync('bash', ['-c', inventoryBlock], {
+          cwd: tempRoot, env, encoding: 'utf8', timeout: 30000,
+        });
+        const initial = runInventory();
+        assert.strictEqual(initial.status, 0, initial.stderr);
+        const scanned = JSON.parse(initial.stdout).skills[0];
+        const entry = {
+          path: scanned.path, verdict: 'Keep', reason: 'Preserve the reviewed content',
+          ...(scenario === 'missing mtime' ? {} : { mtime: scenario === 'null mtime' ? null : scanned.mtime }),
+        };
+        const resultsPath = path.join(stocktake, 'results.json');
+        fs.writeFileSync(resultsPath, JSON.stringify({
+          mode: 'full',
+          skills: { [scenario === 'legacy matching' ? 'live' : scanned.path]: entry },
+          batch_progress: { total: 1, evaluated: 1, status: 'in_progress' },
+        }));
+        if (scenario === 'changed') {
+          fs.appendFileSync(skillPath, '\nContent changed after its evaluation.\n');
+          fs.utimesSync(skillPath, new Date('2025-01-02T00:00:00Z'), new Date('2025-01-02T00:00:00Z'));
+        }
+        const resumed = runInventory();
+        assert.strictEqual(resumed.status, 0, resumed.stderr);
+        const output = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
+        const preserved = scenario === 'matching' || scenario === 'legacy matching';
+        assert.deepStrictEqual(output.skills, preserved ? { [scanned.path]: entry } : {});
+        assert.deepStrictEqual(output.batch_progress, {
+          total: 1, evaluated: preserved ? 1 : 0, status: 'in_progress',
+        });
+      } finally {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+      }
+    });
+  }
+}
+
+if (process.platform !== 'win32') {
+  test('quick diff uses each saved evaluation mtime across cache shapes and timestamp changes', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-stocktake-quick-mtime-'));
+    try {
+      const skills = path.join(tempRoot, '.claude', 'skills');
+      writeSkill(path.join(skills, 'live'), 'live');
+      const skillPath = path.join(skills, 'live', 'SKILL.md');
+      const resultsPath = path.join(tempRoot, 'results.json');
+      const env = {
+        SKILL_STOCKTAKE_GLOBAL_DIR: path.join(tempRoot, 'missing'),
+        SKILL_STOCKTAKE_PROJECT_DIR: skills,
+      };
+      const evaluatedAt = '2025-01-10T00:00:00Z';
+      for (const shape of ['array', 'path-keyed', 'name-keyed']) {
+        for (const scenario of [
+          { name: 'changed during batch', saved: '2025-01-01T00:00:00Z', live: '2025-01-02T00:00:00Z', changed: true },
+          { name: 'restored older timestamp', saved: '2025-01-02T00:00:00Z', live: '2025-01-01T00:00:00Z', changed: true },
+          { name: 'matching future timestamp', saved: '2025-02-01T00:00:00Z', live: '2025-02-01T00:00:00Z', changed: false },
+          { name: 'null mtime unchanged', saved: null, live: '2025-01-01T00:00:00Z', changed: false },
+          { name: 'null mtime changed', saved: null, live: '2025-02-01T00:00:00Z', changed: true },
+          { name: 'legacy unchanged', live: '2025-01-01T00:00:00Z', changed: false },
+          { name: 'legacy changed', live: '2025-02-01T00:00:00Z', changed: true },
+        ]) {
+          const entry = { path: skillPath, ...(Object.hasOwn(scenario, 'saved') ? { mtime: scenario.saved } : {}) };
+          const cache = shape === 'array' ? [entry] : { [shape === 'path-keyed' ? skillPath : 'live']: entry };
+          fs.writeFileSync(resultsPath, JSON.stringify({ evaluated_at: evaluatedAt, skills: cache }));
+          fs.utimesSync(skillPath, new Date(scenario.live), new Date(scenario.live));
+          const result = runBash(quickDiffScript, [resultsPath], env);
+          assert.strictEqual(result.status, 0, result.stderr);
+          assert.deepStrictEqual(JSON.parse(result.stdout), scenario.changed
+            ? [{ path: skillPath, mtime: scenario.live, is_new: false }] : [], `${shape}: ${scenario.name}`);
+        }
+      }
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+}
+
+console.log(`\nPassed: ${passed}`);
+console.log(`Failed: ${failed}`);
+process.exit(failed > 0 ? 1 : 0);

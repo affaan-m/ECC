@@ -1,0 +1,7 @@
+interface:
+  display_name: "Product Capability"
+  short_description: "Implementation-ready product capability plans"
+  brand_color: "#0EA5E9"
+  default_prompt: "Use $product-capability to turn product intent into an implementation plan."
+policy:
+  allow_implicit_invocation: true

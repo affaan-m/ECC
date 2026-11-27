@@ -1,0 +1,35 @@
+{
+  "schema_version": "ecc.evaluator-rag.report.v1",
+  "scenario_id": "billing-marketplace-readiness",
+  "run_id": "2026-05-12-billing-marketplace-readiness-prototype",
+  "result": "prototype_passed",
+  "read_only": true,
+  "scores": {
+    "claim_evidence": 0.82,
+    "publication_safety": 1,
+    "marketplace_specificity": 0.84,
+    "billing_scope_control": 1,
+    "announcement_safety": 1
+  },
+  "findings": [
+    {
+      "id": "billing-claim-gate-needed",
+      "severity": "warning",
+      "summary": "Release docs require a fresh ECC Tools billing/App/Marketplace check before launch copy can claim live billing readiness."
+    },
+    {
+      "id": "dry-run-not-live-state",
+      "severity": "warning",
+      "summary": "May 12 evidence proves package/plugin dry runs and clean install smoke, but it does not prove a live Marketplace billing state."
+    },
+    {
+      "id": "safe-next-action",
+      "severity": "info",
+      "summary": "The reusable next action is a read-only evidence checklist that classifies each launch-copy billing claim before publication."
+    }
+  ],
+  "recommended_next_action": {
+    "candidate_id": "evidence-backed-billing-check",
+    "action": "Run the promoted billing/Marketplace claim-verification checklist before any launch copy, GitHub release text, or social copy says billing is live."
+  }
+}

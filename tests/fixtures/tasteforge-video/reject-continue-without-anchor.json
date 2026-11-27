@@ -1,0 +1,19 @@
+{
+  "kind": "effect_recipe",
+  "expected": "reject",
+  "payload": {
+    "events": [
+      {
+        "effect": "cv_subject_glitch",
+        "requires_subject_anchor": true,
+        "subject_anchor": {
+          "mode": "object_track",
+          "target": "primary_subject",
+          "source_ref_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "evidence_time": 0,
+          "lost_policy": "continue_without_anchor"
+        }
+      }
+    ]
+  }
+}

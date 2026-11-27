@@ -1,0 +1,106 @@
+{
+  "schema_version": "ecc.evaluator-rag.scenario.v1",
+  "scenario_id": "orchestration-efficiency-evidence",
+  "title": "Require controlled evidence before claiming orchestration efficiency",
+  "mode": "read_only_prototype",
+  "objective": "Given a proposed multi-agent workflow or completed run, retrieve the dependency graph, ownership boundaries, acceptance evidence, matched single-agent baseline, and aggregate cost telemetry before promoting an orchestration recommendation.",
+  "sources": [
+    {
+      "kind": "repo_skill",
+      "path": "skills/parallel-execution-optimizer/SKILL.md",
+      "purpose": "Defines dependency mapping, isolated write surfaces, and evidence-based integration for parallel work"
+    },
+    {
+      "kind": "repo_skill",
+      "path": "skills/context-budget/SKILL.md",
+      "purpose": "Defines context and token overhead inventory instead of assuming more agents reduce total cost"
+    },
+    {
+      "kind": "repo_source",
+      "path": "scripts/lib/orchestration-session.js",
+      "purpose": "Provides ECC orchestration session state and worker lifecycle evidence"
+    },
+    {
+      "kind": "repo_test",
+      "command": "node tests/lib/orchestration-session.test.js",
+      "purpose": "Regression gate for orchestration session behavior"
+    },
+    {
+      "kind": "external_experiment",
+      "url": "https://github.com/Phelan164/codex-howto/blob/527296fa7d9ba1828d639ec000e0543c42ee2739/examples/measurements/incident-orchestration-smoke-2026-08-11.md",
+      "purpose": "Contributed smoke evidence showing why overlapping runs and unavailable aggregate tokens cannot support an efficiency claim"
+    }
+  ],
+  "retrieval_questions": [
+    "Which task dependencies and exclusive write surfaces justify multiple workers?",
+    "Were the single-agent and orchestrated candidates run from the same task, revision, model, reasoning effort, permissions, tools, time limit, and evaluator?",
+    "Did every attempted candidate meet the same acceptance and evidence-quality gates?",
+    "What were total tokens or cost across the controller, all workers, the verifier, and retries, plus elapsed time, conflicts, integration rework, and human corrections?",
+    "Were failures and unavailable telemetry retained rather than estimated or excluded?",
+    "How many sequential paired runs and alternated run orders support the recommendation?",
+    "What were each pair's quality, time, and cost deltas, and do they point the same direction across every pair?"
+  ],
+  "forbidden_actions": [
+    "claiming that parallel agents are faster or cheaper without a matched accepted single-agent baseline",
+    "comparing candidates with different tasks, revisions, models, reasoning effort, permissions, tools, time limits, or evaluators",
+    "reporting controller-only tokens or cost while omitting worker totals",
+    "excluding failed candidates, edit conflicts, integration rework, retries, or human corrections",
+    "averaging opposite-sign or unavailable pair deltas into a task-class recommendation",
+    "estimating unavailable telemetry or turning one overlapping smoke run into a general efficiency claim",
+    "launching workers, editing candidate repositories, publishing benchmarks, or posting announcements from this read-only evaluator run"
+  ],
+  "acceptance_gates": [
+    "dependency graph and exclusive ownership boundaries are recorded",
+    "single-agent and orchestrated controls are matched",
+    "all attempted candidates use the same acceptance evaluator",
+    "aggregate controller, worker, verifier, and retry cost is recorded or explicitly unavailable",
+    "elapsed time, retries, conflicts, integration rework, and human corrections are retained",
+    "failed candidates remain in the comparison",
+    "at least three fresh sequential pairs with alternated order are completed before promotion",
+    "every raw attempt is retained and each pair reports quality, time, and cost deltas computed from those attempts",
+    "mixed-sign or unavailable pair deltas yield an inconclusive result that blocks any task-class claim",
+    "at least one one-run parallelism claim is rejected"
+  ],
+  "pair_consistency_rule": {
+    "delta_definition": "orchestrated minus single_agent for the same pair, computed from the retained raw attempts",
+    "minimum_pairs": 3,
+    "required_orders": [
+      "single_agent_first",
+      "orchestrated_first"
+    ],
+    "unavailable_value": "unavailable",
+    "metrics": [
+      {
+        "name": "quality",
+        "attempt_field": "quality_score",
+        "delta_field": "quality_delta",
+        "better_when": "higher"
+      },
+      {
+        "name": "time",
+        "attempt_field": "elapsed_ms",
+        "delta_field": "time_delta_ms",
+        "better_when": "lower"
+      },
+      {
+        "name": "cost",
+        "attempt_field": "total_cost_usd",
+        "delta_field": "cost_delta_usd",
+        "better_when": "lower"
+      }
+    ],
+    "aggregate_cost_components": [
+      "controller",
+      "workers",
+      "verifier",
+      "retries"
+    ],
+    "metric_direction": "A metric has a direction only when every pair reports an available delta and all deltas are nonzero with the same sign, or all deltas are zero (no_difference). Any other pattern is inconclusive; deltas are never averaged.",
+    "result": "consistent only when the minimum pair count is met, both run orders occur, and every metric has a direction; otherwise inconclusive",
+    "claim_allowed_only_if": "result is consistent; the claim names its task class and every metric direction, including any cost or quality loss",
+    "fixtures": [
+      "pairs-sign-consistent.json",
+      "pairs-mixed-sign.json"
+    ]
+  }
+}

@@ -1,0 +1,56 @@
+name: Quick product feedback
+description: One required choice and an optional sentence. Leaving ECC is valid feedback.
+title: "[Feedback] "
+labels:
+  - feedback
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for telling us what got in the way. This form is intentionally short.
+
+        This is a public GitHub issue. Do not include secrets, prompts, customer data, or private repository details.
+
+        Report a vulnerability through [GitHub's private security advisory form](https://github.com/affaan-m/ECC/security/advisories/new), not here. Non-vulnerability security or trust concerns are welcome in this form.
+  - type: dropdown
+    id: reason
+    attributes:
+      label: What best describes your feedback?
+      options:
+        - I could not install or activate ECC
+        - ECC made the agent slower or the output worse
+        - ECC used too much token or context budget
+        - Hooks or gates interrupted normal work
+        - ECC was too complicated or required too much configuration
+        - My harness or operating system was missing or unreliable
+        - I had a security or trust concern
+        - A feature I needed was missing
+        - Support was too slow
+        - I was only testing and no longer need it
+        - Something worked especially well
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: harness
+    attributes:
+      label: Where did you use ECC?
+      options:
+        - Claude Code
+        - Codex
+        - Cursor
+        - OpenCode
+        - GitHub Copilot
+        - Another harness
+        - I did not get far enough to use it
+  - type: textarea
+    id: change
+    attributes:
+      label: What is the one change that would matter most?
+      description: Optional. One sentence is plenty.
+  - type: textarea
+    id: keep
+    attributes:
+      label: What should ECC keep?
+      description: Optional. Tell us what was valuable even if the overall experience did not work.

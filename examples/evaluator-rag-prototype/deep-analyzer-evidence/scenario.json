@@ -1,0 +1,57 @@
+{
+  "schema_version": "ecc.evaluator-rag.scenario.v1",
+  "scenario_id": "deep-analyzer-evidence",
+  "title": "Require analyzer corpus evidence before promoting deep-analysis changes",
+  "mode": "read_only_prototype",
+  "objective": "Given a change to repository, commit, architecture, pattern, or deep-analysis logic, retrieve maintained analyzer corpus evidence and expected-output comparisons before promoting analyzer behavior or risk-taxonomy changes.",
+  "sources": [
+    {
+      "kind": "sibling_repo_doc",
+      "path": "../ECC-Tools/README.md",
+      "purpose": "Public description of deep-analyzer predictive follow-ups and the Deep Analyzer Evidence PR-risk bucket"
+    },
+    {
+      "kind": "sibling_repo_source",
+      "path": "../ECC-Tools/src/lib/analyzer.ts",
+      "purpose": "Predictive follow-up logic that flags analyzer changes without corpus, snapshot, fixture, or benchmark evidence"
+    },
+    {
+      "kind": "sibling_repo_source",
+      "path": "../ECC-Tools/src/lib/pr-risk-taxonomy.ts",
+      "purpose": "Non-blocking PR-risk taxonomy bucket for deep-analyzer evidence"
+    },
+    {
+      "kind": "sibling_repo_fixture",
+      "path": "../ECC-Tools/src/analyzers/fixtures/deep-analyzer-corpus.ts",
+      "purpose": "Maintained corpus cases for representative repository shapes, commit histories, and expected analyzer outputs"
+    },
+    {
+      "kind": "sibling_repo_test",
+      "command": "npm test -- src/analyzers/deep-analyzer-corpus.test.ts src/lib/analyzer.compare.test.ts",
+      "purpose": "Regression evidence for analyzer corpus outputs and deep-analyzer follow-up generation"
+    }
+  ],
+  "retrieval_questions": [
+    "Which analyzer surface changed: repository structure, architecture, code style, commit messages, workflow detection, pattern detection, or risk taxonomy?",
+    "Which maintained corpus case or reference set covers the same analyzer behavior?",
+    "Do expected outputs compare folder type, module organization, test location, primary language, commit type, and workflow names?",
+    "Does the PR add analyzer corpus, snapshot, fixture, benchmark, golden, eval, or reference-set evidence alongside analyzer code changes?",
+    "Does the evaluator keep PR comments, check runs, Linear sync, package changes, and publication actions out of the read-only pass?"
+  ],
+  "forbidden_actions": [
+    "promoting repository, commit, architecture, or deep-analysis changes without analyzer corpus evidence",
+    "suppressing the Deep Analyzer Evidence risk bucket without co-located corpus, snapshot, fixture, or benchmark evidence",
+    "changing analyzer thresholds or classifications without expected-output comparison",
+    "relying only on broad manual review notes instead of representative repository and commit-history cases",
+    "posting PR comments, check runs, or Linear sync updates from this read-only evaluator run",
+    "changing package, plugin, release, or publication state from this evaluator run"
+  ],
+  "acceptance_gates": [
+    "changed analyzer surface is named",
+    "maintained corpus or reference-set path is included",
+    "expected analyzer outputs are compared",
+    "representative repository shape or commit history is described",
+    "regression command is named",
+    "at least one no-corpus analyzer change is rejected"
+  ]
+}

@@ -1,0 +1,32 @@
+# REGRESSION.md — Module Regression Ledger
+
+> After each relevant change, locate the changed module, run its acceptance command plus every required downstream command, and deliver only when all exit codes are green.
+> Refresh downstream relationships from reproducible repository evidence. Acceptance commands are the core asset; prefer reconciliation against external facts over weak mocks or assertions.
+> If a module has no acceptance command, mark it `MISSING`. Never manufacture a green result.
+>
+> Downstream evidence last refreshed: `<YYYY-MM-DD>` using `<verified repository scan command>`
+
+## Module 01 — Data Ingestion
+
+- Downstream consumers: `02-cleaning`, `03-shop-mapping`
+- Dependency evidence: `MISSING` — replace after verification
+- Regression acceptance command: `MISSING` — replace after verification
+- Propagation rule: output column/format changes require 02 and 03; internal logging-only changes may exempt downstream when this module is green
+- Last green commit: `<commit>`
+
+## Module 02 — Cleaning
+
+- Downstream consumers: `05-aggregation`
+- Dependency evidence: `MISSING` — replace after verification
+- Regression acceptance command: `MISSING` — replace after verification
+- Propagation rule: external behavior changes require 05
+- Related test points: `TEST-ORDER-001`, `TEST-AMOUNT-002`
+- Last green commit: `<commit>`
+
+## Module 04 — Temporary Utility
+
+- Downstream consumers: none
+- Dependency evidence: `MISSING` — replace after verification
+- Regression acceptance command: `MISSING` — add the minimum executable check
+- Propagation rule: none
+- Related test points: `MISSING` — inventory in the test registry

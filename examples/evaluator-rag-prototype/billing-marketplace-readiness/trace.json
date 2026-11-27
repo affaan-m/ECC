@@ -1,0 +1,45 @@
+{
+  "schema_version": "ecc.evaluator-rag.trace.v1",
+  "scenario_id": "billing-marketplace-readiness",
+  "run_id": "2026-05-12-billing-marketplace-readiness-prototype",
+  "read_only": true,
+  "events": [
+    {
+      "phase": "observation",
+      "summary": "Publication readiness still marks ECC Tools billing references and announcement copy as pending. Dry-run publication evidence says billing/App/Marketplace claims must be verified before launch copy uses them.",
+      "evidence": [
+        "docs/releases/2.0.0-rc.1/publication-readiness.md",
+        "docs/releases/2.0.0-rc.1/publication-evidence-2026-05-12.md"
+      ]
+    },
+    {
+      "phase": "retrieval",
+      "summary": "Retrieved the release gate, dry-run evidence, roadmap billing acceptance criteria, and the public Marketplace URL that requires a live operator check.",
+      "evidence": [
+        "docs/ECC-2.0-GA-ROADMAP.md",
+        "gh api repos/ECC-Tools/ECC-Tools",
+        "https://github.com/marketplace/ecc-tools"
+      ]
+    },
+    {
+      "phase": "proposal",
+      "summary": "Generated two candidate playbooks: evidence-backed billing claim verification, and announcement-first billing copy that treats roadmap intent as live billing readiness.",
+      "candidate_ids": [
+        "evidence-backed-billing-check",
+        "announcement-first-billing-copy"
+      ]
+    },
+    {
+      "phase": "verification",
+      "summary": "Accepted the evidence-backed check and rejected announcement-first copy because billing and Marketplace surfaces remain pending until verified by fresh URLs or API output.",
+      "evidence": [
+        "examples/evaluator-rag-prototype/billing-marketplace-readiness/verifier-result.json"
+      ]
+    },
+    {
+      "phase": "promotion",
+      "summary": "Promoted only the read-only verification playbook. No Marketplace edits, subscription changes, tags, package publishes, plugin submission, or announcement posts are performed.",
+      "promoted_candidate_id": "evidence-backed-billing-check"
+    }
+  ]
+}

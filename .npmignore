@@ -1,0 +1,22 @@
+# npm always includes README* — exclude translations from package
+README.zh-CN.md
+
+# Dev-only script (release is CI/local only)
+scripts/release.sh
+
+# Plugin dev notes (not needed by consumers)
+.claude-plugin/PLUGIN_SCHEMA_NOTES.md
+
+# Python/test cache artifacts are local build byproducts, not runtime surface
+__pycache__/
+**/__pycache__/
+**/__pycache__/**
+*.pyc
+*.pyo
+*.pyd
+**/*.pyc
+**/*.pyo
+**/*.pyd
+*$py.class
+.pytest_cache/
+**/.pytest_cache/**

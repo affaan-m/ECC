@@ -1,0 +1,35 @@
+{
+  "schema_version": "ecc.evaluator-rag.verifier.v1",
+  "scenario_id": "stale-pr-salvage-maintainer-branch",
+  "run_id": "2026-05-12-cleanup-salvage-prototype",
+  "read_only": true,
+  "candidates": [
+    {
+      "candidate_id": "maintainer-salvage-branch",
+      "decision": "accepted",
+      "score": 0.94,
+      "reasons": [
+        "preserves source PR attribution",
+        "keeps work on a fresh maintainer-owned branch",
+        "updates the salvage ledger",
+        "names validation gates",
+        "does not perform release or publication actions"
+      ],
+      "rollback": "Close the maintainer PR or revert its merge commit; source PR state remains unchanged."
+    },
+    {
+      "candidate_id": "blind-cherry-pick-translations",
+      "decision": "rejected",
+      "score": 0.21,
+      "reasons": [
+        "bulk localization requires translator/manual review",
+        "does not preserve enough source attribution",
+        "could import stale generated docs",
+        "does not name validation gates",
+        "risks bypassing current catalog and install architecture"
+      ],
+      "rollback": "Do not create this branch; keep the localization tail in translator/manual-review state."
+    }
+  ],
+  "promoted_candidate_id": "maintainer-salvage-branch"
+}

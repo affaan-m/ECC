@@ -1,0 +1,486 @@
+/**
+ * Tests for scripts/hooks/ecc-context-monitor.js
+ *
+ * Run with: node tests/hooks/ecc-context-monitor.test.js
+ */
+
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const { run, evaluateConditions, detectLoop, severityLabel, costWarningsEnabled } = require('../../scripts/hooks/ecc-context-monitor');
+const { getBridgePath, writeBridgeAtomic } = require('../../scripts/lib/session-bridge');
+
+// Test helper
+function test(name, fn) {
+  try {
+    fn();
+    console.log(`  \u2713 ${name}`);
+    return true;
+  } catch (err) {
+    console.log(`  \u2717 ${name}`);
+    console.log(`    Error: ${err.message}`);
+    return false;
+  }
+}
+
+function withEnv(name, value, fn) {
+  const original = process.env[name];
+  try {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+    return fn();
+  } finally {
+    if (original === undefined) delete process.env[name];
+    else process.env[name] = original;
+  }
+}
+
+function runTests() {
+  console.log('\n=== Testing ecc-context-monitor.js ===\n');
+
+  let passed = 0;
+  let failed = 0;
+
+  // evaluateConditions — context warnings
+  console.log('evaluateConditions (context):');
+
+  if (
+    test('remaining 20% triggers CRITICAL context warning', () => {
+      const warnings = evaluateConditions({ context_remaining_pct: 20 });
+      const ctx = warnings.find(w => w.type === 'context');
+      assert.ok(ctx, 'Expected a context warning');
+      assert.strictEqual(ctx.severity, 3);
+      assert.ok(ctx.message.includes('CRITICAL'), 'Message should contain CRITICAL');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('remaining 30% triggers WARNING context warning', () => {
+      const warnings = evaluateConditions({ context_remaining_pct: 30 });
+      const ctx = warnings.find(w => w.type === 'context');
+      assert.ok(ctx, 'Expected a context warning');
+      assert.strictEqual(ctx.severity, 2);
+      assert.ok(ctx.message.includes('WARNING'), 'Message should contain WARNING');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('remaining 50% triggers no context warning', () => {
+      const warnings = evaluateConditions({ context_remaining_pct: 50 });
+      const ctx = warnings.find(w => w.type === 'context');
+      assert.strictEqual(ctx, undefined);
+    })
+  )
+    passed++;
+  else failed++;
+
+  // evaluateConditions — context-gate deference
+  console.log('\nevaluateConditions (context-gate deference):');
+
+  if (
+    test('suppresses context warnings when the gate is confirmed active', () => {
+      // The critical "ask the user / do NOT write handoff files" text would
+      // contradict the gate's checkpoint order on the same turns.
+      const warnings = evaluateConditions({ context_remaining_pct: 8 }, { gateActive: true });
+      const ctx = warnings.find(w => w.type === 'context');
+      assert.strictEqual(ctx, undefined, 'Context warning must defer to the active gate');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('keeps context warnings when gate activity is not confirmed', () => {
+      // gateActive false/absent covers gate disabled AND gate unable to
+      // evaluate (missing transcript) — the warning is the fallback.
+      for (const options of [{ gateActive: false }, {}, undefined]) {
+        const warnings = evaluateConditions({ context_remaining_pct: 8 }, options);
+        const ctx = warnings.find(w => w.type === 'context');
+        assert.ok(ctx, 'Expected the critical warning without confirmed gate activity');
+        assert.strictEqual(ctx.severity, 3);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('non-context warnings still fire while the gate is active', () => {
+      const warnings = evaluateConditions({ context_remaining_pct: 8, total_cost_usd: 55 }, { gateActive: true });
+      assert.ok(warnings.find(w => w.type === 'cost'), 'Cost warning must be unaffected by gate deference');
+      assert.strictEqual(warnings.find(w => w.type === 'context'), undefined);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('run(): missing transcript keeps CONTEXT CRITICAL as the fallback', () => {
+      // The gate cannot evaluate usage without a transcript, so it emits
+      // nothing — the monitor must NOT go silent too (8% remaining with no
+      // guidance at all is the failure mode this guards against).
+      const sessionId = `ctx-monitor-gate-fallback-${process.pid}-${Date.now()}`;
+      const warnPath = path.join(os.tmpdir(), `ecc-ctx-warn-${sessionId}.json`);
+      const input = JSON.stringify({ session_id: sessionId, tool_name: 'Bash' });
+      try {
+        writeBridgeAtomic(sessionId, { context_remaining_pct: 8, last_timestamp: new Date().toISOString() });
+        const result = JSON.parse(run(input));
+        assert.ok(
+          result.hookSpecificOutput.additionalContext.includes('CONTEXT CRITICAL'),
+          'Critical warning must survive when the gate cannot evaluate usage'
+        );
+      } finally {
+        fs.rmSync(getBridgePath(sessionId), { force: true });
+        fs.rmSync(warnPath, { force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('run(): readable transcript in the gate band suppresses the context warning', () => {
+      const sessionId = `ctx-monitor-gate-active-${process.pid}-${Date.now()}`;
+      const warnPath = path.join(os.tmpdir(), `ecc-ctx-warn-${sessionId}.json`);
+      const transcript = path.join(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ctx-monitor-'))), 'transcript.jsonl');
+      // 190k of an assumed 200k window = 95% >= the 90% gate threshold.
+      fs.writeFileSync(
+        transcript,
+        JSON.stringify({
+          type: 'assistant',
+          message: {
+            model: 'claude-unknown-x',
+            usage: { input_tokens: 190000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 50 }
+          }
+        }) + '\n'
+      );
+      const input = JSON.stringify({ session_id: sessionId, tool_name: 'Bash', transcript_path: transcript });
+      const originalMode = process.env.ECC_CONTEXT_GATE_MODE;
+      try {
+        // gateOwnsTranscript reads process.env — enforcement is opt-in.
+        process.env.ECC_CONTEXT_GATE_MODE = 'enforce';
+        writeBridgeAtomic(sessionId, { context_remaining_pct: 8, last_timestamp: new Date().toISOString() });
+        const result = run(input);
+        assert.strictEqual(result, input, 'Monitor must defer to the confirmed-active gate');
+      } finally {
+        if (originalMode === undefined) delete process.env.ECC_CONTEXT_GATE_MODE;
+        else process.env.ECC_CONTEXT_GATE_MODE = originalMode;
+        fs.rmSync(getBridgePath(sessionId), { force: true });
+        fs.rmSync(warnPath, { force: true });
+        fs.rmSync(path.dirname(transcript), { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('run(): default (advisory) gate does NOT suppress the context warning', () => {
+      // Same in-band transcript, but with no ECC_CONTEXT_GATE_MODE the gate is
+      // inert — the monitor must keep emitting CONTEXT CRITICAL.
+      const sessionId = `ctx-monitor-gate-advisory-${process.pid}-${Date.now()}`;
+      const transcript = path.join(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ctx-monitor-'))), 'transcript.jsonl');
+      fs.writeFileSync(
+        transcript,
+        JSON.stringify({
+          type: 'assistant',
+          message: {
+            model: 'claude-unknown-x',
+            usage: { input_tokens: 190000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 50 }
+          }
+        }) + '\n'
+      );
+      const input = JSON.stringify({ session_id: sessionId, tool_name: 'Bash', transcript_path: transcript });
+      const originalMode = process.env.ECC_CONTEXT_GATE_MODE;
+      try {
+        delete process.env.ECC_CONTEXT_GATE_MODE;
+        writeBridgeAtomic(sessionId, { context_remaining_pct: 8, last_timestamp: new Date().toISOString() });
+        const result = JSON.parse(run(input));
+        assert.ok(
+          result.hookSpecificOutput.additionalContext.includes('CONTEXT CRITICAL'),
+          'Critical warning must stand on a default install (advisory gate)'
+        );
+      } finally {
+        if (originalMode === undefined) delete process.env.ECC_CONTEXT_GATE_MODE;
+        else process.env.ECC_CONTEXT_GATE_MODE = originalMode;
+        fs.rmSync(getBridgePath(sessionId), { force: true });
+        fs.rmSync(path.dirname(transcript), { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  // evaluateConditions — cost warnings
+  console.log('\nevaluateConditions (cost):');
+
+  if (
+    test('cost $55 triggers CRITICAL cost warning', () => {
+      const warnings = evaluateConditions({ total_cost_usd: 55 });
+      const cost = warnings.find(w => w.type === 'cost');
+      assert.ok(cost, 'Expected a cost warning');
+      assert.strictEqual(cost.severity, 3);
+      assert.ok(cost.message.includes('CRITICAL'), 'Message should contain CRITICAL');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('cost $12 triggers WARNING cost warning', () => {
+      const warnings = evaluateConditions({ total_cost_usd: 12 });
+      const cost = warnings.find(w => w.type === 'cost');
+      assert.ok(cost, 'Expected a cost warning');
+      assert.strictEqual(cost.severity, 2);
+      assert.ok(cost.message.includes('WARNING'), 'Message should contain WARNING');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('cost $6 triggers NOTICE cost warning', () => {
+      const warnings = evaluateConditions({ total_cost_usd: 6 });
+      const cost = warnings.find(w => w.type === 'cost');
+      assert.ok(cost, 'Expected a cost warning');
+      assert.strictEqual(cost.severity, 1);
+      assert.ok(cost.message.includes('NOTICE'), 'Message should contain NOTICE');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('cost $2 triggers no cost warning', () => {
+      const warnings = evaluateConditions({ total_cost_usd: 2 });
+      const cost = warnings.find(w => w.type === 'cost');
+      assert.strictEqual(cost, undefined);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('cost warnings can be suppressed without hiding context warnings', () => {
+      const warnings = evaluateConditions({ total_cost_usd: 55, context_remaining_pct: 20 }, { costWarnings: false });
+      assert.strictEqual(warnings.find(w => w.type === 'cost'), undefined);
+      const ctx = warnings.find(w => w.type === 'context');
+      assert.ok(ctx, 'Expected context warning to remain enabled');
+      assert.strictEqual(ctx.severity, 3);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('ECC_CONTEXT_MONITOR_COST_WARNINGS=off disables only run-time cost warnings', () => {
+      const sessionId = `ctx-monitor-cost-off-${process.pid}-${Date.now()}`;
+      const input = JSON.stringify({ session_id: sessionId, tool_name: 'Bash' });
+      const warnPath = path.join(os.tmpdir(), `ecc-ctx-warn-${sessionId}.json`);
+      try {
+        writeBridgeAtomic(sessionId, {
+          context_remaining_pct: 20,
+          total_cost_usd: 55,
+          last_timestamp: new Date().toISOString()
+        });
+        const result = withEnv('ECC_CONTEXT_MONITOR_COST_WARNINGS', 'off', () => JSON.parse(run(input)));
+        const message = result.hookSpecificOutput.additionalContext;
+        assert.ok(message.includes('CONTEXT CRITICAL'), 'Expected context warning to remain');
+        assert.ok(!message.includes('COST CRITICAL'), 'Expected cost warning to be suppressed');
+      } finally {
+        fs.rmSync(getBridgePath(sessionId), { force: true });
+        fs.rmSync(warnPath, { force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('cost warning env defaults on and accepts false-like values', () => {
+      assert.strictEqual(withEnv('ECC_CONTEXT_MONITOR_COST_WARNINGS', undefined, () => costWarningsEnabled()), true);
+      assert.strictEqual(withEnv('ECC_CONTEXT_MONITOR_COST_WARNINGS', 'false', () => costWarningsEnabled()), false);
+      assert.strictEqual(withEnv('ECC_CONTEXT_MONITOR_COST_WARNINGS', '0', () => costWarningsEnabled()), false);
+      assert.strictEqual(withEnv('ECC_CONTEXT_MONITOR_COST_WARNINGS', 'yes', () => costWarningsEnabled()), true);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('cost warnings dedupe by tier: notice fires once, re-fires on escalation', () => {
+      const sessionId = `ctx-monitor-tier-dedupe-${process.pid}-${Date.now()}`;
+      const warnPath = path.join(os.tmpdir(), `ecc-ctx-warn-${sessionId}.json`);
+      const input = JSON.stringify({ session_id: sessionId, tool_name: 'Bash' });
+      const setCost = cost =>
+        writeBridgeAtomic(sessionId, { total_cost_usd: cost, last_timestamp: new Date().toISOString() });
+      try {
+        setCost(6);
+        const first = run(input);
+        assert.ok(
+          JSON.parse(first).hookSpecificOutput.additionalContext.includes('COST NOTICE'),
+          'first crossing of the notice threshold must emit'
+        );
+
+        setCost(6.4); // cost ticks up within the same tier — must stay silent
+        const second = run(input);
+        assert.strictEqual(second, input, 'same tier must not re-emit on every cost tick');
+
+        setCost(12); // tier escalation notice → warning must re-emit
+        const third = run(input);
+        assert.ok(
+          JSON.parse(third).hookSpecificOutput.additionalContext.includes('COST WARNING'),
+          'tier escalation must re-emit'
+        );
+      } finally {
+        fs.rmSync(getBridgePath(sessionId), { force: true });
+        fs.rmSync(warnPath, { force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  // evaluateConditions — scope warnings
+  console.log('\nevaluateConditions (scope):');
+
+  if (
+    test('25 files triggers scope WARNING', () => {
+      const warnings = evaluateConditions({ files_modified_count: 25 });
+      const scope = warnings.find(w => w.type === 'scope');
+      assert.ok(scope, 'Expected a scope warning');
+      assert.strictEqual(scope.severity, 2);
+      assert.ok(scope.message.includes('SCOPE'), 'Message should contain SCOPE');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('10 files triggers no scope warning', () => {
+      const warnings = evaluateConditions({ files_modified_count: 10 });
+      const scope = warnings.find(w => w.type === 'scope');
+      assert.strictEqual(scope, undefined);
+    })
+  )
+    passed++;
+  else failed++;
+
+  // detectLoop tests
+  console.log('\ndetectLoop:');
+
+  if (
+    test('5 identical entries returns detected true', () => {
+      const entries = Array(5).fill({ tool: 'Bash', hash: 'aabbccdd' });
+      const result = detectLoop(entries);
+      assert.strictEqual(result.detected, true);
+      assert.strictEqual(result.tool, 'Bash');
+      assert.ok(result.count >= 5);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('4 identical among 5 entries returns detected false', () => {
+      // Legitimate repetition (retries, polling) must not fire: only a full
+      // ring buffer of identical calls counts as a stuck loop.
+      const entries = [
+        { tool: 'Bash', hash: 'aabbccdd' },
+        { tool: 'Bash', hash: 'aabbccdd' },
+        { tool: 'Bash', hash: 'aabbccdd' },
+        { tool: 'Bash', hash: 'aabbccdd' },
+        { tool: 'Bash', hash: 'ffffffff' }
+      ];
+      const result = detectLoop(entries);
+      assert.strictEqual(result.detected, false);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('all different entries returns detected false', () => {
+      const entries = [
+        { tool: 'Bash', hash: '11111111' },
+        { tool: 'Edit', hash: '22222222' },
+        { tool: 'Write', hash: '33333333' }
+      ];
+      const result = detectLoop(entries);
+      assert.strictEqual(result.detected, false);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('empty array returns detected false', () => {
+      const result = detectLoop([]);
+      assert.strictEqual(result.detected, false);
+    })
+  )
+    passed++;
+  else failed++;
+
+  // severityLabel tests
+  console.log('\nseverityLabel:');
+
+  if (
+    test('severity 3 returns critical', () => {
+      assert.strictEqual(severityLabel(3), 'critical');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('severity 2 returns warning', () => {
+      assert.strictEqual(severityLabel(2), 'warning');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('severity 1 returns notice', () => {
+      assert.strictEqual(severityLabel(1), 'notice');
+    })
+  )
+    passed++;
+  else failed++;
+
+  // run tests
+  console.log('\nrun:');
+
+  if (
+    test('empty input returns input unchanged', () => {
+      const result = run('');
+      assert.strictEqual(result, '');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('input without session_id returns input unchanged', () => {
+      const input = JSON.stringify({ tool_name: 'Bash' });
+      const result = run(input);
+      assert.strictEqual(result, input);
+    })
+  )
+    passed++;
+  else failed++;
+
+  // Summary
+  console.log(`\nResults: Passed: ${passed}, Failed: ${failed}\n`);
+  return { passed, failed };
+}
+
+const { failed } = runTests();
+process.exit(failed > 0 ? 1 : 0);

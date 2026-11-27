@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ECC Install Components",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "components"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "family",
+          "description",
+          "modules"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^(baseline|lang|framework|capability|agent|skill|locale):[a-z0-9-]+$"
+          },
+          "family": {
+            "type": "string",
+            "enum": [
+              "baseline",
+              "language",
+              "framework",
+              "capability",
+              "agent",
+              "skill",
+              "locale"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "modules": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]+$"
+            }
+          }
+        }
+      }
+    }
+  }
+}

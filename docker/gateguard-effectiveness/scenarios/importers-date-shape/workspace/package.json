@@ -1,0 +1,7 @@
+{
+  "name": "ledger",
+  "private": true,
+  "scripts": {
+    "test": "node tests/run.js"
+  }
+}

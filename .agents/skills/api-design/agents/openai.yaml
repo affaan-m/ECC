@@ -1,0 +1,7 @@
+interface:
+  display_name: "API Design"
+  short_description: "REST API design patterns and best practices"
+  brand_color: "#F97316"
+  default_prompt: "Use $api-design to design production REST API resources and responses."
+policy:
+  allow_implicit_invocation: true

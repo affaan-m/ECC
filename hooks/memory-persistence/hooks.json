@@ -1,0 +1,47 @@
+{
+  "description": "Reference lifecycle hook definitions for ECC memory persistence. The production hook graph is hooks/hooks.json.",
+  "events": [
+    {
+      "event": "SessionStart",
+      "id": "session:start",
+      "script": "scripts/hooks/session-start-bootstrap.js",
+      "purpose": "Load bounded prior context and detect project state at session start.",
+      "blocking": false
+    },
+    {
+      "event": "PreCompact",
+      "id": "pre:compact",
+      "script": "scripts/hooks/pre-compact.js",
+      "purpose": "Persist session state before context compaction.",
+      "blocking": false
+    },
+    {
+      "event": "PreToolUse",
+      "id": "pre:observe:continuous-learning",
+      "script": "scripts/hooks/observe-runner.js",
+      "purpose": "Record tool intent for continuous learning signals.",
+      "blocking": false
+    },
+    {
+      "event": "PostToolUse",
+      "id": "post:observe:continuous-learning",
+      "script": "scripts/hooks/observe-runner.js",
+      "purpose": "Record tool results for continuous learning signals.",
+      "blocking": false
+    },
+    {
+      "event": "PostToolUse",
+      "id": "post:session-activity-tracker",
+      "script": "scripts/hooks/session-activity-tracker.js",
+      "purpose": "Record per-session tool calls and file activity for ECC2 metrics.",
+      "blocking": false
+    },
+    {
+      "event": "SessionEnd",
+      "id": "session:end",
+      "script": "scripts/hooks/session-end.js",
+      "purpose": "Persist session-end summaries when transcript metadata is available.",
+      "blocking": false
+    }
+  ]
+}

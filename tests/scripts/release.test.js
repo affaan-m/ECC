@@ -1,0 +1,254 @@
+/**
+ * Source-level tests for scripts/release.sh
+ */
+
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+
+const scriptPath = path.join(__dirname, '..', '..', 'scripts', 'release.sh');
+const source = fs.readFileSync(scriptPath, 'utf8');
+const releaseWorkflowPath = path.join(__dirname, '..', '..', '.github', 'workflows', 'release.yml');
+const reusableReleaseWorkflowPath = path.join(
+  __dirname,
+  '..',
+  '..',
+  '.github',
+  'workflows',
+  'reusable-release.yml'
+);
+const ciWorkflowPath = path.join(__dirname, '..', '..', '.github', 'workflows', 'ci.yml');
+const releaseWorkflowSource = fs.readFileSync(releaseWorkflowPath, 'utf8');
+const reusableReleaseWorkflowSource = fs.readFileSync(reusableReleaseWorkflowPath, 'utf8');
+const ciWorkflowSource = fs.readFileSync(ciWorkflowPath, 'utf8');
+const rootReadmePath = path.join(__dirname, '..', '..', 'README.md');
+const rootReadmeSource = fs.readFileSync(rootReadmePath, 'utf8');
+const normalizedCiWorkflowSource = ciWorkflowSource.replace(/\r\n/g, '\n');
+
+function test(name, fn) {
+  try {
+    fn();
+    console.log(`  ✓ ${name}`);
+    return true;
+  } catch (error) {
+    console.log(`  ✗ ${name}`);
+    console.log(`    Error: ${error.message}`);
+    return false;
+  }
+}
+
+function runTests() {
+  console.log('\n=== Testing release.sh ===\n');
+
+  let passed = 0;
+  let failed = 0;
+
+  if (test('release script rejects untracked files when checking cleanliness', () => {
+    assert.ok(
+      source.includes('git status --porcelain --untracked-files=all'),
+      'release.sh should use git status --porcelain --untracked-files=all for cleanliness checks'
+    );
+  })) passed++; else failed++;
+
+  if (test('release script reruns release metadata sync validation before commit/tag', () => {
+    const syncCheckIndex = source.lastIndexOf('node tests/plugin-manifest.test.js');
+    const commitIndex = source.indexOf('git commit -m "chore: bump plugin version to $VERSION"');
+
+    assert.ok(syncCheckIndex >= 0, 'release.sh should run plugin-manifest.test.js');
+    assert.ok(commitIndex >= 0, 'release.sh should create the release commit');
+    assert.ok(
+      syncCheckIndex < commitIndex,
+      'plugin-manifest.test.js should run before the release commit is created'
+    );
+  })) passed++; else failed++;
+
+  if (test('release script verifies npm pack payload after version updates and before commit/tag', () => {
+    const updateIndex = source.indexOf('update_version "$ROOT_PACKAGE_JSON"');
+    const packCheckIndex = source.indexOf('node tests/scripts/build-opencode.test.js');
+    const commitIndex = source.indexOf('git commit -m "chore: bump plugin version to $VERSION"');
+
+    assert.ok(updateIndex >= 0, 'release.sh should update package version fields');
+    assert.ok(packCheckIndex >= 0, 'release.sh should run build-opencode.test.js');
+    assert.ok(commitIndex >= 0, 'release.sh should create the release commit');
+    assert.ok(
+      updateIndex < packCheckIndex,
+      'build-opencode.test.js should run after versioned files are updated'
+    );
+    assert.ok(
+      packCheckIndex < commitIndex,
+      'build-opencode.test.js should run before the release commit is created'
+    );
+  })) passed++; else failed++;
+
+  if (test('release preserves Qoder and Grok manifest checks, updates, and staging', () => {
+    const existenceCheck = source.match(/^for FILE in (.+); do$/m);
+    const staging = source.match(/^git add (.+)$/m);
+    assert.ok(existenceCheck, 'release.sh should check versioned manifests exist');
+    assert.ok(staging, 'release.sh should stage versioned manifests');
+    for (const manifest of ['QODER_PLUGIN_JSON', 'GROK_PLUGIN_JSON', 'GROK_MARKETPLACE_JSON']) {
+      assert.ok(existenceCheck[1].includes(`"$${manifest}"`), `${manifest} must exist before release`);
+      assert.ok(staging[1].includes(`"$${manifest}"`), `${manifest} must be in the release commit`);
+    }
+    assert.ok(source.includes('QODER_PLUGIN_JSON=".qoder-plugin/plugin.json"'));
+    assert.ok(source.includes('update_version "$QODER_PLUGIN_JSON"'));
+  })) passed++; else failed++;
+
+  if (test('release script updates and commits the Grok pin before tagging', () => {
+    const releaseCommitIndex = source.indexOf('git commit -m "chore: bump plugin version to $VERSION"');
+    const sourceShaIndex = source.indexOf('GROK_SOURCE_SHA=$(git rev-parse HEAD)');
+    const pinUpdateIndex = source.indexOf('plugin.source.sha = sha;');
+    const pinValidationIndex = source.indexOf('node scripts/ci/validate-grok-pin.js --release');
+    const pinCommitIndex = source.indexOf('git commit -m "chore: pin Grok marketplace to release source"');
+    const tagIndex = source.indexOf('\ngit tag -s "v$VERSION" -m "Release v$VERSION"\n');
+
+    assert.ok(source.includes('GROK_PLUGIN_JSON=".grok-plugin/plugin.json"'));
+    assert.ok(source.includes('GROK_MARKETPLACE_JSON=".grok-plugin/marketplace.json"'));
+    assert.ok(source.includes('update_version "$GROK_PLUGIN_JSON"'));
+    assert.ok(source.includes('update_marketplace_plugin_version "$GROK_MARKETPLACE_JSON"'));
+    assert.ok(releaseCommitIndex >= 0 && sourceShaIndex > releaseCommitIndex);
+    assert.ok(pinUpdateIndex > sourceShaIndex);
+    assert.ok(pinValidationIndex > pinUpdateIndex);
+    assert.ok(pinCommitIndex > pinValidationIndex);
+    const finalValidationIndex = source.lastIndexOf('node scripts/ci/validate-grok-pin.js --release');
+    assert.ok(finalValidationIndex > pinCommitIndex && finalValidationIndex < tagIndex,
+      'validate the committed release snapshot before tagging');
+    assert.ok(tagIndex > pinCommitIndex, 'the release tag must point at the pin-only commit');
+  })) passed++; else failed++;
+
+  if (test('release workflows enforce snapshot equality while ordinary CI accepts historical pins', () => {
+    for (const workflow of [releaseWorkflowSource, reusableReleaseWorkflowSource]) {
+      assert.match(workflow, /run: node scripts\/ci\/validate-grok-pin\.js --release/);
+    }
+    const reusableValidation = fs.readFileSync(path.join(
+      __dirname, '../../.github/workflows/reusable-validate.yml'
+    ), 'utf8');
+    for (const workflow of [ciWorkflowSource, reusableValidation]) {
+      assert.match(workflow, /run: node scripts\/ci\/validate-grok-pin\.js\s*\n/);
+    }
+  })) passed++; else failed++;
+
+  if (test('release script supports prerelease semver and release heading sync', () => {
+    assert.ok(
+      source.includes('2.0.0-rc.1'),
+      'release.sh should document an accepted prerelease semver example'
+    );
+    assert.ok(
+      source.includes('(-[0-9A-Za-z.-]+)?'),
+      'release.sh should allow prerelease semver suffixes'
+    );
+    assert.ok(
+      source.includes('update_latest_release_heading "$ROOT_ZH_CN_README_FILE"'),
+      'release.sh should update localized latest-release headings that plugin-manifest.test.js verifies'
+    );
+    assert.ok(
+      source.includes('Error: could not update release heading for v${oldVersion} in ${file}'),
+      'release.sh should fail loudly when a required release heading is absent'
+    );
+  })) passed++; else failed++;
+
+  if (test('a 2.2 bump preserves historical root README release headings', () => {
+    const historicalHeading = rootReadmeSource.match(/^### v2\.0\.0:.*$/m);
+    assert.ok(historicalHeading, 'README fixture should contain the historical v2.0.0 heading');
+    assert.ok(
+      source.includes('const oldVersion = process.argv[3]'),
+      'release heading sync should receive the version being replaced'
+    );
+    assert.ok(
+      source.includes('escape(oldVersion)'),
+      'release heading sync should target the current release version exactly'
+    );
+    assert.ok(
+      !source.includes('/^### v[0-9]+\\.[0-9]+\\.[0-9]+'),
+      'release heading sync must not relabel the first version-shaped heading as the new release'
+    );
+
+    const oldVersion = '2.1.0';
+    const nextVersion = '2.2.0';
+    const escapedOldVersion = oldVersion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const simulated = rootReadmeSource.replace(
+      new RegExp(`^### v${escapedOldVersion}( .*)$`, 'm'),
+      `### v${nextVersion}$1`
+    );
+    assert.ok(
+      simulated.includes(historicalHeading[0]),
+      'syncing the current release must leave the historical v2.0.0 heading unchanged'
+    );
+  })) passed++; else failed++;
+
+  if (test('release script rejects same-version reruns with direct tag guidance', () => {
+    assert.ok(
+      source.includes('if [[ "$OLD_VERSION" == "$VERSION" ]]'),
+      'release.sh should detect metadata that already declares the requested version'
+    );
+    assert.ok(
+      source.includes('echo "  git tag -s \\"v$VERSION\\" -m \\"Release v$VERSION\\""') &&
+        source.includes('echo "  git push origin \\"v$VERSION\\""'),
+      'same-version guidance should point maintainers to the tag-driven publish path'
+    );
+  })) passed++; else failed++;
+
+  if (test('release signs an annotated tag and stops before push if signing fails', () => {
+    assert.match(source, /^set -euo pipefail$/m);
+    const tagCommand = 'git tag -s "v$VERSION" -m "Release v$VERSION"';
+    const tagIndex = source.indexOf('\n' + tagCommand + '\n');
+    const pushIndex = source.indexOf('\ngit push origin main "v$VERSION"');
+    assert.ok(tagIndex > source.indexOf('git commit -m'), 'sign after the release commit');
+    assert.ok(pushIndex > tagIndex, 'push only after successful signing');
+    assert.doesNotMatch(source.slice(tagIndex, pushIndex), /\|\||set \+e/);
+  })) passed++; else failed++;
+
+  if (test('release workflows mark prerelease tags as GitHub prereleases', () => {
+    assert.ok(
+      releaseWorkflowSource.includes('prerelease: ${{ contains(github.ref_name, \'-\') }}'),
+      'release.yml should mark hyphenated tag pushes as GitHub prereleases'
+    );
+    assert.ok(
+      releaseWorkflowSource.includes('make_latest: ${{ contains(github.ref_name, \'-\') && \'false\' || \'true\' }}'),
+      'release.yml should avoid making hyphenated prereleases the latest GitHub release'
+    );
+    assert.ok(
+      reusableReleaseWorkflowSource.includes('prerelease: ${{ contains(inputs.tag, \'-\') }}'),
+      'reusable-release.yml should mark hyphenated manual tags as GitHub prereleases'
+    );
+    assert.ok(
+      reusableReleaseWorkflowSource.includes('make_latest: ${{ contains(inputs.tag, \'-\') && \'false\' || \'true\' }}'),
+      'reusable-release.yml should avoid making hyphenated prereleases the latest GitHub release'
+    );
+  })) passed++; else failed++;
+
+  if (test('reusable release checks out the requested tag before validating and publishing', () => {
+    const checkoutIndex = reusableReleaseWorkflowSource.indexOf('uses: actions/checkout@');
+    const refIndex = reusableReleaseWorkflowSource.indexOf('ref: refs/tags/${{ inputs.tag }}');
+    const validateIndex = reusableReleaseWorkflowSource.indexOf('name: Validate version tag');
+
+    assert.ok(checkoutIndex >= 0, 'reusable-release.yml should check out repository content');
+    assert.ok(refIndex >= 0, 'reusable-release.yml checkout should require inputs.tag to resolve as a tag');
+    assert.ok(validateIndex >= 0, 'reusable-release.yml should validate requested tag');
+    assert.ok(
+      checkoutIndex < refIndex && refIndex < validateIndex,
+      'reusable release should check out inputs.tag before tag validation and publish steps'
+    );
+  })) passed++; else failed++;
+
+  if (test('CI runs for release branches and version tags before release workflows execute', () => {
+    const pushBlockMatch = normalizedCiWorkflowSource.match(/on:\n\s+push:\n([\s\S]*?)\n\s+pull_request:/);
+    const pushBlock = pushBlockMatch ? pushBlockMatch[1] : '';
+
+    assert.ok(pushBlock, 'ci.yml should define a push trigger block');
+    assert.match(
+      pushBlock,
+      /branches:\s*\[[^\]]*main[^\]]*['"]release\/\*\*['"][^\]]*\]/,
+      'ci.yml push branches should include release/**'
+    );
+    assert.match(
+      pushBlock,
+      /tags:\s*\[[^\]]*['"]v\*['"][^\]]*\]/,
+      'ci.yml push tags should include v*'
+    );
+  })) passed++; else failed++;
+
+  console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
+  process.exit(failed > 0 ? 1 : 0);
+}
+
+runTests();

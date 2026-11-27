@@ -1,0 +1,7 @@
+interface:
+  display_name: "Agent Introspection Debugging"
+  short_description: "Structured self-debugging for AI agent failures"
+  brand_color: "#0EA5E9"
+  default_prompt: "Use $agent-introspection-debugging to diagnose and recover from an AI agent failure."
+policy:
+  allow_implicit_invocation: true

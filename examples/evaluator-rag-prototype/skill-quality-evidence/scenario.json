@@ -1,0 +1,57 @@
+{
+  "schema_version": "ecc.evaluator-rag.scenario.v1",
+  "scenario_id": "skill-quality-evidence",
+  "title": "Require examples and validation before promoting skill guidance changes",
+  "mode": "read_only_prototype",
+  "objective": "Given a change to skills, agents, commands, or rules guidance, retrieve the skill development contract and observed skill-run evidence before promoting an amendment or new skill-quality recommendation.",
+  "sources": [
+    {
+      "kind": "repo_doc",
+      "path": "docs/SKILL-DEVELOPMENT-GUIDE.md",
+      "purpose": "Public skill quality contract for frontmatter, focused scope, examples, testing, and submission evidence"
+    },
+    {
+      "kind": "repo_source",
+      "path": "scripts/ci/validate-skills.js",
+      "purpose": "Curated skill structure and frontmatter validation gate"
+    },
+    {
+      "kind": "repo_source",
+      "path": "scripts/lib/skill-improvement/",
+      "purpose": "Observation, health, amendment, and evaluation helpers for evidence-backed skill evolution"
+    },
+    {
+      "kind": "repo_test",
+      "command": "node tests/lib/skill-improvement.test.js",
+      "purpose": "Regression coverage for observation-backed skill amendment and evaluation scaffolds"
+    },
+    {
+      "kind": "repo_test",
+      "command": "node scripts/ci/validate-skills.js",
+      "purpose": "Skill structure validation before catalog or package changes merge"
+    }
+  ],
+  "retrieval_questions": [
+    "Which skill, agent, command, or rule surface changed?",
+    "Does the change preserve focused scope, clear activation text, and working examples?",
+    "Which validation command proves frontmatter, catalog, example, or behavior quality?",
+    "Does observed failure or user feedback justify the amendment?",
+    "Does the candidate avoid private context, secrets, personal paths, and publication actions?"
+  ],
+  "forbidden_actions": [
+    "promoting a skill rewrite without examples, validation, or observed failure evidence",
+    "adding broad multi-domain skills that duplicate existing focused skills",
+    "shipping code examples that are uncompiled, untested, or disconnected from the skill guidance",
+    "copying private operator context, secrets, tokens, or personal paths into skills",
+    "changing package, plugin, catalog, or publication state from this evaluator run",
+    "claiming a skill-quality improvement without a reference set or regression command"
+  ],
+  "acceptance_gates": [
+    "changed skill or guidance surface is named",
+    "source evidence includes the skill development guide or current skill examples",
+    "observed failure, user feedback, or reference-set gap is recorded",
+    "validation command is named",
+    "example or regression evidence is attached",
+    "at least one vague no-evidence rewrite is rejected"
+  ]
+}

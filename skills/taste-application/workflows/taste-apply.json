@@ -1,0 +1,226 @@
+{
+  "name": "taste-apply-30fps",
+  "title": "taste-apply-30fps",
+  "contents": {
+    "name": "workflow",
+    "nodes": {
+      "node-xfirst": {
+        "type": "run",
+        "id": "node-xfirst",
+        "depends": [
+          "input"
+        ],
+        "metadata": {
+          "position": {
+            "x": 340,
+            "y": -320
+          }
+        },
+        "app": "fal-ai/ffmpeg-api/extract-frame",
+        "input": {
+          "video_url": "$input.source_video",
+          "frame_type": "first"
+        }
+      },
+      "node-gen1": {
+        "type": "run",
+        "id": "node-gen1",
+        "depends": [
+          "input",
+          "node-xfirst"
+        ],
+        "metadata": {
+          "position": {
+            "x": 760,
+            "y": -320
+          }
+        },
+        "app": "bytedance/seedance-2.5/reference-to-video",
+        "input": {
+          "prompt": "$input.compiled_prompt",
+          "image_urls": [
+            "$node-xfirst.images.0.url"
+          ],
+          "duration": "5",
+          "resolution": "720p",
+          "audio_urls": [],
+          "generate_audio": false
+        }
+      },
+      "node-xmid": {
+        "type": "run",
+        "id": "node-xmid",
+        "depends": [
+          "input"
+        ],
+        "metadata": {
+          "position": {
+            "x": 340,
+            "y": 0
+          }
+        },
+        "app": "fal-ai/ffmpeg-api/extract-frame",
+        "input": {
+          "video_url": "$input.source_video",
+          "frame_type": "middle"
+        }
+      },
+      "node-gen2": {
+        "type": "run",
+        "id": "node-gen2",
+        "depends": [
+          "input",
+          "node-xmid"
+        ],
+        "metadata": {
+          "position": {
+            "x": 760,
+            "y": 0
+          }
+        },
+        "app": "bytedance/seedance-2.5/reference-to-video",
+        "input": {
+          "prompt": "$input.compiled_prompt",
+          "image_urls": [
+            "$node-xmid.images.0.url"
+          ],
+          "duration": "5",
+          "resolution": "720p",
+          "audio_urls": [],
+          "generate_audio": false
+        }
+      },
+      "node-xlast": {
+        "type": "run",
+        "id": "node-xlast",
+        "depends": [
+          "input"
+        ],
+        "metadata": {
+          "position": {
+            "x": 340,
+            "y": 320
+          }
+        },
+        "app": "fal-ai/ffmpeg-api/extract-frame",
+        "input": {
+          "video_url": "$input.source_video",
+          "frame_type": "last"
+        }
+      },
+      "node-gen3": {
+        "type": "run",
+        "id": "node-gen3",
+        "depends": [
+          "input",
+          "node-xlast"
+        ],
+        "metadata": {
+          "position": {
+            "x": 760,
+            "y": 320
+          }
+        },
+        "app": "bytedance/seedance-2.5/reference-to-video",
+        "input": {
+          "prompt": "$input.compiled_prompt",
+          "image_urls": [
+            "$node-xlast.images.0.url"
+          ],
+          "duration": "5",
+          "resolution": "720p",
+          "audio_urls": [],
+          "generate_audio": false
+        }
+      },
+      "node-merge": {
+        "type": "run",
+        "id": "node-merge",
+        "depends": [
+          "node-gen1",
+          "node-gen2",
+          "node-gen3"
+        ],
+        "metadata": {
+          "position": {
+            "x": 1180,
+            "y": 0
+          }
+        },
+        "app": "fal-ai/ffmpeg-api/merge-videos",
+        "input": {
+          "video_urls": [
+            "$node-gen1.video.url",
+            "$node-gen2.video.url",
+            "$node-gen3.video.url"
+          ],
+          "target_fps": 30
+        }
+      },
+      "output": {
+        "type": "display",
+        "id": "output",
+        "depends": [
+          "node-merge"
+        ],
+        "input": {},
+        "metadata": {
+          "position": {
+            "x": 1600,
+            "y": 0
+          }
+        },
+        "fields": {
+          "reel": "$node-merge.video",
+          "take_1": "$node-gen1.video",
+          "take_2": "$node-gen2.video",
+          "take_3": "$node-gen3.video"
+        }
+      }
+    },
+    "output": {
+      "reel": "$node-merge.video",
+      "take_1": "$node-gen1.video",
+      "take_2": "$node-gen2.video",
+      "take_3": "$node-gen3.video"
+    },
+    "schema": {
+      "input": {
+        "source_video": {
+          "name": "video_url",
+          "label": "Own-content source video",
+          "description": "Content reference; taste structure comes from compiled_prompt.",
+          "required": true,
+          "defaultValue": "",
+          "examples": [],
+          "ui": {},
+          "type": "string",
+          "modelId": "node-xfirst"
+        },
+        "compiled_prompt": {
+          "name": "text",
+          "label": "Compiled WHAT / HOW / GRADE prompt",
+          "description": "Compile offline with workflow_graphs.py.",
+          "required": true,
+          "defaultValue": "",
+          "examples": [],
+          "ui": {
+            "field": "textarea"
+          },
+          "type": "string",
+          "modelId": "node-gen1"
+        }
+      },
+      "output": {}
+    },
+    "version": "1",
+    "metadata": {
+      "input": {
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    }
+  }
+}

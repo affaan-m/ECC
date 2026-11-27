@@ -1,0 +1,14 @@
+{
+  "name": "code-review-on-write",
+  "version": "1.0.0",
+  "enabled": true,
+  "description": "Performs a quick code review after write operations to catch common issues",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": ["write"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Code was just written or modified. Perform a quick review checking for: 1) Common security issues (SQL injection, XSS, etc.), 2) Error handling, 3) Code clarity and maintainability, 4) Potential bugs or edge cases. Only comment if you find issues worth addressing."
+  }
+}

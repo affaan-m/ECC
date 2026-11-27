@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "ecc.github.coordination.v1",
+  "sectionMarker": "ecc-coordination",
+  "labels": {
+    "epic": "epic",
+    "available": "coordination:available",
+    "claimed": "coordination:claimed",
+    "ready": "coordination:ready",
+    "blocked": "coordination:blocked",
+    "validated": "coordination:validated",
+    "reviewRequested": "coordination:review-requested",
+    "reviewApproved": "coordination:review-approved",
+    "reviewChangesRequested": "coordination:review-changes-requested",
+    "published": "coordination:published",
+    "synced": "coordination:synced"
+  },
+  "review": {
+    "required": true,
+    "defaultMode": "required"
+  },
+  "validation": {
+    "required": true
+  },
+  "branchModel": {
+    "epicOnly": true,
+    "taskBranches": false
+  },
+  "project": {
+    "enabled": false,
+    "fieldNames": {
+      "status": "Status",
+      "owner": "Owner",
+      "branch": "Branch",
+      "validation": "Validation",
+      "review": "Review"
+    }
+  }
+}

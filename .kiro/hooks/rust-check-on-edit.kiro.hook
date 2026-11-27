@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "enabled": true,
+  "name": "rust-check-on-edit",
+  "description": "Prompts the agent to check for compilation errors, ownership issues, or lifetime problems when Rust files are edited.",
+  "when": { "type": "fileEdited", "patterns": ["*.rs"] },
+  "then": { "type": "askAgent", "prompt": "A Rust file was just saved. Check for any obvious compilation errors, ownership issues, or lifetime problems in the modified file and flag them if found." }
+}

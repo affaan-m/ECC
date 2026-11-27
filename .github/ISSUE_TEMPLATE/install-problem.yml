@@ -1,0 +1,93 @@
+name: Install or runtime problem
+description: Tell us what failed without writing a full diagnostic report.
+title: "[Problem] "
+labels:
+  - bug
+  - needs-triage
+  - area:install
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. Keep it short: what happened and which setup you used are enough to start.
+
+        This issue is public. Do not paste secrets, prompts, private repository names, or unredacted home/project paths. ECC never uploads diagnostics automatically.
+  - type: dropdown
+    id: impact
+    attributes:
+      label: What is the impact?
+      options:
+        - ECC will not install
+        - ECC installs, but nothing loads
+        - Some components are missing or silently ignored
+        - ECC is duplicated or conflicts with another install
+        - A hook or command interrupts normal work
+        - Doctor or repair does not recover the install
+        - Other runtime problem
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened?
+      description: Include the shortest error or symptom that explains the problem.
+      placeholder: I expected …, but …
+    validations:
+      required: true
+  - type: dropdown
+    id: harness
+    attributes:
+      label: Harness
+      options:
+        - Claude Code
+        - Codex app or CLI
+        - Cursor
+        - OpenCode
+        - GitHub Copilot
+        - Kimi Code
+        - Gemini CLI
+        - Zed
+        - Antigravity
+        - Qwen
+        - Hermes
+        - OpenClaw
+        - CodeBuddy or JoyCode
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Install method
+      options:
+        - Claude plugin marketplace
+        - ecc or ecc-install CLI
+        - Manual clone or copy
+        - Codex sync script
+        - Codex marketplace plugin
+        - Harness-specific installer target
+        - Unknown
+        - Other
+  - type: dropdown
+    id: operating_system
+    attributes:
+      label: Operating system
+      options:
+        - Windows (native)
+        - Windows (WSL)
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: ECC and harness versions
+      description: If known. A tag, commit, or package version is enough.
+      placeholder: ECC 2.1.0; Claude Code 2.x
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Optional redacted diagnostics
+      description: Paste only the relevant lines from `ecc doctor`. Remove paths, repository names, prompts, tokens, and secrets.

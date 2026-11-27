@@ -1,0 +1,213 @@
+#!/usr/bin/env node
+
+const os = require('os');
+const path = require('path');
+const { uninstallInstalledStates } = require('./lib/install-lifecycle');
+const { SUPPORTED_INSTALL_TARGETS } = require('./lib/install-manifests');
+const { exitFeedbackLines } = require('./lib/feedback-links');
+const {
+  legacyCodexSyncStateExists,
+  uninstallLegacyCodexSync,
+} = require('./lib/codex-legacy-sync');
+
+function showHelp(exitCode = 0) {
+  console.log(`
+Usage: node scripts/uninstall.js [--target <${SUPPORTED_INSTALL_TARGETS.join('|')}>] [--legacy-codex-sync] [--dry-run] [--json]
+
+Remove ECC-managed files recorded in install-state for the current context.
+When no install-state is found, the uninstaller also detects and removes
+legacy sync-ecc-to-codex.sh artifacts, but only when a legacy ownership
+manifest is present. Use --legacy-codex-sync to force the legacy path
+explicitly, including marker-only AGENTS.md cleanup.
+`);
+  process.exit(exitCode);
+}
+
+function parseArgs(argv) {
+  const args = argv.slice(2);
+  const parsed = {
+    targets: [],
+    dryRun: false,
+    json: false,
+    legacyCodexSync: false,
+    help: false,
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (arg === '--target') {
+      parsed.targets.push(args[index + 1] || null);
+      index += 1;
+    } else if (arg === '--dry-run') {
+      parsed.dryRun = true;
+    } else if (arg === '--json') {
+      parsed.json = true;
+    } else if (arg === '--legacy-codex-sync') {
+      parsed.legacyCodexSync = true;
+    } else if (arg === '--help' || arg === '-h') {
+      parsed.help = true;
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+
+  return parsed;
+}
+
+function printHuman(result) {
+  if (result.results.length === 0) {
+    console.log('No ECC install-state files found for the current home/project context.');
+    return;
+  }
+
+  // Dry-run output must be phrased as a preview so it can never be mistaken
+  // for a completed uninstall (#2952).
+  console.log(`Uninstall summary${result.dryRun ? ' (dry run; nothing was removed)' : ''}:\n`);
+  for (const entry of result.results) {
+    console.log(`- ${entry.adapter.id}`);
+    const statusLabel = result.dryRun && entry.status === 'planned'
+      ? 'WOULD UNINSTALL (dry run)'
+      : entry.status.toUpperCase();
+    console.log(`  Status: ${statusLabel}`);
+    console.log(`  Install-state: ${entry.installStatePath}`);
+
+    if (entry.error) {
+      console.log(`  Error: ${entry.error}`);
+      continue;
+    }
+
+    if (entry.warning) {
+      console.log(`  Warning: ${entry.warning}`);
+    }
+    if (Array.isArray(entry.retainedPaths) && entry.retainedPaths.length > 0) {
+      console.log(`  Retained paths: ${entry.retainedPaths.length}`);
+      for (const retainedPath of entry.retainedPaths) {
+        console.log(`    - ${retainedPath}`);
+      }
+    }
+
+    const candidatePaths = result.dryRun ? entry.plannedRemovals : entry.removedPaths;
+    const paths = Array.isArray(candidatePaths) ? candidatePaths : [];
+    console.log(`  ${result.dryRun ? 'Would remove' : 'Removed paths'}: ${paths.length}`);
+  }
+
+  console.log(`\nSummary${result.dryRun ? ' (dry run)' : ''}: checked=${result.summary.checkedCount}, ${result.dryRun ? 'planned' : 'uninstalled'}=${result.dryRun ? result.summary.plannedRemovalCount : result.summary.uninstalledCount}, partial=${result.summary.partialCount}, errors=${result.summary.errorCount}`);
+
+  if (!result.dryRun) {
+    console.log(`\n${exitFeedbackLines().join('\n')}`);
+  }
+}
+
+function legacyCodexSyncStateDetected(codexHome) {
+  return legacyCodexSyncStateExists(codexHome);
+}
+
+function printLegacy(result, dryRun) {
+  console.log('Legacy Codex sync cleanup summary:\n');
+  console.log(`Status: ${result.status.toUpperCase()}`);
+  const paths = dryRun ? result.plannedRemovals : result.removedPaths;
+  console.log(`${dryRun ? 'Planned changes' : 'Removed paths'}: ${paths.length}`);
+  if (result.retainedPaths.length > 0) {
+    console.log(`Retained paths: ${result.retainedPaths.length}`);
+    for (const retainedPath of result.retainedPaths) console.log(`  - ${retainedPath}`);
+  }
+  for (const warning of result.warnings) console.log(`Warning: ${warning}`);
+}
+
+function codexHomePath() {
+  return process.env.CODEX_HOME || path.join(process.env.HOME || os.homedir(), '.codex');
+}
+
+/**
+ * Dry-run is enabled either by the subcommand-level `--dry-run` flag or by the
+ * global `ecc --dry-run <command>` prefix, which sets ECC_DRY_RUN=1 (#2952).
+ * Destructive subcommands must honor both forms rather than silently ignoring
+ * the global flag.
+ */
+function isDryRun(options) {
+  const dryRunEnv = process.env.ECC_DRY_RUN;
+  if (dryRunEnv !== undefined && dryRunEnv !== '0' && dryRunEnv !== '1') {
+    throw new Error('ECC_DRY_RUN must be "1" or "0" when set');
+  }
+  return options.dryRun || dryRunEnv === '1';
+}
+
+function includesCodexTarget(targets) {
+  return targets.length === 0 || targets.includes('codex');
+}
+
+async function main() {
+  try {
+    const options = parseArgs(process.argv);
+    if (options.help) {
+      showHelp(0);
+    }
+
+    const dryRun = isDryRun(options);
+
+    if (options.legacyCodexSync && options.targets.length > 0) {
+      throw new Error('--legacy-codex-sync cannot be combined with --target');
+    }
+
+    let result;
+    let mode = 'install-state';
+
+    if (options.legacyCodexSync) {
+      result = uninstallLegacyCodexSync({
+        codexHome: codexHomePath(),
+        dryRun,
+      });
+      mode = 'legacy-codex-sync';
+    } else {
+      result = uninstallInstalledStates({
+        homeDir: process.env.HOME || os.homedir(),
+        env: process.env,
+        projectRoot: process.cwd(),
+        targets: options.targets,
+        dryRun,
+      });
+
+      if (
+        result.results.length === 0
+        && includesCodexTarget(options.targets)
+        && legacyCodexSyncStateDetected(codexHomePath())
+      ) {
+        result = uninstallLegacyCodexSync({
+          codexHome: codexHomePath(),
+          dryRun,
+        });
+        mode = 'legacy-codex-sync';
+      }
+
+      if (mode === 'install-state' && !dryRun) {
+        const { reconcileCanonicalInstallStates } = require('./lib/install-state-store-sync');
+        result.installStateProjection = await reconcileCanonicalInstallStates({
+          homeDir: process.env.HOME || os.homedir(),
+          env: process.env,
+          projectRoot: process.cwd(),
+          targets: options.targets,
+        });
+      }
+    }
+
+    const hasErrors = mode === 'legacy-codex-sync'
+      ? result.status === 'partial'
+      : result.summary.errorCount > 0 || result.summary.partialCount > 0;
+
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else if (mode === 'legacy-codex-sync') {
+      printLegacy(result, dryRun);
+    } else {
+      printHuman(result);
+    }
+
+    process.exitCode = hasErrors ? 1 : 0;
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+}
+
+main();

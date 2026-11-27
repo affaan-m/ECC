@@ -1,0 +1,61 @@
+{
+  "schemaVersion":"1.0.0","observedAt":"2026-08-11T14:00:00Z","subjectRef":"ecc-change:context-integrity-skill-001",
+  "repoIdentity":{"rootName":"everything-claude-code","rootPathRef":"active-checkout:everything-claude-code","branch":"feature/context-integrity","baseSha256":"1111111111111111111111111111111111111111111111111111111111111111","headSha256":"2222222222222222222222222222222222222222222222222222222222222222","packageLockSha256":"3333333333333333333333333333333333333333333333333333333333333333","installModulesSha256":"4444444444444444444444444444444444444444444444444444444444444444","installProfilesSha256":"5555555555555555555555555555555555555555555555555555555555555555","installComponentsSha256":"6666666666666666666666666666666666666666666666666666666666666666","catalogScriptSha256":"7777777777777777777777777777777777777777777777777777777777777777","skillPolicySha256":"8888888888888888888888888888888888888888888888888888888888888888","checkpointSha256":"9999999999999999999999999999999999999999999999999999999999999999"},
+  "changeIntent":{"changeId":"context-integrity-skill-001","changeKind":"skill","canonicalSurface":"skills","canonicalPath":"skills/context-integrity/SKILL.md","legacyCommandShimRequired":false,"breakingChange":false,"owner":"ECC","scopes":["skills","tests","manifests","cross-harness"],"evidenceRefs":["issue:context-integrity"],"counterevidenceRefs":["scope:no-command-shim"]},
+  "surfaceContract":{"canonicalFirst":true,"generatedRootsExcluded":true,"curatedSkill":true,"installManifestUpdated":true,"commandShimAdded":false,"provenanceRequired":false,"mirrorTargets":["agents","cursor"],"docsUpdateRequired":true,"evidenceRefs":["policy:skill-placement"],"counterevidenceRefs":[]},
+  "artifactRecords":[
+    {"path":"skills/context-integrity/SKILL.md","role":"canonical-skill","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","exists":true,"sourceOfTruth":true,"generated":false,"contentIdentitySha256":"abababababababababababababababababababababababababababababababab","evidenceRefs":["artifact:canonical"]},
+    {"path":"manifests/install-modules.json","role":"install-manifest","sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","exists":true,"sourceOfTruth":false,"generated":false,"contentIdentitySha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","evidenceRefs":["artifact:manifest"]},
+    {"path":".agents/skills/context-integrity/SKILL.md","role":"agents-mirror","sha256":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","exists":true,"sourceOfTruth":false,"generated":false,"contentIdentitySha256":"abababababababababababababababababababababababababababababababab","evidenceRefs":["artifact:agents"]},
+    {"path":".cursor/skills/context-integrity/SKILL.md","role":"cursor-mirror","sha256":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","exists":true,"sourceOfTruth":false,"generated":false,"contentIdentitySha256":"abababababababababababababababababababababababababababababababab","evidenceRefs":["artifact:cursor"]},
+    {"path":".agents/skills/context-integrity/agents/openai.yaml","role":"codex-metadata","sha256":"1212121212121212121212121212121212121212121212121212121212121212","exists":true,"sourceOfTruth":false,"generated":false,"contentIdentitySha256":"1313131313131313131313131313131313131313131313131313131313131313","evidenceRefs":["artifact:openai-metadata"]},
+    {"path":"tests/context-integrity.test.js","role":"unit-test","sha256":"1414141414141414141414141414141414141414141414141414141414141414","exists":true,"sourceOfTruth":false,"generated":false,"contentIdentitySha256":"1515151515151515151515151515151515151515151515151515151515151515","evidenceRefs":["artifact:test"]}
+  ],
+  "harnessParity":{"canonicalContentSha256":"abababababababababababababababababababababababababababababababab","targets":[
+    {"harness":"claude","path":"skills/context-integrity/SKILL.md","contentIdentitySha256":"abababababababababababababababababababababababababababababababab","frontmatterAdapted":false,"metadataPresent":true,"evidenceRefs":["parity:claude"]},
+    {"harness":"codex","path":".agents/skills/context-integrity/SKILL.md","contentIdentitySha256":"abababababababababababababababababababababababababababababababab","frontmatterAdapted":true,"metadataPresent":true,"evidenceRefs":["parity:codex"]},
+    {"harness":"cursor","path":".cursor/skills/context-integrity/SKILL.md","contentIdentitySha256":"abababababababababababababababababababababababababababababababab","frontmatterAdapted":true,"metadataPresent":true,"evidenceRefs":["parity:cursor"]}
+  ],"parityPassed":true,"driftIds":[],"evidenceRefs":["parity:content-normalized"],"counterevidenceRefs":["parity:harness-frontmatter-adapted"]},
+  "catalogContract":{"filesystemAgents":67,"documentedAgents":67,"filesystemSkills":281,"documentedSkills":281,"filesystemCommands":94,"documentedCommands":94,"installModuleCount":18,"curatedSkillsReferenced":280,"intentionallyUnshippedSkills":1,"catalogCheckPassed":true,"commandRegistryCheckPassed":true,"manifestValidationPassed":true,"countsReconciled":true,"evidenceRefs":["catalog:check","manifest:validate"],"counterevidenceRefs":["catalog:future-drift"]},
+  "validationMatrix":[
+    {"gateId":"strict-skill-frontmatter","commandArgv":["node","scripts/ci/validate-skills.js","--strict"],"expectedExit":0,"observedExit":0,"evidenceRefs":["gate:skills"]},
+    {"gateId":"install-manifests","commandArgv":["node","scripts/ci/validate-install-manifests.js"],"expectedExit":0,"observedExit":0,"evidenceRefs":["gate:manifests"]},
+    {"gateId":"catalog-sync","commandArgv":["npm","run","catalog:check"],"expectedExit":0,"observedExit":0,"evidenceRefs":["gate:catalog"]},
+    {"gateId":"command-registry","commandArgv":["npm","run","command-registry:check"],"expectedExit":0,"observedExit":0,"evidenceRefs":["gate:registry"]},
+    {"gateId":"harness-adapters","commandArgv":["npm","run","harness:adapters"],"expectedExit":0,"observedExit":0,"evidenceRefs":["gate:harness"]},
+    {"gateId":"unicode-safety","commandArgv":["node","scripts/ci/check-unicode-safety.js"],"expectedExit":0,"observedExit":0,"evidenceRefs":["gate:unicode"]},
+    {"gateId":"no-personal-paths","commandArgv":["node","scripts/ci/validate-no-personal-paths.js"],"expectedExit":0,"observedExit":0,"evidenceRefs":["gate:paths"]},
+    {"gateId":"test-and-coverage","commandArgv":["npm","run","coverage"],"expectedExit":0,"observedExit":0,"evidenceRefs":["gate:coverage"]}
+  ],
+  "tddContract":{"redObserved":true,"failingTestIds":["rejects generated roots","detects harness drift","rejects catalog mismatch"],"greenObserved":true,"refactorObserved":true,"coverageThresholdPercent":80,"lineCoveragePercent":87,"functionCoveragePercent":86,"branchCoveragePercent":81,"statementCoveragePercent":87,"newBehaviorTestCount":16,"allTestsPass":true,"evidenceRefs":["tdd:red-green-refactor","coverage:report"],"counterevidenceRefs":["coverage:not-behavior-proof"]},
+  "securityContract":{"secretsDetected":false,"personalPathsDetected":false,"unsafePermissionsDetected":false,"hookChangesReviewed":true,"promptInjectionBoundaryReviewed":true,"supplyChainChangesReviewed":true,"untrustedContentCannotGrantAuthority":true,"evidenceRefs":["security:review"],"counterevidenceRefs":["security:static-analysis-limits"]},
+  "budgetContract":{"maximumChangedFiles":10,"observedChangedFiles":6,"maximumChangedLines":800,"observedChangedLines":420,"maximumTestRuntimeSeconds":600,"observedTestRuntimeSeconds":120,"evidenceRefs":["budget:change"]},
+  "commitContract":{"type":"feat","scope":"skills","subject":"add context integrity contribution controller","subjectLength":45,"conventional":true,"commitCreated":false,"pushPerformed":false,"pullRequestOpened":false,"evidenceRefs":["commit:proposal"],"counterevidenceRefs":["git:no-external-effects"]},
+  "failureProbes":[
+    {"probeId":"ecc-failure-01","failureMode":"generated-root-as-canonical","expectedOutcome":"reject","observedOutcome":"reject","evidenceRefs":["probe:generated-root"]},
+    {"probeId":"ecc-failure-02","failureMode":"missing-manifest-entry","expectedOutcome":"hold","observedOutcome":"hold","evidenceRefs":["probe:manifest"]},
+    {"probeId":"ecc-failure-03","failureMode":"harness-content-drift","expectedOutcome":"hold","observedOutcome":"hold","evidenceRefs":["probe:parity"]},
+    {"probeId":"ecc-failure-04","failureMode":"catalog-count-drift","expectedOutcome":"hold","observedOutcome":"hold","evidenceRefs":["probe:catalog"]},
+    {"probeId":"ecc-failure-05","failureMode":"stale-command-registry","expectedOutcome":"hold","observedOutcome":"hold","evidenceRefs":["probe:registry"]},
+    {"probeId":"ecc-failure-06","failureMode":"missing-red-test","expectedOutcome":"hold","observedOutcome":"hold","evidenceRefs":["probe:tdd"]},
+    {"probeId":"ecc-failure-07","failureMode":"coverage-regression","expectedOutcome":"hold","observedOutcome":"hold","evidenceRefs":["probe:coverage"]},
+    {"probeId":"ecc-failure-08","failureMode":"secret-in-diff","expectedOutcome":"reject","observedOutcome":"reject","evidenceRefs":["probe:secret"]},
+    {"probeId":"ecc-failure-09","failureMode":"personal-path-in-diff","expectedOutcome":"reject","observedOutcome":"reject","evidenceRefs":["probe:path"]},
+    {"probeId":"ecc-failure-10","failureMode":"unsafe-hook-permission","expectedOutcome":"reject","observedOutcome":"reject","evidenceRefs":["probe:hook"]},
+    {"probeId":"ecc-failure-11","failureMode":"breaking-change-unmarked","expectedOutcome":"hold","observedOutcome":"hold","evidenceRefs":["probe:breaking"]},
+    {"probeId":"ecc-failure-12","failureMode":"commit-before-gates","expectedOutcome":"reject","observedOutcome":"reject","evidenceRefs":["probe:commit"]}
+  ],
+  "checkpointContract":{"checkpointSha256":"9999999999999999999999999999999999999999999999999999999999999999","repoHeadSha256":"2222222222222222222222222222222222222222222222222222222222222222","policySha256":"8888888888888888888888888888888888888888888888888888888888888888","lastDecisionId":"ecc-contribution-2026-08-11-001","plannedRunnerCount":7,"statePathRef":".memory-kit/everything-claude-code/state.json","remainingUnknowns":["upstream changes","cross-platform filesystem semantics","future harness adapters","coverage blind spots","reviewer judgment"]},
+  "runnerProposals":[
+    {"role":"resolve-canonical-surface","argv":["ecc-proof","resolve","--canonical-first"]},
+    {"role":"compile-change-plan","argv":["ecc-proof","plan","--change-id","context-integrity-skill-001"]},
+    {"role":"run-red-green-refactor","argv":["ecc-proof","tdd","--record-phases"]},
+    {"role":"reconcile-harness-parity","argv":["ecc-proof","parity","--targets","claude,codex,cursor"]},
+    {"role":"reconcile-catalog-and-manifests","argv":["ecc-proof","catalog","--manifests","--registry"]},
+    {"role":"run-security-and-validation-gates","argv":["ecc-proof","verify","--all"]},
+    {"role":"prepare-commit-proposal","argv":["ecc-proof","commit-proposal","--type","feat","--scope","skills"]}
+  ],
+  "claimsSourceFilesWrittenByController":false,"claimsTestsExecutedByController":false,"claimsCatalogUpdatedByController":false,"claimsCommitCreated":false,"claimsPushPerformed":false,"claimsPullRequestOpened":false,
+  "requestedEffects":{"sourceFileWriteRequested":false,"testExecutionRequested":false,"catalogWriteRequested":false,"commitRequested":false,"pushRequested":false,"pullRequestRequested":false,"controlStoreWriteRequested":false,"canonicalMemoryWriteRequested":false,"semanticCommitRequested":false},
+  "claimedAuthority":{"mayWriteSourceFiles":false,"mayExecuteTests":false,"mayUpdateCatalog":false,"mayCommit":false,"mayPush":false,"mayOpenPullRequest":false,"mayWriteControlStore":false,"mayWriteCanonicalMemory":false,"maySemanticCommit":false}
+}

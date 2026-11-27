@@ -1,0 +1,20 @@
+changelog:
+  categories:
+    - title: Core Harness
+      labels:
+        - enhancement
+        - feature
+    - title: Reliability & Bug Fixes
+      labels:
+        - bug
+        - fix
+    - title: Docs & Guides
+      labels:
+        - docs
+    - title: Tooling & CI
+      labels:
+        - ci
+        - chore
+  exclude:
+    labels:
+      - skip-changelog

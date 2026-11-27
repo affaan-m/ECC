@@ -1,0 +1,7 @@
+interface:
+  display_name: "Agent Sort"
+  short_description: "Evidence-backed ECC install planning"
+  brand_color: "#0EA5E9"
+  default_prompt: "Use $agent-sort to build an evidence-backed ECC install plan."
+policy:
+  allow_implicit_invocation: true

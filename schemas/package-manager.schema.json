@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Package Manager Configuration",
+  "type": "object",
+  "properties": {
+    "packageManager": {
+      "type": "string",
+      "enum": [
+        "npm",
+        "pnpm",
+        "yarn",
+        "bun"
+      ]
+    },
+    "setAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the preference was last set"
+    }
+  },
+  "required": ["packageManager"],
+  "additionalProperties": false
+}

@@ -1,0 +1,7 @@
+interface:
+  display_name: "E2E Testing"
+  short_description: "Playwright E2E testing patterns"
+  brand_color: "#06B6D4"
+  default_prompt: "Use $e2e-testing to design Playwright end-to-end test coverage."
+policy:
+  allow_implicit_invocation: true

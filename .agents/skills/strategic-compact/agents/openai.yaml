@@ -1,0 +1,7 @@
+interface:
+  display_name: "Strategic Compact"
+  short_description: "Context management via strategic compaction"
+  brand_color: "#14B8A6"
+  default_prompt: "Use $strategic-compact to choose a useful context compaction boundary."
+policy:
+  allow_implicit_invocation: true

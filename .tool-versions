@@ -1,0 +1,6 @@
+# .tool-versions — Tool version pins for asdf (https://asdf-vm.com)
+# Install asdf, then run: asdf install
+# These versions are also compatible with mise (https://mise.jdx.dev).
+
+nodejs 20.19.0
+python 3.12.8

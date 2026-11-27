@@ -1,0 +1,11 @@
+{
+  "id": "soft-limit-overage",
+  "ambiguity": "You asked for the plan limits to be applied without saying what passing one does: refuse the request, or let it through.",
+  "facts": [
+    { "id": "policy", "fact": "The limits are soft, so going over is still permitted and we bill the excess afterwards. The free plan is the one exception: it refuses once usage passes 110 percent of its limit.", "decisive": true },
+    { "id": "rounding", "fact": "We are not fussy about rounding.", "decisive": false },
+    { "id": "unknownplan", "fact": "An unrecognised plan name will never reach this function.", "decisive": false }
+  ],
+  "stonewall": "No strong view on that one - use your judgement.",
+  "volunteer": false
+}

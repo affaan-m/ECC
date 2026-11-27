@@ -1,0 +1,7 @@
+interface:
+  display_name: "TDD Workflow"
+  short_description: "Test-driven development with coverage gates"
+  brand_color: "#22C55E"
+  default_prompt: "Use $tdd-workflow to drive the change with tests before implementation."
+policy:
+  allow_implicit_invocation: true

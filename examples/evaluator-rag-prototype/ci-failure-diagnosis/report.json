@@ -1,0 +1,35 @@
+{
+  "schema_version": "ecc.evaluator-rag.report.v1",
+  "scenario_id": "ci-failure-diagnosis",
+  "run_id": "2026-05-12-ci-failure-diagnosis-prototype",
+  "result": "prototype_passed",
+  "read_only": true,
+  "scores": {
+    "failure_evidence": 0.92,
+    "scope_control": 0.9,
+    "regression_specificity": 0.86,
+    "matrix_safety": 1,
+    "publication_safety": 1
+  },
+  "findings": [
+    {
+      "id": "log-first-required",
+      "severity": "warning",
+      "summary": "A CI fix candidate must start from the exact failed job, step, platform, runtime, package manager, and log excerpt rather than from a generic rerun."
+    },
+    {
+      "id": "changed-file-scope-needed",
+      "severity": "info",
+      "summary": "Changed-file context should narrow the fix to the surface that can affect the failing step, especially in a broad OS/runtime matrix."
+    },
+    {
+      "id": "regression-gate-needed",
+      "severity": "warning",
+      "summary": "A promoted fix playbook must name a local reproduction or regression command before the branch is allowed to merge."
+    }
+  ],
+  "recommended_next_action": {
+    "candidate_id": "log-backed-minimal-fix",
+    "action": "Use the promoted CI failure diagnosis playbook whenever a PR check goes red before implementing or rerunning fixes."
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "schema_version": "ecc.evaluator-rag.verifier.v1",
+  "scenario_id": "billing-marketplace-readiness",
+  "run_id": "2026-05-12-billing-marketplace-readiness-prototype",
+  "read_only": true,
+  "candidates": [
+    {
+      "candidate_id": "evidence-backed-billing-check",
+      "decision": "accepted",
+      "score": 0.91,
+      "reasons": [
+        "keeps the run read-only",
+        "requires fresh Marketplace or GitHub API evidence",
+        "classifies launch-copy claims before publication",
+        "separates roadmap intent from live billing state",
+        "keeps release, package, plugin, billing, and announcement actions approval-gated"
+      ],
+      "rollback": "Remove or revert any release-copy edits that cite unverified billing claims; no live billing state is changed by this playbook."
+    },
+    {
+      "candidate_id": "announcement-first-billing-copy",
+      "decision": "rejected",
+      "score": 0.18,
+      "reasons": [
+        "treats roadmap acceptance criteria as live billing evidence",
+        "does not require a fresh Marketplace listing check",
+        "could publish announcement copy before release URLs exist",
+        "does not classify unsupported claims for removal",
+        "risks implying subscription or entitlement readiness without proof"
+      ],
+      "rollback": "Do not publish this copy; keep billing and Marketplace language blocked until the evidence checklist passes."
+    }
+  ],
+  "promoted_candidate_id": "evidence-backed-billing-check"
+}

@@ -1,0 +1,46 @@
+{
+  "schema_version": "ecc.evaluator-rag.trace.v1",
+  "scenario_id": "skill-quality-evidence",
+  "run_id": "2026-05-12-skill-quality-evidence-prototype",
+  "read_only": true,
+  "events": [
+    {
+      "phase": "observation",
+      "summary": "A skill or guidance PR proposes updated instructions. The evaluator records the changed surface and stays read-only; it does not edit skills, package manifests, catalogs, or publication state.",
+      "evidence": [
+        "docs/SKILL-DEVELOPMENT-GUIDE.md",
+        "scripts/ci/validate-skills.js"
+      ]
+    },
+    {
+      "phase": "retrieval",
+      "summary": "Retrieved the skill quality contract, existing focused skill examples, observation-backed amendment helpers, and validation commands for skill structure and regression evidence.",
+      "evidence": [
+        "node scripts/ci/validate-skills.js",
+        "node tests/lib/skill-improvement.test.js",
+        "node tests/lib/skill-evolution.test.js",
+        "npm run catalog:check"
+      ]
+    },
+    {
+      "phase": "proposal",
+      "summary": "Generated two candidate playbooks: evidence-backed skill amendment, and broad rewrite with no examples or validation.",
+      "candidate_ids": [
+        "evidence-backed-skill-amendment",
+        "vague-skill-rewrite"
+      ]
+    },
+    {
+      "phase": "verification",
+      "summary": "Accepted the evidence-backed amendment because it names observed failure evidence, examples, and validation commands. Rejected the vague rewrite because it lacks a reference set and testable examples.",
+      "evidence": [
+        "examples/evaluator-rag-prototype/skill-quality-evidence/verifier-result.json"
+      ]
+    },
+    {
+      "phase": "promotion",
+      "summary": "Promoted only the read-only skill-quality evidence playbook. Future skill edits must move through maintainer PRs with source attribution, validation, and rollback notes.",
+      "promoted_candidate_id": "evidence-backed-skill-amendment"
+    }
+  ]
+}

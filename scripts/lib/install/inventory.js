@@ -1,0 +1,176 @@
+'use strict';
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { isWithinRoot, realpathNearestExisting } = require('../path-safety');
+const { convertWindowsPathToWSL } = require('../install-targets/helpers');
+
+const CURRENT_PLUGIN_ID = 'ecc@ecc';
+// Legacy plugin ids, kept so existing installs are still recognized.
+const LEGACY_PLUGIN_IDS = new Set([
+  'everything-claude-code@everything-claude-code',
+  'everything-claude-code@ecc',
+]);
+
+function expandTilde(inputPath, homeDir) {
+  if (typeof inputPath !== 'string') return inputPath;
+  const trimmed = inputPath.trim();
+  if (trimmed === '~') return homeDir;
+  if (trimmed.startsWith('~/') || trimmed.startsWith('~\\')) {
+    return path.join(homeDir, trimmed.slice(2));
+  }
+  return trimmed;
+}
+
+function resolveClaudePaths(options = {}) {
+  const homeDir = path.resolve(
+    options.homeDir
+      || process.env.HOME
+      || process.env.USERPROFILE
+      || os.homedir()
+  );
+  const configured = options.configDir !== undefined
+    ? options.configDir
+    : process.env.CLAUDE_CONFIG_DIR;
+  let resolvedConfigDir;
+  if (typeof configured === 'string' && configured.trim() !== '') {
+    const normalized = configured.trim();
+    const converted = convertWindowsPathToWSL(normalized);
+    const expanded = expandTilde(converted, homeDir);
+    if (typeof expanded === 'string' && expanded.trim() !== '') {
+      resolvedConfigDir = path.resolve(expanded.trim());
+    } else {
+      resolvedConfigDir = path.join(homeDir, '.claude');
+    }
+  } else {
+    resolvedConfigDir = path.join(homeDir, '.claude');
+  }
+  const projectRoot = options.projectRoot || process.cwd();
+
+  return {
+    homeDir,
+    configDir: resolvedConfigDir,
+    projectRoot: path.resolve(projectRoot),
+  };
+}
+
+function readJsonObject(filePath, label) {
+  let value;
+  try {
+    value = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    throw new Error(`${label} is invalid at ${filePath}: ${error.message}`);
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} is invalid at ${filePath}: expected a JSON object`);
+  }
+  return value;
+}
+
+function findManualClaudePlugin(options = {}) {
+  const { configDir } = resolveClaudePaths(options);
+  const pluginsDir = path.join(configDir, 'plugins');
+  const candidates = [
+    ['ecc', '.claude-plugin', 'plugin.json'],
+    ['ecc', 'plugin.json'],
+    ['ecc@ecc', '.claude-plugin', 'plugin.json'],
+    ['ecc@ecc', 'plugin.json'],
+    // Legacy install dir, kept for existing installs.
+    ['everything-claude-code', '.claude-plugin', 'plugin.json'],
+    ['everything-claude-code', 'plugin.json'],
+  ];
+
+  for (const segments of candidates) {
+    const manifestPath = path.join(pluginsDir, ...segments);
+    if (fs.existsSync(manifestPath)) {
+      return {
+        manifestPath,
+        installPath: path.dirname(path.dirname(manifestPath)),
+      };
+    }
+  }
+  return null;
+}
+
+function validateManagedState(state, statePath, expectedRoot) {
+  const selectedModules = state?.resolution?.selectedModules;
+  const operations = state?.operations;
+  if (
+    state?.schemaVersion !== 'ecc.install.v1'
+    || !state.target
+    || typeof state.target !== 'object'
+    || Array.isArray(state.target)
+    || !Array.isArray(selectedModules)
+    || !selectedModules.every(moduleId => typeof moduleId === 'string' && moduleId.length > 0)
+    || !Array.isArray(operations)
+  ) {
+    throw new Error(`Managed Claude install-state is invalid at ${statePath}`);
+  }
+
+  for (const operation of operations) {
+    if (
+      !operation
+      || typeof operation !== 'object'
+      || typeof operation.destinationPath !== 'string'
+      || !path.isAbsolute(operation.destinationPath)
+      || !isWithinRoot(operation.destinationPath, expectedRoot)
+    ) {
+      throw new Error(`Managed Claude install-state is invalid at ${statePath}`);
+    }
+  }
+
+  return { selectedModules, operations };
+}
+
+function operationOverlapsPlugin(operation, expectedRoot) {
+  const canonicalRoot = realpathNearestExisting(expectedRoot);
+  const canonicalDestination = realpathNearestExisting(operation.destinationPath);
+  const relativePath = path.relative(canonicalRoot, canonicalDestination);
+  const firstSegment = relativePath.split(path.sep)[0];
+  return ['agents', 'commands', 'hooks', 'skills'].includes(firstSegment);
+}
+
+function findManagedClaudeInstalls(options = {}) {
+  const { configDir, projectRoot } = resolveClaudePaths(options);
+  const candidates = [
+    {
+      statePath: path.join(configDir, 'ecc', 'install-state.json'),
+      expectedRoot: configDir,
+    },
+    {
+      statePath: path.join(projectRoot, '.claude', 'ecc', 'install-state.json'),
+      expectedRoot: path.join(projectRoot, '.claude'),
+    },
+  ];
+  const findings = [];
+
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate.statePath)) continue;
+    const state = readJsonObject(candidate.statePath, 'Managed Claude install-state');
+    const { selectedModules, operations } = validateManagedState(
+      state,
+      candidate.statePath,
+      candidate.expectedRoot
+    );
+    const modulesOverlap = selectedModules.some(moduleId => moduleId !== 'rules-core');
+    const operationsOverlap = operations.some(operation => (
+      operationOverlapsPlugin(operation, candidate.expectedRoot)
+    ));
+    findings.push({
+      statePath: candidate.statePath,
+      selectedModules: [...selectedModules],
+      overlapsPlugin: modulesOverlap || operationsOverlap,
+    });
+  }
+
+  return findings;
+}
+
+module.exports = {
+  CURRENT_PLUGIN_ID,
+  LEGACY_PLUGIN_IDS,
+  findManagedClaudeInstalls,
+  findManualClaudePlugin,
+  resolveClaudePaths,
+};

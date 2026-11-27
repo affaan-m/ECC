@@ -1,0 +1,13 @@
+{
+  "name": "session-summary",
+  "version": "1.0.0",
+  "enabled": true,
+  "description": "Generate a brief summary of what was accomplished after agent execution completes",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Provide a brief 2-3 sentence summary of what was accomplished in this conversation. Focus on concrete outcomes: files created/modified, problems solved, decisions made. Keep it concise and actionable."
+  }
+}

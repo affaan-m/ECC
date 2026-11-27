@@ -1,0 +1,35 @@
+{
+  "schema_version": "ecc.evaluator-rag.report.v1",
+  "scenario_id": "skill-quality-evidence",
+  "run_id": "2026-05-12-skill-quality-evidence-prototype",
+  "result": "prototype_passed",
+  "read_only": true,
+  "scores": {
+    "skill_contract_retrieval": 0.94,
+    "observed_failure_evidence": 0.88,
+    "example_quality": 0.9,
+    "validation_specificity": 0.93,
+    "publication_safety": 1
+  },
+  "findings": [
+    {
+      "id": "examples-required",
+      "severity": "warning",
+      "summary": "Skill-quality changes need working examples or regression evidence; prose-only rewrites are not enough for promotion."
+    },
+    {
+      "id": "observation-source-required",
+      "severity": "warning",
+      "summary": "Skill amendments should cite observed failure, user feedback, or a reference-set gap rather than broad style preference."
+    },
+    {
+      "id": "publication-stays-blocked",
+      "severity": "info",
+      "summary": "The evaluator can recommend a maintainer PR, but it cannot update package, plugin, catalog, or publication state itself."
+    }
+  ],
+  "recommended_next_action": {
+    "candidate_id": "evidence-backed-skill-amendment",
+    "action": "Use the promoted skill-quality playbook for PRs that add, rewrite, or amend skills, agents, commands, or rules guidance."
+  }
+}

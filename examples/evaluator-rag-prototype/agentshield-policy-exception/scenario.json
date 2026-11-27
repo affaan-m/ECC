@@ -1,0 +1,62 @@
+{
+  "schema_version": "ecc.evaluator-rag.scenario.v1",
+  "scenario_id": "agentshield-policy-exception",
+  "title": "Gate AgentShield policy exceptions with report and SARIF evidence",
+  "mode": "read_only_prototype",
+  "objective": "Given an AgentShield organization-policy finding or proposed exception, retrieve report, SARIF, lifecycle, and ownership evidence before promoting a remediation or time-boxed exception playbook.",
+  "sources": [
+    {
+      "kind": "repo_doc",
+      "path": "docs/ECC-2.0-GA-ROADMAP.md",
+      "purpose": "Durable record of AgentShield policy gates, SARIF output, policy packs, reports, corpus benchmark, and exception lifecycle audit evidence"
+    },
+    {
+      "kind": "repo_command",
+      "path": "commands/security-scan.md",
+      "purpose": "ECC command contract for running AgentShield and separating scanner facts from follow-up judgment"
+    },
+    {
+      "kind": "repo_skill",
+      "path": "skills/security-scan/SKILL.md",
+      "purpose": "Operator-facing AgentShield scan workflow and output-format guidance"
+    },
+    {
+      "kind": "external_pr_evidence",
+      "repo": "affaan-m/agentshield",
+      "prs": [
+        55,
+        56,
+        57,
+        59,
+        60,
+        62
+      ],
+      "purpose": "Policy gate, SARIF, policy-pack, HTML report, corpus benchmark, and exception lifecycle implementation evidence"
+    }
+  ],
+  "retrieval_questions": [
+    "Which AgentShield policy finding, category, severity, and affected file or MCP/hook surface triggered the request?",
+    "Is there SARIF/code-scanning evidence for an `agentshield-policy/*` result, and does it match the report finding?",
+    "Is the exception active, expiring soon, or expired?",
+    "Does the exception include owner, ticket, scope, expiry, and rationale fields?",
+    "Which policy pack or organization baseline produced the finding?",
+    "Is remediation possible now, or is a bounded exception safer than a blanket suppression?"
+  ],
+  "forbidden_actions": [
+    "approving policy exceptions without SARIF or report evidence",
+    "treating expired exceptions as active",
+    "blanket-suppressing AgentShield policy packs or organization-policy gates",
+    "downgrading critical/high findings without owner, ticket, scope, and expiry",
+    "editing AgentShield code or policy files from this ECC evaluator run",
+    "publishing or enforcing new security policy from this read-only evaluator run"
+  ],
+  "acceptance_gates": [
+    "SARIF or report evidence is named",
+    "finding id, category, severity, and affected surface are preserved",
+    "policy pack or organization baseline is named",
+    "owner, ticket, scope, and expiry state are recorded",
+    "expired exceptions stay rejected or enforced",
+    "remediation versus time-boxed exception decision is explicit",
+    "at least one blanket suppression candidate is rejected"
+  ]
+}

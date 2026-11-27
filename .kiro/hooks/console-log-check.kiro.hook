@@ -1,0 +1,14 @@
+{
+  "version": "1.0.0",
+  "enabled": true,
+  "name": "console-log-check",
+  "description": "Check for console.log statements in JavaScript and TypeScript files to prevent debug code from being committed.",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["*.js", "*.ts", "*.tsx"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A JavaScript or TypeScript file was just saved. Check if it contains any console.log statements that should be removed before committing. If found, flag them and offer to remove them."
+  }
+}

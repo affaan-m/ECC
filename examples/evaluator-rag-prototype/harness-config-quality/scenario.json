@@ -1,0 +1,57 @@
+{
+  "schema_version": "ecc.evaluator-rag.scenario.v1",
+  "scenario_id": "harness-config-quality",
+  "title": "Detect harness config drift before changing adapters or installs",
+  "mode": "read_only_prototype",
+  "objective": "Given a change to MCP, plugin, hook, command, agent, or harness adapter surfaces, retrieve the adapter matrix and validation evidence before promoting a setup recommendation or config change.",
+  "sources": [
+    {
+      "kind": "repo_doc",
+      "path": "docs/architecture/harness-adapter-compliance.md",
+      "purpose": "Public adapter matrix that names harness state, install/onramp paths, verification commands, and risk notes"
+    },
+    {
+      "kind": "repo_source",
+      "path": "scripts/lib/harness-adapter-compliance.js",
+      "purpose": "Structured source of truth for the adapter compliance matrix"
+    },
+    {
+      "kind": "repo_config",
+      "path": "hooks/hooks.json",
+      "purpose": "Claude hook surface that must not be assumed portable without adapter evidence"
+    },
+    {
+      "kind": "repo_config",
+      "path": "mcp-configs/mcp-servers.json",
+      "purpose": "Reference MCP config that can drift from harness-specific runtime semantics"
+    },
+    {
+      "kind": "repo_test",
+      "command": "npm run harness:adapters -- --check",
+      "purpose": "Adapter matrix consistency gate"
+    }
+  ],
+  "retrieval_questions": [
+    "Which harness or config surface changed: MCP, plugin, hook, command, agent, rule, or adapter?",
+    "Does the adapter matrix classify this harness as native, adapter-backed, instruction-backed, or reference-only?",
+    "Which install path, verification command, risk note, owner, and source doc apply?",
+    "Does the recommendation preserve existing user config rather than overwriting it?",
+    "Which compatibility regression or harness audit command proves the setup still works?"
+  ],
+  "forbidden_actions": [
+    "claiming native support for instruction-backed or reference-only harnesses",
+    "copying Claude hook semantics into Codex, Gemini, Zed, or OpenCode without adapter evidence",
+    "silently overwriting existing user MCP, hook, plugin, command, or rule config",
+    "disabling or enabling live MCP servers from a read-only evaluator run",
+    "shipping an adapter change without a verification command",
+    "publishing packages or plugins from this evaluator run"
+  ],
+  "acceptance_gates": [
+    "adapter state is retrieved from the matrix",
+    "install or onramp path is named",
+    "verification command is named",
+    "risk note is preserved",
+    "config-preservation behavior is explicit",
+    "at least one unsupported parity claim is rejected"
+  ]
+}

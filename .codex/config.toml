@@ -1,0 +1,41 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+# ECC project-scoped reference: guidance, features and local role definitions.
+# Trusted-project loading, precedence and supported keys depend on the Codex
+# version and higher-level policy. Omitted settings inherit other config layers.
+# This file does not certify effective permissions or prevent configured tools
+# from running. The referenced role files retain their read-only sandbox requests.
+#
+# Explicit user installs use the separate user-config.example.toml reference.
+# Do not copy this project file as an equivalent user-level baseline. The user
+# reference preserves ECC's existing runtime defaults, profiles and integrations;
+# review them before installation. Current Codex docs ignore notify/profiles in
+# project config; that is not a universal claim about older versions.
+# https://developers.openai.com/codex/config-reference
+# https://developers.openai.com/codex/multi-agent
+
+# Leave top-level model and model_provider unset to inherit other/default choices.
+# Existing ECC instruction key retained for sync compatibility, without claiming
+# support in every Codex version. Consult the supported version's reference.
+persistent_instructions = "Follow project AGENTS.md guidelines. Use available MCP servers when they can help."
+
+[features]
+multi_agent = true
+
+[agents]
+# Multi-agent role limits and local role definitions.
+# These map to `.codex/agents/*.toml` and mirror the repo's explorer/reviewer/docs workflow.
+max_threads = 6
+max_depth = 1
+
+[agents.explorer]
+description = "Read-only codebase explorer for gathering evidence before changes are proposed."
+config_file = "agents/explorer.toml"
+
+[agents.reviewer]
+description = "PR reviewer focused on correctness, security, and missing tests."
+config_file = "agents/reviewer.toml"
+
+[agents.docs_researcher]
+description = "Documentation specialist that verifies APIs, framework behavior, and release notes."
+config_file = "agents/docs-researcher.toml"

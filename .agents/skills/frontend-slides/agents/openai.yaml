@@ -1,0 +1,7 @@
+interface:
+  display_name: "Frontend Slides"
+  short_description: "Animation-rich HTML presentation decks"
+  brand_color: "#FF6B3D"
+  default_prompt: "Use $frontend-slides to create an animation-rich HTML presentation deck."
+policy:
+  allow_implicit_invocation: true
