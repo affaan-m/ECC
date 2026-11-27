@@ -1808,14 +1808,15 @@ function keyFileIsReplaceable(keyPath) {
   }
 }
 
-// Retire an untrusted key file and publish the fresh key atomically, so
+// Retire an untrusted key file and publish the fresh key exclusively, so
 // concurrent repairs converge instead of overwriting each other: the file
 // is moved aside under a unique name (never deleted outright), the new key
-// is published with a hard link, and an EEXIST means another repair won —
-// re-read the winner instead of racing it. The caller re-reads after any
-// replacement so it never signs with a superseded key. Directories are
+// is published with a hard link (or an exclusive create where hard links
+// are unavailable), and losing the publication race means another repair
+// won — re-read the winner instead of racing it. The caller re-reads after
+// any replacement so it never signs with a superseded key. Directories are
 // never retired: they surface as a persist failure.
-function recoverExistingKey(keyPath, tmpPath, key, err) {
+function recoverExistingKey(keyPath, tmpPath, key, err = new Error('integrity key file already exists')) {
   const raced = readKeyIfExists();
   if (raced) return raced;
   let linkStat;
@@ -1832,43 +1833,76 @@ function recoverExistingKey(keyPath, tmpPath, key, err) {
     retired = true;
   } catch (_) {
     // Another repair retired it first (or it vanished): publish below and
-    // let the link decide the winner.
+    // let the publication decide the winner.
   }
-  try {
-    fs.linkSync(tmpPath, keyPath);
-  } catch (linkErr) {
-    if (linkErr && linkErr.code === 'EEXIST') {
-      const winner = readKeyIfExists();
-      if (winner) {
-        if (retired) {
-          try {
-            fs.unlinkSync(retiredPath);
-          } catch (_) {
-            /* best-effort cleanup of the retired file */
-          }
-        }
-        return winner;
+  if (publishKeyFile(keyPath, tmpPath)) {
+    if (retired) {
+      try {
+        fs.unlinkSync(retiredPath);
+      } catch (_) {
+        /* best-effort cleanup of the retired file */
       }
     }
-    throw linkErr;
+    const published = readKeyIfExists();
+    return published || key;
   }
-  if (retired) {
-    try {
-      fs.unlinkSync(retiredPath);
-    } catch (_) {
-      /* best-effort cleanup of the retired file */
+  // Another repair won the publication race: adopt its key.
+  const winner = readKeyIfExists();
+  if (winner) {
+    if (retired) {
+      try {
+        fs.unlinkSync(retiredPath);
+      } catch (_) {
+        /* best-effort cleanup of the retired file */
+      }
     }
+    return winner;
   }
-  const published = readKeyIfExists();
-  return published || key;
+  throw err;
+}
+
+// Publish a fresh key file so concurrent writers converge on one key and no
+// writer ever overwrites a live key: a hard link on POSIX, or an exclusive
+// create where hard links are unavailable (Windows/FAT). Both fail instead
+// of replacing a key another writer just published. The exclusive-create
+// bytes are read back from the temp file, so the published key is exactly
+// the complete key this writer generated — no reader ever observes a
+// partially written key. Returns true when this writer published, false
+// when another writer won the race.
+function publishKeyFile(keyPath, tmpPath) {
+  try {
+    fs.linkSync(tmpPath, keyPath);
+    return true;
+  } catch (err) {
+    if (err && err.code === 'EEXIST') return false;
+    if (err && (err.code === 'EPERM' || err.code === 'ENOTSUP' || err.code === 'EXDEV')) {
+      let fd;
+      try {
+        fd = fs.openSync(keyPath, 'wx', 0o600);
+      } catch (openErr) {
+        if (openErr && openErr.code === 'EEXIST') return false;
+        throw openErr;
+      }
+      try {
+        fs.writeFileSync(fd, fs.readFileSync(tmpPath, 'utf8'), 'utf8');
+        fs.fsyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
+      }
+      return true;
+    }
+    throw err;
+  }
 }
 
 // Read the integrity key, creating it when a save needs one. Reads must
 // never create it: a state file with no key file cannot have been signed by
-// this hook. Publication is atomic on POSIX (write temp, hard-link into
-// place) so a concurrent reader never sees a partial key; where hard links
-// are unavailable (Windows/FAT) the fallback publishes the complete temp
-// file with an atomic rename, and losers re-read the winner's key.
+// this hook. Publication is exclusive (hard link on POSIX, exclusive create
+// where hard links are unavailable), so a concurrent reader never sees a
+// partial key and concurrent first writers converge on one key; losers
+// re-read the winner's key instead of overwriting it. A recent empty key
+// file is never replaced: the repair path enforces the abandonment age
+// guard before anything is retired.
 function getOrCreateKey() {
   const existing = readKeyIfExists();
   if (existing) return existing;
@@ -1880,31 +1914,8 @@ function getOrCreateKey() {
   const tmpPath = path.join(STATE_DIR, `${HMAC_KEY_FILE}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`);
   try {
     fs.writeFileSync(tmpPath, keyHex, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    try {
-      fs.linkSync(tmpPath, keyPath);
-      return key;
-    } catch (err) {
-      if (err && err.code === 'EEXIST') return recoverExistingKey(keyPath, tmpPath, key, err);
-      if (err && (err.code === 'EPERM' || err.code === 'ENOTSUP' || err.code === 'EXDEV')) {
-        // Hard links are unavailable: publish the complete temp file with
-        // an atomic rename instead of writing the destination directly, so
-        // no reader ever observes a partially written key (a killed
-        // process must not strand an empty key). If a key appeared while
-        // this run was creating its own, adopt it instead of overwriting.
-        const raced = readKeyIfExists();
-        if (raced) return raced;
-        try {
-          fs.renameSync(tmpPath, keyPath);
-          return key;
-        } catch (renameErr) {
-          if (renameErr && (renameErr.code === 'EEXIST' || renameErr.code === 'EPERM')) {
-            return recoverExistingKey(keyPath, tmpPath, key, renameErr);
-          }
-          throw renameErr;
-        }
-      }
-      throw err;
-    }
+    if (publishKeyFile(keyPath, tmpPath)) return key;
+    return recoverExistingKey(keyPath, tmpPath, key);
   } finally {
     try {
       fs.unlinkSync(tmpPath);

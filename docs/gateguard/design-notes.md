@@ -512,6 +512,19 @@ forge a valid signature. Airtight isolation requires harness-managed
 protected storage or a separate privilege boundary outside the agent's
 execution context. Rollback of an older signed state file is out of scope.
 
+The signature's threat model is forgery and corruption of the state file:
+it stops an agent from rewriting its own checked entries, but it does not
+stop an agent that deliberately invokes the hook itself from a Bash command
+with a crafted Edit payload. That self-invocation goes through the same
+first-touch denial once, marks the target checked, and signs the state, so
+the later real Edit passes without a denial — the same cost, one Bash-command
+denial, as the original state-rewriting vector. Holding against an actively
+circumventing agent would need a separate privilege boundary (harness-managed
+protected storage, or gating hook-shaped invocations from inside Bash); the
+gate as built assumes a cooperative agent and an untrusted state file.
+Upgrading from an unsigned state file treats it as empty, so each active
+session gets one round of fresh first-touch denials after updating.
+
 ## MultiEdit paths
 
 A MultiEdit call names its file once, in `tool_input.file_path`, and its

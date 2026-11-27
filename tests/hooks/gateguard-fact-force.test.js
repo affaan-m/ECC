@@ -8569,6 +8569,13 @@ function runTests() {
       const keyPath = path.join(stateDir, HMAC_KEY_FILE);
       const made = spawnSync('mkfifo', [keyPath]);
       assert.strictEqual(made.status, 0, 'mkfifo must succeed for the fixture');
+      // Seed a state file with a well-formed _sig so the LOAD path reaches
+      // readKeyIfExists() (the format check passes, the key read follows).
+      // The signature is deliberately not valid and must not be built with
+      // signTestState/ensureTestKey: reading the FIFO without O_NONBLOCK
+      // in this process would block. Without the fixture, loadState()
+      // returns `missing` before ever opening the key.
+      fs.writeFileSync(stateFile, JSON.stringify({ checked: [], last_active: Date.now(), _sig: 'a'.repeat(64) }), 'utf8');
       const started = Date.now();
       const result = runHook({
         tool_name: 'Edit',
@@ -8616,7 +8623,9 @@ function runTests() {
         "const { spawn } = require('child_process');",
         'const results = [];',
         'let pending = 8;',
+        'let sawDeny = false;',
         'function finish() {',
+        "  if (!sawDeny) { process.stderr.write('no child observed a first-touch denial\\n'); process.exit(1); }",
         '  const failures = results.filter(r => r.code !== 0 || !r.valid);',
         '  if (failures.length) {',
         "    process.stderr.write('concurrent child failures:\\n' + failures.map(f => `#${f.index} code=${f.code} signal=${f.signal} stdout=${f.stdout} stderr=${f.stderr}`).join('\\n') + '\\n');",
@@ -8640,7 +8649,8 @@ function runTests() {
         '    let parsed = null;',
         '    try { parsed = JSON.parse(rec.stdout); } catch (_) { parsed = null; }',
         '    const decision = parsed && parsed.hookSpecificOutput && parsed.hookSpecificOutput.permissionDecision;',
-        `    rec.valid = code === 0 && (typeof decision === 'string' || rec.stdout.trim() === ${JSON.stringify(payload)});`,
+        "    if (decision === 'deny') sawDeny = true;",
+        `    rec.valid = code === 0 && (decision === 'deny' || rec.stdout.trim() === ${JSON.stringify(payload)});`,
         '    if (--pending === 0) finish();',
         '  };',
         "  child.stdout.on('data', d => { rec.stdout += d; });",
@@ -8673,10 +8683,18 @@ function runTests() {
       const originalOpenSync = fs.openSync;
       const originalCloseSync = fs.closeSync;
       const writeTargets = [];
+      const keyOpens = [];
       fs.linkSync = () => {
         const err = new Error('link unavailable');
         err.code = 'EPERM';
         throw err;
+      };
+      // Record every open of the key destination, with its flags: a fallback
+      // that opens the destination through a descriptor would expose an
+      // empty or partial file, and stubbing writeFileSync alone cannot see it.
+      fs.openSync = function (target, flags, ...rest) {
+        if (path.resolve(String(target)) === path.resolve(keyPath)) keyOpens.push(flags);
+        return originalOpenSync.apply(fs, [target, flags, ...rest]);
       };
       fs.writeFileSync = function (target, ...rest) {
         writeTargets.push(String(target));
@@ -8701,8 +8719,20 @@ function runTests() {
       } finally {
         fs.linkSync = originalLinkSync;
         fs.writeFileSync = originalWriteFileSync;
+        fs.openSync = originalOpenSync;
       }
       assert.ok(!writeTargets.some(t => path.resolve(t) === path.resolve(keyPath)), 'fallback must never write the key destination directly');
+      // A writing open of the destination is only safe as an exclusive
+      // create: it fails instead of replacing a live key. Reads use numeric
+      // O_RDONLY flags; the exclusive-create publish open uses 'wx'.
+      for (const flags of keyOpens) {
+        if (typeof flags === 'string') {
+          assert.strictEqual(flags, 'wx', `key destination must only be opened with exclusive create, saw flags ${flags}`);
+        } else {
+          assert.strictEqual(flags & (fs.constants.O_WRONLY | fs.constants.O_RDWR), 0, 'key destination must never be opened for writing except by exclusive create');
+          assert.strictEqual(flags & fs.constants.O_CREAT, 0, 'key destination must never be opened with O_CREAT except by exclusive create');
+        }
+      }
       assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'fallback must publish a complete key');
       assert.ok(persistedStateVerifies(), 'state saved through the fallback must verify');
     })
@@ -8712,9 +8742,71 @@ function runTests() {
 
   clearState();
   if (
+    test('a concurrent fallback writer adopts the published key instead of replacing it (#4140)', () => {
+      const hook = loadDirectHook();
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const originalLinkSync = fs.linkSync;
+      const originalRenameSync = fs.renameSync;
+      const originalOpenSync = fs.openSync;
+      // A key published by a writer that slipped in between this run's key
+      // check and its publication. The interleaving is injected at the
+      // publication primitive itself, so it fires for the rename fallback
+      // and the exclusive-create fallback alike.
+      const winnerKey = crypto.randomBytes(32).toString('hex');
+      let injected = false;
+      const injectWinner = () => {
+        if (injected) return;
+        injected = true;
+        fs.writeFileSync(keyPath, winnerKey, { encoding: 'utf8', mode: 0o600 });
+      };
+      fs.linkSync = () => {
+        const err = new Error('link unavailable');
+        err.code = 'EPERM';
+        throw err;
+      };
+      fs.renameSync = function (src, dest, ...rest) {
+        if (path.resolve(String(dest)) === path.resolve(keyPath)) injectWinner();
+        return originalRenameSync.apply(fs, [src, dest, ...rest]);
+      };
+      fs.openSync = function (target, flags, ...rest) {
+        const isPublishOpen =
+          path.resolve(String(target)) === path.resolve(keyPath) &&
+          (flags === 'wx' ||
+            (typeof flags === 'number' &&
+              (flags & fs.constants.O_CREAT) !== 0 &&
+              (flags & (fs.constants.O_WRONLY | fs.constants.O_RDWR)) !== 0));
+        if (isPublishOpen) injectWinner();
+        return originalOpenSync.apply(fs, [target, flags, ...rest]);
+      };
+      try {
+        const result = hook.run({
+          tool_name: 'Edit',
+          tool_input: { file_path: '/src/fallback-race.js', old_string: 'a', new_string: 'b' }
+        });
+        const output = parseOutput(result.stdout);
+        assert.ok(output, 'hook must produce JSON output');
+        assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'first touch must be denied');
+      } finally {
+        fs.linkSync = originalLinkSync;
+        fs.renameSync = originalRenameSync;
+        fs.openSync = originalOpenSync;
+      }
+      assert.ok(injected, 'the interleaved writer must have published during the fallback');
+      assert.strictEqual(fs.readFileSync(keyPath, 'utf8').trim(), winnerKey, 'the published key must survive a concurrent fallback writer');
+      assert.ok(persistedStateVerifies(), 'state saved through the fallback must verify with the surviving key');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
     test('a __proto__ field in verified state cannot shadow checked entries (#4140)', () => {
       const key = ensureTestKey();
-      const parsed = JSON.parse(`{"__proto__":{"checked":["/src/proto.js"]},"last_active":${Date.now()}}`);
+      // The shadowed entry names a file this run never edits: the hook
+      // legitimately marks the edited target checked when it denies, so
+      // asserting on the edited target cannot tell acceptance from shadowing.
+      const parsed = JSON.parse(`{"__proto__":{"checked":["/src/shadowed.js"]},"fact_force_denials":3,"last_active":${Date.now()}}`);
       const signed = signStateForSession(TEST_SESSION_ID, key, parsed);
       fs.mkdirSync(stateDir, { recursive: true });
       fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
@@ -8723,6 +8815,12 @@ function runTests() {
         tool_input: { file_path: '/src/proto.js', old_string: 'a', new_string: 'b' }
       });
       assert.strictEqual(decisionOf(result), 'deny', 'prototype-shadowed checked entries must not pass the gate');
+      // The denial must increment the fixture's counter instead of resetting
+      // it: a rejected fixture would restart from empty state (denials 1),
+      // so 4 proves signature verification accepted the seeded state.
+      const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      assert.strictEqual(persisted.fact_force_denials, 4, 'accepted state must increment its denial counter, not reset it');
+      assert.ok(!persisted.checked.includes('/src/shadowed.js'), 'accepted state must not supply a checked entry through __proto__');
     })
   )
     passed++;
@@ -8733,6 +8831,11 @@ function runTests() {
     test('expired state is not deleted by the read path (#4140)', () => {
       const hook = loadDirectHook();
       writeExpiredState();
+      // Setup failures must not pass silently: if the fixture was never
+      // written or signed, the hook would see a normal first touch and this
+      // test would pass without ever reading an expired file.
+      assert.ok(fs.existsSync(stateFile), 'expired fixture must exist before the hook runs');
+      assert.ok(persistedStateVerifies(), 'expired fixture must be signed before the hook runs');
       const originalUnlinkSync = fs.unlinkSync;
       const unlinked = [];
       fs.unlinkSync = function (target, ...rest) {
@@ -8787,7 +8890,9 @@ function runTests() {
         "const { spawn } = require('child_process');",
         'const results = [];',
         'let pending = 8;',
+        'let sawDeny = false;',
         'function finish() {',
+        "  if (!sawDeny) { process.stderr.write('no child observed a first-touch denial\\n'); process.exit(1); }",
         '  const failures = results.filter(r => r.code !== 0 || !r.valid);',
         '  if (failures.length) {',
         "    process.stderr.write('concurrent child failures:\\n' + failures.map(f => `#${f.index} code=${f.code} signal=${f.signal} stdout=${f.stdout} stderr=${f.stderr}`).join('\\n') + '\\n');",
@@ -8811,7 +8916,8 @@ function runTests() {
         '    let parsed = null;',
         '    try { parsed = JSON.parse(rec.stdout); } catch (_) { parsed = null; }',
         '    const decision = parsed && parsed.hookSpecificOutput && parsed.hookSpecificOutput.permissionDecision;',
-        `    rec.valid = code === 0 && (typeof decision === 'string' || rec.stdout.trim() === ${JSON.stringify(payload)});`,
+        "    if (decision === 'deny') sawDeny = true;",
+        `    rec.valid = code === 0 && (decision === 'deny' || rec.stdout.trim() === ${JSON.stringify(payload)});`,
         '    if (--pending === 0) finish();',
         '  };',
         "  child.stdout.on('data', d => { rec.stdout += d; });",
