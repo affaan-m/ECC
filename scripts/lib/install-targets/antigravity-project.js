@@ -7,6 +7,7 @@ const {
   createManagedOperation,
   createManagedScaffoldOperation,
   normalizeRelativePath,
+  withAntigravityRuleTrigger,
 } = require('./helpers');
 const { buildAntigravityHooksConfig } = require('../antigravity-hooks');
 const { buildAntigravityMcpConfig, planAntigravityMemoryRuntime } = require('../antigravity-mcp');
@@ -31,21 +32,6 @@ function supportsAntigravitySourcePath(sourceRelativePath) {
   return SUPPORTED_SOURCE_PREFIXES.some(prefix => (
     normalizedPath === prefix || normalizedPath.startsWith(`${prefix}/`)
   ));
-}
-
-// Rule packs live one level down (rules/common/, rules/python/, ...). The
-// top-level rules/README.md is installer documentation and stays inert.
-function isRulePackMarkdown(sourceRelativePath) {
-  const segments = normalizeRelativePath(sourceRelativePath).split('/');
-  return segments[0] === 'rules'
-    && segments.length >= 3
-    && /\.md$/i.test(segments[segments.length - 1]);
-}
-
-function withAntigravityRuleTrigger(operation) {
-  return isRulePackMarkdown(operation.sourceRelativePath)
-    ? { ...operation, contentTransform: 'antigravity-rule-frontmatter' }
-    : operation;
 }
 
 module.exports = createInstallTargetAdapter({

@@ -490,6 +490,23 @@ function createInstallTargetAdapter(config) {
   return Object.freeze(adapter);
 }
 
+// Rule packs live one level down (rules/common/, rules/python/, ...). The
+// top-level rules/README.md is installer documentation and stays inert.
+function isRulePackMarkdown(sourceRelativePath) {
+  const segments = normalizeRelativePath(sourceRelativePath).split('/');
+  return segments[0] === 'rules'
+    && segments.length >= 3
+    && /\.md$/i.test(segments[segments.length - 1]);
+}
+
+// Antigravity skips rule files whose frontmatter has no activation trigger,
+// so every Antigravity target routes rule packs through the rule transform.
+function withAntigravityRuleTrigger(operation) {
+  return isRulePackMarkdown(operation.sourceRelativePath)
+    ? { ...operation, contentTransform: 'antigravity-rule-frontmatter' }
+    : operation;
+}
+
 module.exports = {
   HOME_INSTALL_EXCLUDED_SOURCE_PATHS,
   isExcludedSourcePath,
@@ -512,6 +529,7 @@ module.exports = {
   listRelativeFiles,
   normalizeRelativePath,
   planClaudeHooksOperations,
+  withAntigravityRuleTrigger,
   isWSL,
   resetWSLDetection,
   setWSLForTesting,

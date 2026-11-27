@@ -369,6 +369,17 @@ function runTests() {
         )),
         'Should plan rules into plugin rules directory'
       );
+      const rulePackOperations = plan.operations.filter(op => (
+        /^rules\/[^/]+\/.+\.md$/i.test(String(op.sourceRelativePath).replace(/\\/g, '/'))
+      ));
+      assert.ok(rulePackOperations.length > 0, 'Should plan rule pack files');
+      for (const op of rulePackOperations) {
+        assert.strictEqual(
+          op.contentTransform,
+          'antigravity-rule-frontmatter',
+          `Should give ${op.sourceRelativePath} an Antigravity activation trigger`
+        );
+      }
 
       // Check workflows
       assert.ok(
@@ -564,6 +575,11 @@ function runTests() {
       assert.ok(fs.existsSync(path.join(pluginDir, 'mcp_config.json')), 'mcp_config.json should exist');
       assert.ok(fs.existsSync(path.join(pluginDir, 'ecc-install-state.json')), 'install-state should exist');
       assert.ok(fs.existsSync(path.join(pluginDir, 'rules', 'common-coding-style.md')), 'rules should exist');
+      assert.match(
+        fs.readFileSync(path.join(pluginDir, 'rules', 'common-coding-style.md'), 'utf8'),
+        /^---\r?\ntrigger: always_on\r?\n/,
+        'installed rules should declare an Antigravity activation trigger'
+      );
       assert.ok(fs.existsSync(path.join(pluginDir, 'skills', 'tdd-workflow', 'SKILL.md')), 'skills should exist');
       assert.ok(fs.existsSync(path.join(pluginDir, 'scripts', 'hooks', 'antigravity-hook-bridge.js')), 'hook bridge should exist');
       assert.ok(fs.existsSync(path.join(homeDir, '.gemini', 'config', 'workflows', 'plan.md')), 'workflow plan.md should exist in global workflows dir');
