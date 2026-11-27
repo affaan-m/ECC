@@ -266,6 +266,36 @@ const tests = [
     assert.strictEqual(result.status, 0);
     assert.ok(result.logs.includes('\nPassed: 4, Failed: 0'));
   }],
+  ['bare and Results-prefixed number-first summaries retain totals', () => {
+    for (const stdout of [
+      '\n  1125 passed, 0 failed\n\n',
+      '1125 passed, 0 failed',
+      '  Results: 1125 passed, 0 failed\r\n',
+      'Results: 1125 passed, 0 failed',
+    ]) {
+      const result = run({ status: 0, stdout });
+      assert.strictEqual(result.status, 0, stdout);
+      assert.ok(result.logs.includes('\nPassed: 1125, Failed: 0'), stdout);
+    }
+  }],
+  ['bare and Results-prefixed number-first failures cannot pass with a successful exit', () => {
+    for (const stdout of ['\n  3 passed, 1 failed\n', 'Results: 3 passed, 1 failed']) {
+      const result = run({ status: 0, stdout });
+      assert.strictEqual(result.status, 1, stdout);
+      assert.match(result.annotations[0], /reported 1 failed/, stdout);
+    }
+  }],
+  ['bare number-first summaries take part in last-summary-wins and ignore mentions', () => {
+    for (const stdout of [
+      'Passed: 0, Failed: 1\n  4 passed, 0 failed',
+      '  0 passed, 1 failed\n=== Results: 4 passed, 0 failed ===',
+      'Assertion expected: 99 passed, 7 failed\n║  Files: 9 passed, 1 failed  ║\n  4 passed, 0 failed\n',
+    ]) {
+      const result = run({ status: 0, stdout });
+      assert.strictEqual(result.status, 0, stdout);
+      assert.ok(result.logs.includes('\nPassed: 4, Failed: 0'), stdout);
+    }
+  }],
   ['serial and parallel children propagate number-first failures and totals', () => {
     for (const jobs of [1, 2]) {
       const result = fixtureRun({
