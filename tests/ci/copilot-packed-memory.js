@@ -120,6 +120,20 @@ function verifyInstalledMemory(root, packageRoot, env) {
     "console.log(JSON.stringify({schemaVersion:'ecc.memory.doctor.v1',ok:true,memoryCount:999}));\n");
   error(['doctor'], 'ECC_COPILOT_MEMORY_UNAVAILABLE', { ECC_COPILOT_MEMORY_RUNTIME: fixtureRuntime });
 
+  const pnpmRuntime = path.join(root, 'pnpm-runtime', 'node_modules', '.pnpm', 'ecc-universal@2.2.3', 'node_modules', 'ecc-universal');
+  fs.mkdirSync(path.join(pnpmRuntime, 'scripts'), { recursive: true });
+  const doctorResponse = {
+    schemaVersion: 'ecc.memory.doctor.v1', targetHarness: 'copilot', ok: true, memoryCount: 0,
+    duplicateIdCount: 0, brokenLinkCount: 0, invalidFileCount: 0, skippedSymlinkCount: 0,
+    truncated: false, diagnosticsTruncated: false,
+  };
+  fs.writeFileSync(fixtureScript, `console.log(${JSON.stringify(JSON.stringify(doctorResponse))});\n`);
+  fs.linkSync(fixtureScript, path.join(pnpmRuntime, 'scripts', 'memory.js'));
+  fs.linkSync(path.join(fixtureRuntime, 'package.json'), path.join(pnpmRuntime, 'package.json'));
+  const linkedDoctor = invoke(['doctor'], 0, { ECC_COPILOT_MEMORY_RUNTIME: pnpmRuntime });
+  assert.equal(JSON.parse(linkedDoctor.stdout).status, 'ready');
+  error(['doctor'], 'ECC_COPILOT_MEMORY_UNAVAILABLE', { ECC_COPILOT_MEMORY_RUNTIME: fixtureRuntime });
+
   const broken = path.join(workspace, '.ecc', 'memory', 'team', 'notes', 'private-broken-fixture.md');
   fs.writeFileSync(broken, 'private debug fixture\n');
   const incomplete = lookup('search', 'review');

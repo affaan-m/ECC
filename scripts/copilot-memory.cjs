@@ -43,9 +43,20 @@ function parseArgs(args) {
   throw new BridgeError('INVALID_ARGUMENTS');
 }
 
-function assertRuntimeFile(file) {
+function isPnpmRuntime(root) {
+  const modules = path.dirname(root);
+  const slot = path.dirname(modules);
+  const store = path.dirname(slot);
+  return path.basename(root) === 'ecc-universal'
+    && path.basename(modules) === 'node_modules'
+    && /^ecc-universal@.+$/.test(path.basename(slot))
+    && path.basename(store) === '.pnpm'
+    && path.basename(path.dirname(store)) === 'node_modules';
+}
+
+function assertRuntimeFile(file, allowHardLinks) {
   const info = fs.lstatSync(file);
-  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.size > MAX_RUNTIME_FILE) {
+  if (!info.isFile() || info.isSymbolicLink() || (!allowHardLinks && info.nlink !== 1) || info.size > MAX_RUNTIME_FILE) {
     throw new BridgeError('UNAVAILABLE');
   }
 }
@@ -55,15 +66,16 @@ function runtimePrerequisite(env) {
   if (!root || !path.isAbsolute(root)) throw new BridgeError('UNAVAILABLE');
   try {
     const canonical = fs.realpathSync(root);
+    const allowHardLinks = isPnpmRuntime(canonical);
     const pkgFile = path.join(canonical, 'package.json');
     const scripts = path.join(canonical, 'scripts');
     if (!fs.lstatSync(scripts).isDirectory()) throw new BridgeError('UNAVAILABLE');
-    assertRuntimeFile(pkgFile);
+    assertRuntimeFile(pkgFile, allowHardLinks);
     const pkg = JSON.parse(fs.readFileSync(pkgFile, 'utf8'));
     if (pkg?.name !== 'ecc-universal' || pkg.bin?.ecc !== 'scripts/ecc.js') throw new BridgeError('UNAVAILABLE');
 
     const script = path.join(scripts, 'memory.js');
-    assertRuntimeFile(script);
+    assertRuntimeFile(script, allowHardLinks);
     return script;
   } catch {
     throw new BridgeError('UNAVAILABLE');
