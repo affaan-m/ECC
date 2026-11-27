@@ -1892,21 +1892,35 @@ function publishKeyFile(keyPath, tmpPath) {
 // the lock a second writer could rename over the winner's key. The lock
 // holds the holder's pid, so a contender can tell a stale lock (holder
 // dead) from a live one and recover instead of wedging forever.
+// A contender that finds the fallback lock held by a live publisher waits
+// briefly for the key to appear instead of failing at once: the holder is
+// mid-publication, and failing here turns a first-touch denial into a
+// persistence warning that lets the edit through. Bounded: publication is
+// sub-second, and a holder that never publishes must not stall the hook.
+function waitForPublishedKey() {
+  const waitCell = new Int32Array(new SharedArrayBuffer(4));
+  const deadline = Date.now() + 1000;
+  while (!readKeyIfExists() && Date.now() < deadline) {
+    Atomics.wait(waitCell, 0, 0, 10);
+  }
+}
+
 function publishKeyFileFallback(keyPath, tmpPath) {
   const lockPath = `${keyPath}.lock`;
   for (let attempt = 0; attempt < 2; attempt++) {
     let lockFd;
     try {
       lockFd = fs.openSync(lockPath, 'wx', 0o600);
-      fs.writeFileSync(lockFd, String(process.pid), 'utf8');
     } catch (err) {
       if (err && err.code === 'EEXIST') {
         if (attempt === 0 && stealStaleKeyLock(lockPath)) continue;
+        waitForPublishedKey();
         return false;
       }
       throw err;
     }
     try {
+      fs.writeFileSync(lockFd, String(process.pid), 'utf8');
       // Publish only into an absent destination. An existing file — valid
       // or corrupt — is the caller's problem: recoverExistingKey retires it
       // or adopts the winner. Checking under the lock is what makes the

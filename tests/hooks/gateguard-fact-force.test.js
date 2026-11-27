@@ -8805,6 +8805,116 @@ function runTests() {
 
   clearState();
   if (
+    test('a fallback writer waits for a live lock holder instead of warning through (#4140)', () => {
+      const { spawn } = require('child_process');
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const lockPath = `${keyPath}.lock`;
+      const flagFile = path.join(stateDir, 'publisher-paused');
+      const resultFile = path.join(stateDir, 'publisher-result.json');
+      const payload = { tool_name: 'Edit', tool_input: { file_path: '/src/lock-holder.js', old_string: 'a', new_string: 'b' } };
+      const driver = [
+        'const fs = require("fs");',
+        'const path = require("path");',
+        `const resultFile = ${JSON.stringify(resultFile)};`,
+        'try {',
+        `  process.env.GATEGUARD_STATE_DIR = ${JSON.stringify(stateDir)};`,
+        `  process.env.CLAUDE_SESSION_ID = ${JSON.stringify(TEST_SESSION_ID)};`,
+        "  process.env.ECC_HOOK_PROFILE = 'standard';",
+        "  process.env.GATEGUARD_EXTERNAL_CONTRACT_QUESTION = '';",
+        '  const origRename = fs.renameSync;',
+        '  fs.linkSync = () => { const e = new Error("link unavailable"); e.code = "EPERM"; throw e; };',
+        '  let paused = false;',
+        '  fs.renameSync = function (src, dest) {',
+        `    if (!paused && path.resolve(String(dest)) === ${JSON.stringify(keyPath)}) {`,
+        '      paused = true;',
+        `      fs.writeFileSync(${JSON.stringify(flagFile)}, "paused", "utf8");`,
+        '      const until = Date.now() + 400;',
+        '      while (Date.now() < until) {}',
+        '    }',
+        '    return origRename.apply(fs, [src, dest]);',
+        '  };',
+        `  const hook = require(${JSON.stringify(hookScript)});`,
+        `  const res = hook.run(${JSON.stringify(payload)});`,
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: typeof res === "string" ? res : (res.stdout || JSON.stringify(res)) }), "utf8");',
+        '} catch (err) {',
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 1, error: String((err && err.stack) || err) }), "utf8");',
+        '}'
+      ].join('\n');
+      const child = spawn('node', ['-e', driver], { cwd: repoRoot, stdio: 'ignore' });
+      const waitCell = new Int32Array(new SharedArrayBuffer(4));
+      const flagDeadline = Date.now() + 5000;
+      while (!fs.existsSync(flagFile) && Date.now() < flagDeadline) Atomics.wait(waitCell, 0, 0, 10);
+      assert.ok(fs.existsSync(flagFile), 'publisher must hold the lock before the competing save runs');
+      const hook = loadDirectHook();
+      const originalLinkSync = fs.linkSync;
+      fs.linkSync = () => { const err = new Error('link unavailable'); err.code = 'EPERM'; throw err; };
+      let raced;
+      try {
+        raced = hook.run({ tool_name: 'Edit', tool_input: { file_path: '/src/lock-contender.js', old_string: 'a', new_string: 'b' } });
+      } finally {
+        fs.linkSync = originalLinkSync;
+      }
+      const resultDeadline = Date.now() + 10000;
+      while (!fs.existsSync(resultFile) && Date.now() < resultDeadline) Atomics.wait(waitCell, 0, 0, 10);
+      try { child.kill(); } catch (_) { /* already gone */ }
+      assert.ok(fs.existsSync(resultFile), 'publisher must finish and report its result');
+      const publisher = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
+      assert.strictEqual(publisher.code, 0, publisher.error || 'publisher failed');
+      const output = parseOutput(raced.stdout);
+      assert.ok(output && output.hookSpecificOutput, 'hook must produce JSON output');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'competing first touch must be denied, not warned through');
+      assert.ok(!String(raced.stderr || '').includes('could not be persisted'), 'competing save must not warn of a persistence failure');
+      const childOutput = parseOutput(publisher.out);
+      assert.ok(childOutput && childOutput.hookSpecificOutput, 'publisher must produce JSON output');
+      assert.strictEqual(childOutput.hookSpecificOutput.permissionDecision, 'deny', 'publisher first touch must be denied');
+      assert.ok(!fs.existsSync(lockPath), 'fallback publication lock must be released');
+      assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'one published key must survive');
+      assert.ok(persistedStateVerifies(), 'both saves must verify with the same key');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('a failed lock pid write releases the fallback lock (#4140)', () => {
+      const hook = loadDirectHook();
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const lockPath = `${keyPath}.lock`;
+      const originalLinkSync = fs.linkSync;
+      const originalWriteFileSync = fs.writeFileSync;
+      let fdWrites = 0;
+      fs.linkSync = () => { const err = new Error('link unavailable'); err.code = 'EPERM'; throw err; };
+      fs.writeFileSync = function (target, ...rest) {
+        if (typeof target === 'number' && ++fdWrites === 2) {
+          const err = new Error('no space left on device');
+          err.code = 'ENOSPC';
+          throw err;
+        }
+        return originalWriteFileSync.apply(fs, [target, ...rest]);
+      };
+      let first;
+      try {
+        first = hook.run({ tool_name: 'Edit', tool_input: { file_path: '/src/lock-write-fail.js', old_string: 'a', new_string: 'b' } });
+      } finally {
+        fs.linkSync = originalLinkSync;
+        fs.writeFileSync = originalWriteFileSync;
+      }
+      assert.ok(String(first.stderr || '').includes('could not be persisted'), 'a failed pid write must surface as a persistence failure');
+      assert.ok(!fs.existsSync(lockPath), 'the lock must be released when its pid write fails');
+      const second = loadDirectHook().run({ tool_name: 'Edit', tool_input: { file_path: '/src/lock-write-fail.js', old_string: 'a', new_string: 'b' } });
+      const output = parseOutput(second.stdout);
+      assert.ok(output && output.hookSpecificOutput, 'hook must produce JSON output');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'a later save must still deny after the lock is released');
+      assert.ok(persistedStateVerifies(), 'state saved after lock release must verify');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
     test('a __proto__ field in verified state cannot shadow checked entries (#4140)', () => {
       const key = ensureTestKey();
       // The shadowed entry names a file this run never edits: the hook
