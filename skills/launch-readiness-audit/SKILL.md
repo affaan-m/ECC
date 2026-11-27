@@ -30,9 +30,24 @@ Directory crawlers and link-preview bots usually read raw HTTP HTML without runn
 TARGET="https://example.com"
 curl -sSIL --max-redirs 5 --connect-timeout 5 --max-time 10 "$TARGET" | head -n 30
 HTML="$(curl -sSL --connect-timeout 5 --max-time 10 "$TARGET")"
-printf '%s\n' "$HTML" | grep -iE '<title>|meta name="description"|property="og:|name="twitter:|rel="canonical"|rel="icon"|<h1|application/ld\+json|noindex' | head -n 40
-curl -sSI --max-time 5 "${TARGET%/}/robots.txt" | head -n 5
-curl -sSI --max-time 5 "${TARGET%/}/sitemap.xml" | head -n 5
+printf '%s\n' "$HTML" | grep -iE '<title>|name="description"|name="viewport"|property="og:|name="twitter:|rel="canonical"|rel="icon"|<h1|application/ld\+json|noindex' | head -n 40
+# Inspect visible static body copy (without JS execution)
+printf '%s\n' "$HTML" | python3 -c '
+import sys, html.parser
+class TextOnly(html.parser.HTMLParser):
+    def __init__(self): super().__init__(); self.skip = False; self.out = []
+    def handle_starttag(self, t, a):
+        if t in ("script", "style", "noscript"): self.skip = True
+    def handle_endtag(self, t):
+        if t in ("script", "style", "noscript"): self.skip = False
+    def handle_data(self, d):
+        if not self.skip and d.strip(): self.out.append(d.strip())
+p = TextOnly(); p.feed(sys.stdin.read())
+print(" ".join(p.out)[:400])
+'
+# Fetch full bodies so Disallow: / rules and valid XML sitemaps are checked, not just HTTP status
+curl -sSL --max-time 5 "${TARGET%/}/robots.txt" | head -n 30
+curl -sSL --max-time 5 "${TARGET%/}/sitemap.xml" | head -n 20
 ```
 
 Confirm all 16 checks before submitting anywhere:
@@ -62,6 +77,7 @@ If you want a scored 16-point report and access to a 1,600+ directory dataset, [
 {
   "mcpServers": {
     "saascity": {
+      "type": "http",
       "url": "https://saascity.io/api/mcp"
     }
   }
@@ -106,8 +122,29 @@ Group candidate directories into a dated Markdown or CSV checklist (`directory`,
 Once a directory publishes your listing, inspect its static HTML (locally with `curl` or via `check_backlink`):
 
 ```bash
-curl -sSL --max-time 10 "https://directory.example/tools/your-product" \
-  | grep -iE 'href="[^"]*yourdomain\.com|noindex|nofollow|rel="canonical"'
+LISTING="https://directory.example/tools/your-product"
+DOMAIN="yourdomain.com"
+# Keep response headers (for X-Robots-Tag: noindex) and parse complete <a> tags regardless of quote style or line breaks
+curl -isSL --max-time 10 "$LISTING" | python3 -c '
+import sys, html.parser
+domain = sys.argv[1].lower()
+raw = sys.stdin.read()
+headers, _, body = raw.partition("\r\n\r\n")
+if not body: headers, _, body = raw.partition("\n\n")
+for line in headers.splitlines():
+    if line.lower().startswith(("http/", "x-robots-tag:", "location:")):
+        print("HEADER:", line)
+class LinkCheck(html.parser.HTMLParser):
+    def handle_starttag(self, tag, attrs):
+        d = {k.lower(): (v or "") for k, v in attrs}
+        if tag == "meta" and d.get("name", "").lower() == "robots":
+            print("META ROBOTS:", d.get("content", ""))
+        elif tag == "link" and "canonical" in d.get("rel", "").lower().split():
+            print("CANONICAL:", d.get("href", ""))
+        elif tag == "a" and domain in d.get("href", "").lower():
+            print("ANCHOR:", {"href": d.get("href"), "rel": d.get("rel", "")})
+LinkCheck().feed(body)
+' "$DOMAIN"
 ```
 
 Classify each live listing as `dofollow` (direct anchor, no `nofollow`/`ugc`/`sponsored`, indexable page), `nofollow`, `redirect_only`, or `not_found` (JS-rendered or missing).
