@@ -11,6 +11,7 @@ const {
   createManagedScaffoldOperation,
   isForeignPlatformPath,
   normalizeRelativePath,
+  withAntigravityRuleTrigger,
 } = require('./helpers');
 const { buildAntigravityHooksConfig } = require('../antigravity-hooks');
 const { buildAntigravityMcpConfig, planAntigravityMemoryRuntime } = require('../antigravity-mcp');
@@ -66,7 +67,7 @@ module.exports = createInstallTargetAdapter({
               repoRoot,
               sourceRelativePath: normalizedSourcePath,
               destinationDir: path.join(targetRoot, 'rules'),
-            });
+            }).map(withAntigravityRuleTrigger);
           }
 
           if (
