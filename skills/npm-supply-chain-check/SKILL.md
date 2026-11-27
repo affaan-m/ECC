@@ -58,45 +58,82 @@ only reads public metadata.
 
 ## Path B — npm registry and OSV only
 
-Set `P` to the package name. For scoped names, encode the slash
-(`@scope%2fname`).
-
-1. **Known vulnerabilities and malware for the exact version:**
+0. **Pin the exact name and version.** Keep `P` exactly as the user wrote the
+   package name (`@scope/name` stays unencoded); only registry URLs use the
+   encoded form `PE`. An exact version (`1.2.3`) is used as-is. A bare name,
+   dist-tag or range is resolved to the one version npm would install:
 
    ```bash
-   curl -s https://api.osv.dev/v1/query \
-     -d '{"package":{"name":"'"$P"'","ecosystem":"npm"},"version":"'"$V"'"}' \
-     | jq -r '.vulns[]? | "\(.id)  \(.summary // "")"'
+   P='@scope/name'; SPEC='^1.2'          # SPEC may be empty, a tag, a range or an exact version
+   PE=$(printf '%s' "$P" | sed 's#/#%2f#')
+   case "$SPEC" in
+     [0-9]*.[0-9]*.[0-9]*) V="$SPEC" ;;
+     *) V=$(npm view "$P@${SPEC:-latest}" version 2>/dev/null | tail -1 | awk '{print $NF}' | tr -d "'") ;;
+   esac
+   [ -n "$V" ] || echo "could not resolve $P@${SPEC:-latest}: report every check as unknown"
+   ```
+
+   If `V` is empty, stop: report the package as unresolved (possibly a typo or
+   a name that doesn't exist), never as clean. Use this `V` everywhere below
+   and in any install you then run.
+
+1. **Known vulnerabilities and malware for that version:**
+
+   ```bash
+   if [ -z "$V" ]; then
+     echo "OSV check skipped: version unresolved, report as unknown"
+   elif R=$(curl -sSf https://api.osv.dev/v1/query \
+       -d "$(jq -nc --arg n "$P" --arg v "$V" '{package:{name:$n,ecosystem:"npm"},version:$v}')"); then
+     echo "$R" | jq -r '.vulns // [] | if length == 0 then "OSV: no advisories for this version"
+                        else .[] | "\(.id)  \(.summary // "")" end'
+   else
+     echo "OSV lookup FAILED: report this check as unknown, not clean"
+   fi
    ```
 
    Treat a `MAL-` id, or an advisory whose summary says malware, embedded
    malicious code or CWE-506, as **known malware**. Say so plainly; do not
-   hedge it. Run the same query without `"version"` to see past incidents.
+   hedge it. Drop `version` from the query to see past incidents. Only the
+   explicit "no advisories" line counts as clean; a failed or empty request
+   is "unknown".
 
-2. **Who published recent versions, provenance and install scripts:**
+2. **Publisher history, provenance and install scripts.** This lists the 10
+   most recent releases plus the version being checked and the one published
+   before it:
 
    ```bash
-   curl -s "https://registry.npmjs.org/$P" | jq -r '
-     .time as $t | .versions | to_entries
-     | map({v: .key, by: .value._npmUser.name, at: $t[.key],
-            prov: (.value.dist.attestations != null),
-            inst: ((.value.scripts // {}) | with_entries(select(.key | test("^(pre|post)?install$"))) | keys)})
-     | sort_by(.at) | .[-10:][]
-     | "\(.at[:10])  \(.v)  by=\(.by)  provenance=\(.prov)  install=\(.inst | join(","))"'
+   if DOC=$(curl -sSf "https://registry.npmjs.org/$PE"); then
+     echo "$DOC" | jq -r --arg v "$V" 'if (.time[$v] != null and .versions[$v] == null)
+       then "REMOVED: \($v) was published but npm has pulled it" else empty end'
+     echo "$DOC" | jq -r --arg v "$V" '
+       .time as $t
+       | [.versions | to_entries[] | {v: .key, by: .value._npmUser.name, at: $t[.key],
+           prov: (.value.dist.attestations != null),
+           inst: ((.value.scripts // {}) | with_entries(select(.key | test("^(pre|post)?install$"))) | keys)}]
+       | sort_by(.at) as $a | ($a | map(.v) | index($v)) as $i
+       | $a | to_entries[]
+       | select(.key >= ($a | length) - 10 or ($i != null and (.key == $i or .key == $i - 1)))
+       | .value
+       | "\(.at[:10])  \(.v)  by=\(.by)  provenance=\(.prov)  install=\(.inst | join(","))\(if .v == $v then "   <- checking" else "" end)"'
+   else
+     echo "registry lookup FAILED: report publisher, provenance and script checks as unknown"
+   fi
    ```
 
    Red flags, strongest first:
-   - The newest version was published by an account that never published
-     before, especially soon after it was added as a maintainer.
-   - Provenance was present on earlier versions and is missing on the newest.
+   - `REMOVED`: npm pulls releases mostly for malware.
+   - The checked version was published by an account that never published
+     this package before, especially soon after it was added as a maintainer.
+   - Provenance was present on the previous release and is missing on the
+     checked one.
    - An install script (`preinstall`, `install`, `postinstall`) appears in a
-     patch release that previously had none.
+     release whose predecessor had none.
    - A burst of releases within hours after a long quiet period.
 
-3. **Typosquat and abandonment:** compare the name against well-known packages
-   (one edit away, swapped scope, `-js`/`.js` suffix). Check `deprecated` and
-   weekly downloads:
-   `curl -s https://api.npmjs.org/downloads/point/last-week/$P`.
+3. **Typosquat and abandonment:** compare the name against well-known
+   packages (one edit away, swapped scope, `-js`/`.js` suffix). Check
+   `deprecated` (`npm view "$P@$V" deprecated`) and weekly downloads
+   (`curl -sSf "https://api.npmjs.org/downloads/point/last-week/$P"`).
    Low downloads alone are not a red flag. Low downloads together with a name
    one character away from a popular package is.
 
