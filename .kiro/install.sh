@@ -70,7 +70,9 @@ if [ -d "$SOURCE_KIRO/skills" ]; then
     skill_name="$(basename "$d")"
     if [ ! -d "$TARGET/.kiro/skills/$skill_name" ]; then
       mkdir -p "$TARGET/.kiro/skills/$skill_name"
-      cp "$d"* "$TARGET/.kiro/skills/$skill_name/" 2>/dev/null || true
+      # -R with a trailing "/." copies the whole skill tree, so nested
+      # resources such as examples/ and references/ are installed too.
+      cp -R "$d". "$TARGET/.kiro/skills/$skill_name/" 2>/dev/null || true
       skills=$((skills + 1))
     fi
   done
