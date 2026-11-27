@@ -8833,10 +8833,14 @@ function runTests() {
       // publisher only after the contender has signalled it reached the
       // held lock. A fixed pause could expire first on a loaded machine
       // and let the test pass without the interleaving ever happening.
+      // Each writer's state is captured at its own state-file rename:
+      // reading the file after both finish could verify the other
+      // writer's write instead.
       const publisherDriver = [
         'const fs = require("fs");',
         'const path = require("path");',
         `const resultFile = ${JSON.stringify(publisherResultFile)};`,
+        `const stateFile = ${JSON.stringify(stateFile)};`,
         'try {',
         `  process.env.GATEGUARD_STATE_DIR = ${JSON.stringify(stateDir)};`,
         `  process.env.CLAUDE_SESSION_ID = ${JSON.stringify(TEST_SESSION_ID)};`,
@@ -8845,6 +8849,7 @@ function runTests() {
         '  const origRename = fs.renameSync;',
         '  fs.linkSync = () => { const e = new Error("link unavailable"); e.code = "EPERM"; throw e; };',
         '  let paused = false;',
+        '  let stateSnapshot = null;',
         '  fs.renameSync = function (src, dest) {',
         `    if (!paused && path.resolve(String(dest)) === ${JSON.stringify(keyPath)}) {`,
         '      paused = true;',
@@ -8853,11 +8858,14 @@ function runTests() {
         '      const releaseDeadline = Date.now() + 10000;',
         `      while (!fs.existsSync(${JSON.stringify(releaseFile)}) && Date.now() < releaseDeadline) Atomics.wait(waitCell, 0, 0, 10);`,
         '    }',
+        '    if (path.resolve(String(dest)) === path.resolve(stateFile)) {',
+        '      try { stateSnapshot = fs.readFileSync(String(src), "utf8"); } catch (_) {}',
+        '    }',
         '    return origRename.apply(fs, [src, dest]);',
         '  };',
         `  const hook = require(${JSON.stringify(hookScript)});`,
         `  const res = hook.run(${JSON.stringify(publisherPayload)});`,
-        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: res.stdout || null, err: res.stderr || null }), "utf8");',
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: res.stdout || null, err: res.stderr || null, snapshot: stateSnapshot }), "utf8");',
         '} catch (err) {',
         '  fs.writeFileSync(resultFile, JSON.stringify({ code: 1, error: String((err && err.stack) || err) }), "utf8");',
         '}'
@@ -8876,6 +8884,7 @@ function runTests() {
         "  process.env.ECC_HOOK_PROFILE = 'standard';",
         "  process.env.GATEGUARD_EXTERNAL_CONTRACT_QUESTION = '';",
         '  const origOpenSync = fs.openSync;',
+        '  const origRename = fs.renameSync;',
         '  fs.linkSync = () => { const e = new Error("link unavailable"); e.code = "EPERM"; throw e; };',
         '  fs.openSync = function (target, flags, ...rest) {',
         '    try {',
@@ -8887,11 +8896,16 @@ function runTests() {
         '      throw err;',
         '    }',
         '  };',
+        '  let stateSnapshot = null;',
+        '  fs.renameSync = function (src, dest) {',
+        '    if (path.resolve(String(dest)) === path.resolve(stateFile)) {',
+        '      try { stateSnapshot = fs.readFileSync(String(src), "utf8"); } catch (_) {}',
+        '    }',
+        '    return origRename.apply(fs, [src, dest]);',
+        '  };',
         `  const hook = require(${JSON.stringify(hookScript)});`,
         `  const res = hook.run(${JSON.stringify(contenderPayload)});`,
-        '  let snapshot = null;',
-        '  try { snapshot = fs.readFileSync(stateFile, "utf8"); } catch (_) {}',
-        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: res.stdout || null, err: res.stderr || null, snapshot }), "utf8");',
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: res.stdout || null, err: res.stderr || null, snapshot: stateSnapshot }), "utf8");',
         '} catch (err) {',
         '  fs.writeFileSync(resultFile, JSON.stringify({ code: 1, error: String((err && err.stack) || err) }), "utf8");',
         '}'
@@ -8919,6 +8933,7 @@ function runTests() {
       assert.ok(!String(contenderResult.err || '').includes('could not be persisted'), 'competing save must not warn of a persistence failure');
       assert.ok(!fs.existsSync(lockPath), 'fallback publication lock must be released');
       assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'one published key must survive');
+      assert.ok(publisherResult.snapshot && stateTextVerifies(publisherResult.snapshot), 'the publisher save must verify with the published key');
       assert.ok(contenderResult.snapshot && stateTextVerifies(contenderResult.snapshot), 'the competing save must verify with the published key');
       assert.ok(persistedStateVerifies(), 'the final state must verify with the published key');
     })
@@ -8935,6 +8950,7 @@ function runTests() {
       const lockPath = `${keyPath}.lock`;
       const holdingFile = path.join(stateDir, 'holder-holding');
       const attemptedFile = path.join(stateDir, 'contender-attempted');
+      const doneFile = path.join(stateDir, 'holder-done');
       // A holder that takes the publication lock and releases it without
       // publishing: the contender must retry acquisition and publish its
       // own key instead of waiting out the budget and warning through.
@@ -8952,6 +8968,7 @@ function runTests() {
         `  while (!fs.existsSync(${JSON.stringify(attemptedFile)}) && Date.now() < attemptDeadline) Atomics.wait(waitCell, 0, 0, 10);`,
         '  Atomics.wait(waitCell, 0, 0, 50);',
         '  fs.unlinkSync(lockPath);',
+        `  fs.writeFileSync(${JSON.stringify(doneFile)}, "done", "utf8");`,
         '} catch (err) {',
         '  try { fs.unlinkSync(lockPath); } catch (_) {}',
         '  throw err;',
@@ -8983,8 +9000,12 @@ function runTests() {
         fs.linkSync = originalLinkSync;
         fs.openSync = originalOpenSync;
       }
-      const exitDeadline = Date.now() + 5000;
-      while (holder.exitCode === null && Date.now() < exitDeadline) Atomics.wait(waitCell, 0, 0, 10);
+      // The holder signals completion with a file: polling exitCode from
+      // this blocked thread never observes the exit, so that loop always
+      // ran out its full deadline.
+      const doneDeadline = Date.now() + 5000;
+      while (!fs.existsSync(doneFile) && Date.now() < doneDeadline) Atomics.wait(waitCell, 0, 0, 10);
+      assert.ok(fs.existsSync(doneFile), 'holder must release the lock and finish');
       try { holder.kill(); } catch (_) { /* already gone */ }
       const output = parseOutput(result.stdout);
       assert.ok(output && output.hookSpecificOutput, 'hook must produce JSON output');
