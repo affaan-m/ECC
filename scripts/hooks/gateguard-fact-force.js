@@ -1665,26 +1665,579 @@ function getStateFile(data) {
   return activeStateFile;
 }
 
-function loadState() {
-  const stateFile = getStateFile();
+// --- GateGuard state-file integrity (#4140) ---
+//
+// The gated agent can write to STATE_DIR, so a state file that merely parses
+// is not evidence the hook wrote it. State files carry an HMAC-SHA256
+// signature (`_sig`) over the whole payload, keyed by a per-directory secret
+// (`.hmac-key`, 0600 on POSIX) and bound to the session key, so a forged,
+// tampered, or cross-session-replayed file fails verification. Verification
+// failure fails closed: the state is treated as empty and the gate denies.
+// This is defense-in-depth, not a security boundary — a process running as
+// the same OS user can read `.hmac-key` and forge signatures, so airtight
+// isolation would need harness-managed protected storage. See
+// docs/gateguard/design-notes.md#state-file-is-untrusted.
+const HMAC_KEY_FILE = '.hmac-key';
+const HMAC_DOMAIN = 'gateguard-state-v1';
+const HMAC_HEX_RE = /^[0-9a-f]{64}$/;
+let warnedIntegrityFailure = false;
+
+function warnIntegrityOnce() {
+  if (warnedIntegrityFailure) return;
+  warnedIntegrityFailure = true;
   try {
-    if (fs.existsSync(stateFile)) {
-      const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-      const lastActive = state.last_active || 0;
-      if (Date.now() - lastActive > activeIdleWindowMs) {
-        try {
-          fs.unlinkSync(stateFile);
-        } catch (_) {
-          /* ignore */
-        }
-        return { checked: [], last_active: Date.now() };
-      }
-      return state;
+    process.stderr.write('[gateguard-fact-force] State file failed integrity verification; ignoring untrusted state.\n');
+  } catch (_) {
+    /* stderr write failure is non-fatal */
+  }
+}
+
+// Deterministic serialization for signing: object keys sorted, array order
+// preserved, `undefined`/function/symbol values skipped the way JSON.stringify
+// skips them. `skipTopLevelKey` excludes the signature field itself, and only
+// at depth 0, without copying the object (so a `__proto__` key in the payload
+// cannot change the object's prototype while being serialized).
+function canonicalJson(value, skipTopLevelKey = null) {
+  if (value && typeof value === 'object' && typeof value.toJSON === 'function') {
+    value = value.toJSON();
+  }
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    const items = value.map(item => (item === undefined || typeof item === 'function' || typeof item === 'symbol' ? 'null' : canonicalJson(item)));
+    return `[${items.join(',')}]`;
+  }
+  const pairs = [];
+  for (const key of Object.keys(value).sort()) {
+    if (skipTopLevelKey !== null && key === skipTopLevelKey) continue;
+    const field = value[key];
+    if (field === undefined || typeof field === 'function' || typeof field === 'symbol') continue;
+    pairs.push(`${JSON.stringify(key)}:${canonicalJson(field)}`);
+  }
+  return `{${pairs.join(',')}}`;
+}
+
+function computeStateHmac(key, sessionKey, stateObj) {
+  return crypto.createHmac('sha256', key).update(`${HMAC_DOMAIN}\0${sessionKey}\0`).update(canonicalJson(stateObj, '_sig')).digest();
+}
+
+// Read the integrity key without creating anything. A symlink is rejected:
+// honoring #3655's symlink vector for the key file itself. O_NOFOLLOW is
+// POSIX-only; where it is unavailable the check falls back to an lstat
+// rejection before opening (a swap between the check and the open is
+// accepted there — the directory itself is user-scoped on Windows).
+function readKeyOnce(keyPath, nofollow) {
+  let fd;
+  try {
+    if (nofollow) {
+      // O_NONBLOCK: opening a FIFO without it blocks until a writer appears,
+      // and the fstatSync type check below would never run. Regular files
+      // are unaffected by the flag.
+      fd = fs.openSync(keyPath, fs.constants.O_RDONLY | nofollow | (fs.constants.O_NONBLOCK || 0));
+    } else {
+      const linkStat = fs.lstatSync(keyPath);
+      if (linkStat.isSymbolicLink() || !linkStat.isFile()) return null;
+      fd = fs.openSync(keyPath, fs.constants.O_RDONLY);
     }
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) return null;
+    return fs.readFileSync(fd, 'utf8').trim();
+  } catch (err) {
+    if (nofollow && err && (err.code === 'EINVAL' || err.code === 'ENOTSUP' || err.code === 'EOPNOTSUPP')) {
+      try {
+        const linkStat = fs.lstatSync(keyPath);
+        if (linkStat.isSymbolicLink() || !linkStat.isFile()) return null;
+        return fs.readFileSync(keyPath, 'utf8').trim();
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  }
+}
+
+function readKeyIfExists() {
+  const keyPath = path.join(STATE_DIR, HMAC_KEY_FILE);
+  const nofollow = fs.constants.O_NOFOLLOW || 0;
+  // Atomic publication never leaves a visible empty file, so a transiently
+  // empty read can only come from a key stranded by a killed pre-fix writer;
+  // pause briefly between re-reads so the retry can actually observe the
+  // file settling instead of spinning through all five attempts in
+  // microseconds. A non-empty malformed key is corruption, not a race, and
+  // fails at once. Any failure here fails closed downstream, never throws.
+  const waitCell = new Int32Array(new SharedArrayBuffer(4));
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const hex = readKeyOnce(keyPath, nofollow);
+    if (hex !== '') return HMAC_HEX_RE.test(hex) ? Buffer.from(hex, 'hex') : null;
+    if (attempt < 4) Atomics.wait(waitCell, 0, 0, 2);
+  }
+  return null;
+}
+
+// A key file the hook will never trust: malformed contents, a symlink, or a
+// non-regular file. Replacing it (rather than failing the save) keeps a
+// corrupt key from converting a fail-closed verification into a fail-open
+// persist failure. Replacement retires the file aside and publishes the
+// fresh key with a hard link, so concurrent repairs converge on one key.
+
+// How long an empty key file must have been sitting before it is treated
+// as abandoned mid-creation rather than a concurrent creator's in-flight
+// file. Atomic publish paths never leave a visible empty file, so an empty
+// file older than the grace period was stranded by a killed process. The
+// grace period exceeds FAT's 2s timestamp granularity.
+const EMPTY_KEY_GRACE_MS = 5000;
+
+function keyFileIsReplaceable(keyPath) {
+  try {
+    const linkStat = fs.lstatSync(keyPath);
+    if (linkStat.isSymbolicLink()) return true;
+    // A directory at the key path is never replaceable: it must be left in
+    // place and surface as a persist failure, never renamed or deleted.
+    if (linkStat.isDirectory()) return false;
+    if (!linkStat.isFile()) return true;
+    const content = fs.readFileSync(keyPath, 'utf8').trim();
+    if (content === '') return Date.now() - linkStat.mtimeMs > EMPTY_KEY_GRACE_MS;
+    return !HMAC_HEX_RE.test(content);
+  } catch (_) {
+    return false;
+  }
+}
+
+// Retire an untrusted key file and publish the fresh key exclusively, so
+// concurrent repairs converge instead of overwriting each other: the file
+// is moved aside under a unique name (never deleted outright), the new key
+// is published with a hard link (or a locked atomic rename where hard links
+// are unavailable), and losing the publication race means another repair
+// won — re-read the winner instead of racing it. The caller re-reads after
+// any replacement so it never signs with a superseded key. Directories are
+// never retired: they surface as a persist failure.
+// Whether the key file at keyPath may be retired by a repair: a missing
+// file has nothing to retire (the repair publishes below), a directory is
+// never retired, and a file is retirable only when its contents are not a
+// valid key. A valid key is never retirable — retiring it would discard
+// state signed with it.
+function keyFileIsRetirable(keyPath) {
+  let linkStat;
+  try {
+    linkStat = fs.lstatSync(keyPath);
+  } catch (err) {
+    // Only a genuinely missing file has nothing to retire. Any other
+    // lstat failure (EACCES/EIO/ENOTDIR) leaves the file's state unknown:
+    // treating it as missing could retire a valid key we simply could
+    // not stat, so surface the error instead of guessing.
+    if (err && err.code === 'ENOENT') return true;
+    throw err;
+  }
+  if (linkStat.isDirectory()) return false;
+  return keyFileIsReplaceable(keyPath);
+}
+
+// Remove a retired key file. Best-effort — a leftover .retired file is
+// inert (pruneStaleFiles only matches state-*.json) and never signed with.
+function discardRetired(retiredPath) {
+  try {
+    fs.unlinkSync(retiredPath);
+  } catch (_) {
+    /* best-effort cleanup of the retired file */
+  }
+}
+
+// The replaceability check, the retirement, and the publication all run
+// under the fallback publication lock. Without it, a second repair can
+// publish a valid key between this repair's check and its retirement, and
+// this repair then renames that valid key aside — state signed with it
+// stops verifying and the gate repeats first-touch denials. (The failure
+// is fail-closed, never an allow, but the denials are spurious.) The lock
+// is the same one the fallback publication uses, so a repair and a
+// publisher cannot interleave either way round.
+function recoverExistingKey(keyPath, tmpPath, key, err = new Error('integrity key file already exists')) {
+  const raced = readKeyIfExists();
+  if (raced) return raced;
+  const lockPath = `${keyPath}.lock`;
+  const deadline = Date.now() + 1000;
+  let lockFd;
+  for (;;) {
+    if (Date.now() >= deadline) throw err;
+    const acquired = acquireKeyLock(lockPath, deadline);
+    if (acquired !== null) {
+      lockFd = acquired;
+      break;
+    }
+    const outcome = waitForPublishedKey(lockPath, deadline);
+    if (outcome === 'published') {
+      const published = readKeyIfExists();
+      if (published) return published;
+      throw err;
+    }
+    if (outcome === 'released') continue;
+    throw err;
+  }
+  try {
+    fs.writeFileSync(lockFd, String(process.pid), 'utf8');
+    // Re-check under the lock: a valid key may have appeared while this
+    // repair waited for the lock. Adopt it instead of retiring it.
+    const current = readKeyIfExists();
+    if (current) return current;
+    if (!keyFileIsRetirable(keyPath)) throw err;
+    // Re-check immediately before retiring: a hard-link publisher does
+    // not take the fallback lock, so it may have published a valid key
+    // into the absent destination in the gap after the first re-check
+    // (notably when keyPath was missing and keyFileIsRetirable returned
+    // true on ENOENT). Retiring that valid key would orphan state signed
+    // with it; adopt it instead of renaming it aside.
+    const justPublished = readKeyIfExists();
+    if (justPublished) return justPublished;
+    const retiredPath = `${keyPath}.retired.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
+    let retired = false;
+    try {
+      fs.renameSync(keyPath, retiredPath);
+      retired = true;
+    } catch (_) {
+      // It vanished under us (or was never there): publish below and let
+      // the publication decide the winner.
+    }
+    if (publishKeyFile(keyPath, tmpPath, lockFd)) {
+      if (retired) discardRetired(retiredPath);
+      const published = readKeyIfExists();
+      return published || key;
+    }
+    // Another repair won the publication race: adopt its key.
+    const winner = readKeyIfExists();
+    if (winner) {
+      if (retired) discardRetired(retiredPath);
+      return winner;
+    }
+    throw err;
+  } finally {
+    releaseKeyLock(lockPath, lockFd);
+  }
+}
+
+// Publish a fresh key file so concurrent writers converge on one key and no
+// writer ever overwrites a live key: a hard link on POSIX, or a locked
+// atomic rename where hard links are unavailable (Windows/FAT). Both fail
+// instead of replacing a key another writer just published. The rename
+// publishes the complete temp file in one step, so a reader sees either no
+// key file or the complete key — never an empty or partial one. Returns
+// true when this writer published, false when another writer won the race.
+function publishKeyFile(keyPath, tmpPath, lockFd) {
+  try {
+    fs.linkSync(tmpPath, keyPath);
+    return true;
+  } catch (err) {
+    if (err && err.code === 'EEXIST') return false;
+    if (err && (err.code === 'EPERM' || err.code === 'ENOTSUP' || err.code === 'EXDEV')) {
+      return publishKeyFileFallback(keyPath, tmpPath, lockFd);
+    }
+    throw err;
+  }
+}
+
+// Fallback publication where hard links are unavailable: the complete temp
+// file is published with a single atomic rename, so no reader ever observes
+// an empty or partial key. A sibling lockfile serialises fallback writers —
+// rename on its own is not exclusive (POSIX rename replaces), so without
+// the lock a second writer could rename over the winner's key. The lock
+// holds the holder's pid, so a contender can tell a stale lock (holder
+// dead) from a live one and recover instead of wedging forever.
+// A contender that finds the fallback lock held by a live publisher waits
+// briefly for the key to appear instead of failing at once: the holder is
+// mid-publication, and failing here turns a first-touch denial into a
+// persistence warning that lets the edit through. Bounded: publication is
+// sub-second, and a holder that never publishes must not stall the hook.
+// If the holder releases the lock without publishing, the slot is free
+// again, so the wait reports the release and the caller retries
+// acquisition within the same budget instead of failing outright.
+function waitForPublishedKey(lockPath, deadline) {
+  const waitCell = new Int32Array(new SharedArrayBuffer(4));
+  while (!readKeyIfExists() && Date.now() < deadline) {
+    try {
+      fs.lstatSync(lockPath);
+    } catch (err) {
+      if (err && err.code === 'ENOENT') return 'released';
+      // Any other failure leaves the lock's state unknown: keep waiting
+      // until the budget runs out rather than guessing.
+    }
+    Atomics.wait(waitCell, 0, 0, 10);
+  }
+  return readKeyIfExists() ? 'published' : 'timeout';
+}
+
+// Acquire the sibling publication lock for the fallback path. Returns the
+// open file descriptor, or null when a live publisher holds it (the caller
+// should wait for the key or give up within its budget). A stale lock
+// (holder dead, or old with no readable holder) is removed and the
+// acquisition retried. The caller owns the descriptor and must release it
+// with releaseKeyLock(). Throws on unexpected errors.
+function acquireKeyLock(lockPath, deadline) {
+  for (;;) {
+    if (Date.now() >= deadline) return null;
+    try {
+      return fs.openSync(lockPath, 'wx', 0o600);
+    } catch (err) {
+      if (err && err.code === 'EEXIST') {
+        if (stealStaleKeyLock(lockPath)) continue;
+        return null;
+      }
+      throw err;
+    }
+  }
+}
+
+// Release a publication lock acquired with acquireKeyLock: close the
+// descriptor and remove the lockfile — but only when the lockfile at the
+// pathname is still the lock this descriptor refers to. A contender may
+// have stolen a lock we were slow to release and re-created the file:
+// unlinking by pathname would then delete the contender's live lock and
+// let two publishers interleave. Compare the descriptor's identity
+// (fstat at release) with the pathname's (lstatSync) and unlink only on
+// a dev+ino match (a zero inode cannot identify a file, so it never
+// counts as a match); otherwise just close our descriptor and leave the
+// new lock alone. A lock left behind is stale after 30s and a contender
+// can recover it.
+function releaseKeyLock(lockPath, lockFd) {
+  let owned = false;
+  try {
+    const fdStat = fs.fstatSync(lockFd);
+    const pathStat = fs.lstatSync(lockPath);
+    owned = fdStat.ino !== 0 && fdStat.dev === pathStat.dev && fdStat.ino === pathStat.ino;
+  } catch (_) {
+    // The descriptor is already closed or the lockfile is gone: there is
+    // nothing of ours left to remove.
+  }
+  try {
+    fs.closeSync(lockFd);
   } catch (_) {
     /* ignore */
   }
-  return { checked: [], last_active: Date.now() };
+  if (!owned) return;
+  try {
+    fs.unlinkSync(lockPath);
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+// Publish under the fallback lock, only into an absent destination. An
+// existing file — valid or corrupt — is the caller's problem:
+// recoverExistingKey retires it or adopts the winner. Checking under the
+// lock is what makes the rename safe: no cooperating writer can publish
+// between the check and the rename.
+function publishKeyFileFallbackLocked(keyPath, tmpPath) {
+  try {
+    fs.lstatSync(keyPath);
+    return false;
+  } catch (err) {
+    if (!err || err.code !== 'ENOENT') throw err;
+  }
+  fs.renameSync(tmpPath, keyPath);
+  return true;
+}
+
+function publishKeyFileFallback(keyPath, tmpPath, heldLockFd) {
+  const lockPath = `${keyPath}.lock`;
+  // The retirement path already holds the lock: publish under it directly
+  // instead of acquiring it again (acquiring our own lock would wait on
+  // ourselves). The caller owns the descriptor and releases it.
+  if (heldLockFd !== undefined) {
+    return publishKeyFileFallbackLocked(keyPath, tmpPath);
+  }
+  const deadline = Date.now() + 1000;
+  for (;;) {
+    if (Date.now() >= deadline) return false;
+    const lockFd = acquireKeyLock(lockPath, deadline);
+    if (lockFd === null) {
+      const outcome = waitForPublishedKey(lockPath, deadline);
+      if (outcome === 'published') return false;
+      if (outcome === 'released') continue;
+      return false;
+    }
+    try {
+      fs.writeFileSync(lockFd, String(process.pid), 'utf8');
+      return publishKeyFileFallbackLocked(keyPath, tmpPath);
+    } finally {
+      releaseKeyLock(lockPath, lockFd);
+    }
+  }
+}
+
+// Remove a fallback-publication lock only when its holder is provably gone:
+// the pid recorded in the lockfile is dead, or the lock is old and its pid
+// unreadable (publication is sub-second; a lock older than the grace with
+// no readable holder cannot be a live publisher). The lock is unlinked only
+// if it is still the same file that was examined — same inode and mtime —
+// so a contender that already stole and re-created it is never disturbed.
+// Returns true when the lock was removed and the caller should retry.
+const STALE_KEY_LOCK_MS = 30000;
+function stealStaleKeyLock(lockPath) {
+  let before;
+  try {
+    before = fs.statSync(lockPath);
+  } catch (_) {
+    return true; // lock vanished; retry the acquisition
+  }
+  let pid = NaN;
+  try {
+    pid = parseInt(fs.readFileSync(lockPath, 'utf8').trim(), 10);
+  } catch (_) {
+    /* unreadable lockfile: fall through to the age check */
+  }
+  if (Number.isInteger(pid) && pid > 0) {
+    try {
+      process.kill(pid, 0);
+      return false; // holder is alive
+    } catch (err) {
+      if (!err || err.code !== 'ESRCH') return false; // cannot tell; leave it
+    }
+    // Holder is dead: the lock is stale regardless of age.
+  } else if (Date.now() - before.mtimeMs < STALE_KEY_LOCK_MS) {
+    return false; // no holder pid and too young to call stale
+  }
+  try {
+    const after = fs.statSync(lockPath);
+    if (after.mtimeMs !== before.mtimeMs || (before.ino !== 0 && after.ino !== before.ino)) return false;
+  } catch (_) {
+    return true; // lock vanished; retry the acquisition
+  }
+  try {
+    fs.unlinkSync(lockPath);
+    return true;
+  } catch (_) {
+    return false; // someone else removed it or raced us
+  }
+}
+
+// Read the integrity key, creating it when a save needs one. Reads must
+// never create it: a state file with no key file cannot have been signed by
+// this hook. Publication is exclusive (hard link on POSIX, a locked atomic
+// rename where hard links are unavailable), so a concurrent reader never sees a
+// partial key and concurrent first writers converge on one key; losers
+// re-read the winner's key instead of overwriting it. A recent empty key
+// file is never replaced: the repair path enforces the abandonment age
+// guard before anything is retired.
+function getOrCreateKey() {
+  const existing = readKeyIfExists();
+  if (existing) return existing;
+
+  fs.mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
+  const keyPath = path.join(STATE_DIR, HMAC_KEY_FILE);
+  const key = crypto.randomBytes(32);
+  const keyHex = key.toString('hex');
+  const tmpPath = path.join(STATE_DIR, `${HMAC_KEY_FILE}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`);
+  try {
+    // Write the complete key and flush it before publication, so whichever
+    // path publishes it (hard link or rename) moves a durable, complete
+    // file into place.
+    const tmpFd = fs.openSync(tmpPath, 'wx', 0o600);
+    try {
+      fs.writeFileSync(tmpFd, keyHex, 'utf8');
+      fs.fsyncSync(tmpFd);
+    } finally {
+      fs.closeSync(tmpFd);
+    }
+    if (publishKeyFile(keyPath, tmpPath)) return key;
+    return recoverExistingKey(keyPath, tmpPath, key);
+  } finally {
+    try {
+      fs.unlinkSync(tmpPath);
+    } catch (_) {
+      /* ignore */
+    }
+  }
+}
+
+// The single verified-read path for state files. Both loadState() and the
+// concurrent-writer merge in saveState() read through here, so a forged file
+// cannot resurrect through the merge. Statuses: 'ok' (verified), 'missing'
+// (no file — a fresh session), 'invalid' (read but untrusted, or unreadable:
+// either way the contents cannot be trusted). Only a file that was actually
+// read and failed verification warns: a broken STATE_DIR surfaces through
+// the persist-failure warning when a save is attempted, and warning here
+// would conflate that with a forgery.
+function readVerifiedState(filePath, sessionKey) {
+  let raw;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch (err) {
+    return { state: null, status: err && err.code === 'ENOENT' ? 'missing' : 'invalid' };
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (_) {
+    warnIntegrityOnce();
+    return { state: null, status: 'invalid' };
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    warnIntegrityOnce();
+    return { state: null, status: 'invalid' };
+  }
+
+  const sig = parsed._sig;
+  if (typeof sig !== 'string' || !HMAC_HEX_RE.test(sig)) {
+    warnIntegrityOnce();
+    return { state: null, status: 'invalid' };
+  }
+
+  const key = readKeyIfExists();
+  if (!key) {
+    warnIntegrityOnce();
+    return { state: null, status: 'invalid' };
+  }
+
+  // Canonicalization recurses, so a hostile nesting depth throws a
+  // RangeError here. Treat any such failure as invalid (fail closed):
+  // nothing unverifiable may escape into the gate, where the runner's
+  // catch would turn it into a silent pass.
+  let expected;
+  try {
+    expected = computeStateHmac(key, sessionKey, parsed);
+  } catch (_) {
+    warnIntegrityOnce();
+    return { state: null, status: 'invalid' };
+  }
+  if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), expected)) {
+    warnIntegrityOnce();
+    return { state: null, status: 'invalid' };
+  }
+
+  // Rebuild the payload as plain data: spreading copies `__proto__` as an
+  // own data property instead of setting the prototype (a direct
+  // assignment would not), and the signature field is dropped without
+  // mutating the parsed object. A missing or non-array `checked` defaults
+  // to empty so a signed-but-malformed payload cannot crash the gate into
+  // failing open through the runner's catch.
+  const state = { ...parsed };
+  delete state._sig;
+  if (!Array.isArray(state.checked)) state.checked = [];
+  return { state, status: 'ok' };
+}
+
+function loadState() {
+  const stateFile = getStateFile();
+  const { state, status } = readVerifiedState(stateFile, activeSessionKey);
+  if (status !== 'ok') {
+    return { checked: [], last_active: Date.now() };
+  }
+  // The signature is verified before last_active is trusted. An expired
+  // file is left in place: deleting by pathname could remove a replacement
+  // published by a concurrent writer after this read, and stale files age
+  // out through pruneStaleFiles (mtime-based, no trust in contents).
+  if (Date.now() - (state.last_active || 0) > activeIdleWindowMs) {
+    return { checked: [], last_active: Date.now() };
+  }
+  return state;
 }
 
 function pruneCheckedEntries(checked) {
@@ -1722,8 +2275,14 @@ function saveState(state) {
     let mergedReadonlyPasses = getRoutineReadonlyPassCount(state);
 
     try {
-      if (fs.existsSync(stateFile)) {
-        const diskState = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      // The merge reads through the verified reader: an unverifiable disk
+      // file contributes nothing, so forged entries cannot resurrect when a
+      // concurrent writer saves. An expired snapshot contributes nothing
+      // either: loadState no longer unlinks expired files, so the merge
+      // must not revive entries an expired file holds.
+      const { state: diskState, status } = readVerifiedState(stateFile, activeSessionKey);
+      const diskExpired = status === 'ok' && diskState && (Date.now() - (diskState.last_active || 0) > activeIdleWindowMs);
+      if (status === 'ok' && diskState && !diskExpired) {
         if (Array.isArray(diskState.checked)) {
           mergedChecked = Array.from(new Set([...diskState.checked, ...mergedChecked]));
         }
@@ -1760,9 +2319,16 @@ function saveState(state) {
       routine_readonly_passes: mergedReadonlyPasses
     };
 
+    // The signature is attached at serialization, not on the merged state
+    // object, so the finalState literal stays the single source of the
+    // payload shape. Key creation failure throws into the persist-failure
+    // path below: no unsigned file is ever written.
+    const key = getOrCreateKey();
+    const signature = computeStateHmac(key, activeSessionKey, finalState).toString('hex');
+
     // Atomic write: temp file + rename prevents partial reads
     tmpFile = `${stateFile}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
-    fs.writeFileSync(tmpFile, JSON.stringify(finalState, null, 2), 'utf8');
+    fs.writeFileSync(tmpFile, JSON.stringify({ ...finalState, _sig: signature }, null, 2), 'utf8');
     try {
       fs.renameSync(tmpFile, stateFile);
     } catch (error) {

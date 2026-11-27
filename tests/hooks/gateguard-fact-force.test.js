@@ -3,6 +3,7 @@
  */
 
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
@@ -48,10 +49,10 @@ function clearState() {
 function writeExpiredState() {
   try {
     fs.mkdirSync(stateDir, { recursive: true });
-    const expired = {
+    const expired = signTestState({
       checked: ['some_file.js', '__bash_session__'],
       last_active: Date.now() - (8 * 60 + 1) * 60 * 1000
-    };
+    });
     fs.writeFileSync(stateFile, JSON.stringify(expired), 'utf8');
   } catch (_) {
     /* ignore */
@@ -60,7 +61,77 @@ function writeExpiredState() {
 
 function writeState(state) {
   fs.mkdirSync(stateDir, { recursive: true });
-  fs.writeFileSync(stateFile, JSON.stringify(state), 'utf8');
+  fs.writeFileSync(stateFile, JSON.stringify(signTestState(state)), 'utf8');
+}
+
+// --- Signed state fixtures (#4140) ---
+//
+// The hook rejects state files without a valid HMAC-SHA256 signature, so
+// fixtures must be signed the way the hook signs them: canonical JSON over
+// the whole payload (keys sorted, `_sig` excluded), prefixed with the domain
+// separator and the session key, keyed by the per-directory secret in
+// `.hmac-key`. This signer mirrors the hook's construction deliberately:
+// fixtures the hook must trust are built with the same inputs, while
+// forgery tests construct their own bytes.
+const HMAC_KEY_FILE = '.hmac-key';
+const HMAC_DOMAIN = 'gateguard-state-v1';
+const HMAC_HEX_RE = /^[0-9a-f]{64}$/;
+
+function testCanonicalJson(value, skipTopLevelKey = null) {
+  if (value && typeof value === 'object' && typeof value.toJSON === 'function') {
+    value = value.toJSON();
+  }
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    const items = value.map(item => (item === undefined || typeof item === 'function' || typeof item === 'symbol' ? 'null' : testCanonicalJson(item)));
+    return `[${items.join(',')}]`;
+  }
+  const pairs = [];
+  for (const key of Object.keys(value).sort()) {
+    if (skipTopLevelKey !== null && key === skipTopLevelKey) continue;
+    const field = value[key];
+    if (field === undefined || typeof field === 'function' || typeof field === 'symbol') continue;
+    pairs.push(`${JSON.stringify(key)}:${testCanonicalJson(field)}`);
+  }
+  return `{${pairs.join(',')}}`;
+}
+
+function ensureTestKey() {
+  const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+  try {
+    const existing = fs.readFileSync(keyPath, 'utf8').trim();
+    if (HMAC_HEX_RE.test(existing)) return Buffer.from(existing, 'hex');
+  } catch (_) {
+    /* missing or unreadable: generate below */
+  }
+  const key = crypto.randomBytes(32);
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(keyPath, key.toString('hex'), { encoding: 'utf8', mode: 0o600 });
+  return key;
+}
+
+function signStateForSession(sessionKey, key, state) {
+  const sig = crypto.createHmac('sha256', key).update(`${HMAC_DOMAIN}\0${sessionKey}\0`).update(testCanonicalJson(state, '_sig')).digest('hex');
+  return { ...state, _sig: sig };
+}
+
+function signTestState(state) {
+  return signStateForSession(TEST_SESSION_ID, ensureTestKey(), state);
+}
+
+function stateTextVerifies(text) {
+  const keyHex = fs.readFileSync(path.join(stateDir, HMAC_KEY_FILE), 'utf8').trim();
+  if (!HMAC_HEX_RE.test(keyHex)) return false;
+  const parsed = JSON.parse(text);
+  if (typeof parsed._sig !== 'string') return false;
+  const expected = crypto.createHmac('sha256', Buffer.from(keyHex, 'hex')).update(`${HMAC_DOMAIN}\0${TEST_SESSION_ID}\0`).update(testCanonicalJson(parsed, '_sig')).digest('hex');
+  return parsed._sig === expected;
+}
+
+function persistedStateVerifies() {
+  return stateTextVerifies(fs.readFileSync(stateFile, 'utf8'));
 }
 
 function runHook(input, env = {}) {
@@ -1897,6 +1968,7 @@ function runTests() {
   if (
     test('merges state written by another process during save', () => {
       const hook = loadDirectHook();
+      const key = ensureTestKey();
       const originalMkdirSync = fs.mkdirSync;
       let injected = false;
 
@@ -1904,12 +1976,16 @@ function runTests() {
         const result = originalMkdirSync.apply(fs, arguments);
         if (!injected && path.resolve(String(target)) === path.resolve(stateDir)) {
           injected = true;
+          // The "other process" is another hook instance, so the state it
+          // writes is signed; an unsigned injection would be rejected.
           fs.writeFileSync(
             stateFile,
-            JSON.stringify({
-              checked: ['/src/concurrent.js'],
-              last_active: Date.now()
-            }),
+            JSON.stringify(
+              signStateForSession(TEST_SESSION_ID, key, {
+                checked: ['/src/concurrent.js'],
+                last_active: Date.now()
+              })
+            ),
             'utf8'
           );
         }
@@ -6549,6 +6625,7 @@ function runTests() {
 
   gateCase('merges dir_gates and counters written by another process during save', () => {
     const hook = loadDirectHook({ CLAUDE_PROJECT_DIR: projectRoot, CLAUDE_TRANSCRIPT_PATH: '' });
+    const key = ensureTestKey();
     const originalMkdirSync = fs.mkdirSync;
     const now = Date.now();
     let injected = false;
@@ -6556,20 +6633,24 @@ function runTests() {
       const result = originalMkdirSync.apply(fs, arguments);
       if (!injected && path.resolve(String(target)) === path.resolve(stateDir)) {
         injected = true;
+        // The "other process" is another hook instance, so the state it
+        // writes is signed; an unsigned injection would be rejected.
         fs.writeFileSync(
           stateFile,
-          JSON.stringify({
-            checked: ['/src/concurrent.js'],
-            last_active: now,
-            fact_force_denials: 7,
-            dir_gates: {
-              [dirGateKey('/other/dir')]: { turn: 'u-other', at: now, first: '/other/dir/a.js', ordinal: 7 },
-              [dirGateKey(`${projectRoot}/src/conc`)]: { turn: 'u-old', at: 1, first: 'stale', ordinal: 1 }
-            },
-            denials_by_class: { code: 5, prose: 2 },
-            credited_by_class: { test: 3 },
-            sibling_allows: 9
-          }),
+          JSON.stringify(
+            signStateForSession(TEST_SESSION_ID, key, {
+              checked: ['/src/concurrent.js'],
+              last_active: now,
+              fact_force_denials: 7,
+              dir_gates: {
+                [dirGateKey('/other/dir')]: { turn: 'u-other', at: now, first: '/other/dir/a.js', ordinal: 7 },
+                [dirGateKey(`${projectRoot}/src/conc`)]: { turn: 'u-old', at: 1, first: 'stale', ordinal: 1 }
+              },
+              denials_by_class: { code: 5, prose: 2 },
+              credited_by_class: { test: 3 },
+              sibling_allows: 9
+            })
+          ),
           'utf8'
         );
       }
@@ -7047,16 +7128,27 @@ function runTests() {
     const now = Date.now();
     const legacy = classGateKey('code', 'src/pp');
     fs.mkdirSync(stateDir, { recursive: true });
-    fs.writeFileSync(
-      stateFile,
-      '{"checked":[],"last_active":' + now + ',"dir_gates":{"__proto__":{"turn":null,"at":1,"first":"x","ordinal":1},' +
-        '"constructor":{"turn":null,"at":' + (now - 1000) + ',"first":"x","ordinal":1},' +
-        '"prototype":{"turn":null,"at":' + (now - 1000) + ',"first":"x","ordinal":1},' +
-        JSON.stringify(legacy) + ':{"turn":null,"at":' + (now - 1000) + ',"first":"forged","ordinal":"NaN"}},' +
-        '"denials_by_class":{"__proto__":{"polluted":1},"constructor":5,"prototype":4,"code":7},' +
-        '"credited_by_class":{"constructor":2},"sibling_allows":0}',
-      'utf8'
-    );
+    // The hostile payload is built as a raw string so the prototype keys
+    // survive as JSON keys; it is then signed, because an unsigned file
+    // would be rejected before the getters ever see it.
+    const hostileJson =
+      '{"checked":[],"last_active":' +
+      now +
+      ',"dir_gates":{"__proto__":{"turn":null,"at":1,"first":"x","ordinal":1},' +
+      '"constructor":{"turn":null,"at":' +
+      (now - 1000) +
+      ',"first":"x","ordinal":1},' +
+      '"prototype":{"turn":null,"at":' +
+      (now - 1000) +
+      ',"first":"x","ordinal":1},' +
+      JSON.stringify(legacy) +
+      ':{"turn":null,"at":' +
+      (now - 1000) +
+      ',"first":"forged","ordinal":"NaN"}},' +
+      '"denials_by_class":{"__proto__":{"polluted":1},"constructor":5,"prototype":4,"code":7},' +
+      '"credited_by_class":{"constructor":2},"sibling_allows":0}';
+    const signedHostile = signStateForSession(TEST_SESSION_ID, ensureTestKey(), JSON.parse(hostileJson));
+    fs.writeFileSync(stateFile, JSON.stringify(signedHostile), 'utf8');
     assertClassDenied(classWrite('src/pp/a.js'), 'NaN ordinal gate not honored');
     assert.strictEqual({}.polluted, undefined, 'Object.prototype not polluted');
     const raw = fs.readFileSync(stateFile, 'utf8');
@@ -7584,7 +7676,12 @@ function runTests() {
   const idleSeed = (fileName, ageMs) => {
     fs.mkdirSync(stateDir, { recursive: true });
     const file = path.join(stateDir, fileName);
-    fs.writeFileSync(file, JSON.stringify({ checked: ['__bash_session__'], last_active: Date.now() - ageMs }), 'utf8');
+    const sessionKey = fileName.replace(/^state-/, '').replace(/\.json$/, '');
+    const signed = signStateForSession(sessionKey, ensureTestKey(), {
+      checked: ['__bash_session__'],
+      last_active: Date.now() - ageMs
+    });
+    fs.writeFileSync(file, JSON.stringify(signed), 'utf8');
     return file;
   };
   const HOUR = 60 * 60 * 1000;
@@ -7605,7 +7702,9 @@ function runTests() {
     const [file] = idleStateFiles();
     assert.ok(/^state-tx-/.test(file), file);
     const state = JSON.parse(fs.readFileSync(path.join(stateDir, file), 'utf8'));
-    fs.writeFileSync(path.join(stateDir, file), JSON.stringify({ ...state, last_active: Date.now() - 2 * HOUR }), 'utf8');
+    const sessionKey = file.replace(/^state-/, '').replace(/\.json$/, '');
+    const resigned = signStateForSession(sessionKey, ensureTestKey(), { ...state, last_active: Date.now() - 2 * HOUR });
+    fs.writeFileSync(path.join(stateDir, file), JSON.stringify(resigned), 'utf8');
     assert.strictEqual(roDecision(roBash('npm test', { transcript_path: transcript }, idleEnvNoIds)), undefined);
   });
 
@@ -8027,6 +8126,1445 @@ function runTests() {
       ]) {
         assert.ok(!reason.includes(leaked), `condensed default denial must not contain ${leaked}`);
       }
+    })
+  )
+    passed++;
+  else failed++;
+
+  // --- State-file integrity (#4140) ---
+  //
+  // The gated agent can write to STATE_DIR, so a state file that merely
+  // parses is not evidence the hook wrote it. State files carry an
+  // HMAC-SHA256 signature (`_sig`) over the whole payload, keyed by a
+  // per-directory secret and bound to the session key. Every test below
+  // seeds a checked target and then varies exactly one trust input, so a
+  // deny proves the tampered input was rejected (an accepted file would
+  // allow the already-checked Edit).
+  clearState();
+  if (
+    test('rejects a forged checked entry in an unsigned state file (#4140)', () => {
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify({ checked: ['/src/forged.js'], last_active: Date.now() }), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/forged.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'unsigned forgery must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+      assert.ok(!result.stderr.includes('/src/forged.js'), 'warning must not leak state contents');
+      const keyHex = fs.readFileSync(path.join(stateDir, HMAC_KEY_FILE), 'utf8').trim();
+      assert.ok(!result.stderr.includes(keyHex), 'warning must not leak the key');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('honours validly signed checked state without warning (#4140)', () => {
+      writeState({ checked: ['/src/signed.js'], last_active: Date.now() });
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/signed.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.notStrictEqual(decisionOf(result), 'deny', 'validly signed state must be honoured');
+      assert.ok(!result.stderr.includes('integrity verification'), 'valid state must not warn');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects a state file whose payload was tampered after signing (#4140)', () => {
+      const signed = signTestState({ checked: [], last_active: Date.now() });
+      signed.checked.push('/src/tampered.js');
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/tampered.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'stale signature must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects a state file whose signature was tampered (#4140)', () => {
+      const signed = signTestState({ checked: ['/src/mac-tampered.js'], last_active: Date.now() });
+      const last = signed._sig.slice(-1);
+      signed._sig = `${signed._sig.slice(0, -1)}${last === '0' ? '1' : '0'}`;
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/mac-tampered.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'tampered signature must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects legacy unsigned state instead of grandfathering it (#4140)', () => {
+      const key = ensureTestKey();
+      assert.ok(key, 'fixture key should exist');
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify({ checked: ['/src/legacy.js'], last_active: Date.now() }), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/legacy.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'unsigned legacy state must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('fails closed when the integrity key is deleted (#4140)', () => {
+      writeState({ checked: ['/src/key-deleted.js'], last_active: Date.now() });
+      const allowed = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/key-deleted.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.notStrictEqual(decisionOf(allowed), 'deny', 'signed fixture must allow before the key is deleted');
+      fs.unlinkSync(path.join(stateDir, HMAC_KEY_FILE));
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/key-deleted.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'state without its key must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+      assert.ok(fs.existsSync(stateFile), 'verification failure must not delete the state file');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('fails closed when the integrity key is rotated (#4140)', () => {
+      writeState({ checked: ['/src/key-rotated.js'], last_active: Date.now() });
+      fs.writeFileSync(path.join(stateDir, HMAC_KEY_FILE), crypto.randomBytes(32).toString('hex'), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/key-rotated.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'state signed under the old key must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+      assert.ok(fs.existsSync(stateFile), 'verification failure must not delete the state file');
+      assert.ok(persistedStateVerifies(), 'the next save should self-heal with a signature under the new key');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('fails closed when the state file was never signed under any key (#4140)', () => {
+      const ephemeral = crypto.randomBytes(32);
+      const signed = signStateForSession(TEST_SESSION_ID, ephemeral, {
+        checked: ['/src/no-key.js'],
+        last_active: Date.now()
+      });
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      assert.ok(!fs.existsSync(keyPath), 'no key file should exist for this fixture');
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/no-key.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'state with no key file must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('does not resurrect forged entries through the save merge (#4140)', () => {
+      const targetA = '/src/merge-target-a.js';
+      const targetB = '/src/merge-target-b.js';
+      const first = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: targetA, old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(first), 'deny', 'first touch must be denied');
+      assert.ok(persistedStateVerifies(), 'hook should persist signed state');
+      const forged = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      forged.checked.push(targetA);
+      fs.writeFileSync(stateFile, JSON.stringify(forged), 'utf8');
+      const second = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: targetB, old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(second), 'deny', 'unrelated first touch must be denied');
+      assert.ok(persistedStateVerifies(), 'save must replace the forgery with signed state');
+      const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      assert.ok(!persisted.checked.includes(targetA), 'forged entry must not survive the merge');
+      const retry = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: targetA, old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(retry), 'deny', 'forged target must still be denied');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects a signed state file with a tampered last_active (#4140)', () => {
+      const signed = signTestState({ checked: ['/src/time-tampered.js'], last_active: Date.now() });
+      signed.last_active += 60 * 60 * 1000;
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/time-tampered.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'tampered last_active must invalidate the signature');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('fails closed on a malformed integrity key without throwing (#4140)', () => {
+      writeState({ checked: ['/src/bad-key.js'], last_active: Date.now() });
+      fs.writeFileSync(path.join(stateDir, HMAC_KEY_FILE), 'not-a-key', 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/bad-key.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(result.code, 0, 'malformed key must not crash the hook');
+      assert.strictEqual(decisionOf(result), 'deny', 'malformed key must fail closed');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+      assert.ok(!result.stderr.includes('RangeError'), 'warning must not leak an exception');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('initialises fresh state without an integrity warning when no state or key exists (#4140)', () => {
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      assert.ok(!fs.existsSync(stateFile), 'no state file should exist');
+      assert.ok(!fs.existsSync(keyPath), 'no key file should exist');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/fresh.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'fresh first touch must be denied');
+      assert.ok(!result.stderr.includes('integrity verification'), 'fresh sessions must not warn');
+      assert.ok(fs.existsSync(keyPath), 'first save should create the integrity key');
+      assert.ok(persistedStateVerifies(), 'first save should write a verifiable signature');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects tampering with an unknown extra field (#4140)', () => {
+      const signed = signTestState({ checked: ['/src/extra-field.js'], last_active: Date.now() });
+      signed.future_field = { n: 1 };
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/extra-field.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'whole-payload signing must cover unknown fields');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects tampering with a batch_denials field (#4140)', () => {
+      const signed = signTestState({
+        checked: ['/src/batch-denials.js'],
+        last_active: Date.now(),
+        batch_denials: { key1: { batch: 'b1', at: 1 } }
+      });
+      signed.batch_denials.key1.at = 999;
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/batch-denials.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'whole-payload signing must cover batch_denials');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects a state file replayed from another session (#4140)', () => {
+      const key = ensureTestKey();
+      const payload = { checked: ['/src/replayed.js'], last_active: Date.now() };
+      const otherFile = path.join(stateDir, 'state-replay-session-b.json');
+      const editInput = {
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/replayed.js', old_string: 'a', new_string: 'b' }
+      };
+      fs.writeFileSync(otherFile, JSON.stringify(signStateForSession('replay-session-a', key, payload)), 'utf8');
+      const replayed = runHook(editInput, { CLAUDE_SESSION_ID: 'replay-session-b' });
+      assert.strictEqual(decisionOf(replayed), 'deny', 'cross-session replay must be denied');
+      assert.ok(replayed.stderr.includes('integrity verification'), 'should warn about the rejected state');
+      fs.writeFileSync(otherFile, JSON.stringify(signStateForSession('replay-session-b', key, payload)), 'utf8');
+      const legit = runHook(editInput, { CLAUDE_SESSION_ID: 'replay-session-b' });
+      assert.notStrictEqual(decisionOf(legit), 'deny', 'correctly bound state must be honoured');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects malformed _sig shapes without throwing (#4140)', () => {
+      const shapes = [null, 123, {}, 'deadbeef', 'g'.repeat(64), ''];
+      for (const shape of shapes) {
+        clearState();
+        ensureTestKey();
+        fs.mkdirSync(stateDir, { recursive: true });
+        fs.writeFileSync(stateFile, JSON.stringify({ checked: ['/src/bad-sig.js'], last_active: Date.now(), _sig: shape }), 'utf8');
+        const result = runHook({
+          tool_name: 'Edit',
+          tool_input: { file_path: '/src/bad-sig.js', old_string: 'a', new_string: 'b' }
+        });
+        assert.strictEqual(result.code, 0, `shape ${JSON.stringify(shape)} must not crash the hook`);
+        assert.strictEqual(decisionOf(result), 'deny', `shape ${JSON.stringify(shape)} must be denied`);
+        assert.ok(!result.stderr.includes('RangeError'), 'malformed _sig must not leak an exception');
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('rejects a symlinked integrity key file (#4140)', () => {
+      if (process.platform === 'win32') {
+        assert.ok(true, 'symlink rejection is POSIX-only');
+        return;
+      }
+      const realKeyPath = path.join(stateDir, 'real-key');
+      const realKey = crypto.randomBytes(32);
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(realKeyPath, realKey.toString('hex'), 'utf8');
+      fs.symlinkSync(realKeyPath, path.join(stateDir, HMAC_KEY_FILE));
+      const signed = signStateForSession(TEST_SESSION_ID, realKey, {
+        checked: ['/src/symlink-key.js'],
+        last_active: Date.now()
+      });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/symlink-key.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'symlinked key must not be followed');
+      assert.ok(result.stderr.includes('integrity verification'), 'should warn about the rejected state');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('warns exactly once per process on integrity failure without leaking contents (#4140)', () => {
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify({ checked: ['/src/warn-once.js'], last_active: Date.now() }), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/warn-once.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'unsigned state must be denied');
+      const warnings = (result.stderr.match(/failed integrity verification/g) || []).length;
+      assert.strictEqual(warnings, 1, 'exactly one integrity warning per process');
+      assert.ok(!result.stderr.includes('/src/warn-once.js'), 'warning must not leak state contents');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('preserves idle expiry for validly signed state (#4140)', () => {
+      writeExpiredState();
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: 'some_file.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'expired state must reset to a fresh first touch');
+      assert.ok(!result.stderr.includes('integrity verification'), 'valid signature must not warn on expiry');
+      const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      assert.ok(!persisted.checked.includes('some_file.js'), 'expired checked entries must not survive');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('integrity failure takes precedence over idle expiry (#4140)', () => {
+      const signed = signTestState({ checked: ['/src/stale.js'], last_active: Date.now() });
+      signed.last_active = Date.now() - 9 * 60 * 60 * 1000;
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/stale.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'unverifiable state must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'verification must run before expiry handling');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('deeply nested forged state fails closed instead of crashing the hook (#4140)', () => {
+      ensureTestKey();
+      const depth = 5000;
+      let nested = '[]';
+      for (let i = 0; i < depth; i++) nested = `[${nested}]`;
+      const raw = `{"a":${nested},"checked":[],"last_active":${Date.now()},"_sig":"${'ab'.repeat(32)}"}`;
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, raw, 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/nested.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'unverifiable deeply nested state must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'verification failure must warn once');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('a named pipe at the key path cannot stall the hook (#4140)', () => {
+      if (process.platform === 'win32') return;
+      fs.mkdirSync(stateDir, { recursive: true });
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const made = spawnSync('mkfifo', [keyPath]);
+      assert.strictEqual(made.status, 0, 'mkfifo must succeed for the fixture');
+      // Seed a state file with a well-formed _sig so the LOAD path reaches
+      // readKeyIfExists() (the format check passes, the key read follows).
+      // The signature is deliberately not valid and must not be built with
+      // signTestState/ensureTestKey: reading the FIFO without O_NONBLOCK
+      // in this process would block. Without the fixture, loadState()
+      // returns `missing` before ever opening the key.
+      fs.writeFileSync(stateFile, JSON.stringify({ checked: [], last_active: Date.now(), _sig: 'a'.repeat(64) }), 'utf8');
+      const started = Date.now();
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/pipe.js', old_string: 'a', new_string: 'b' }
+      });
+      const elapsed = Date.now() - started;
+      assert.ok(elapsed < 10000, `hook must return promptly with a pipe key (took ${elapsed}ms)`);
+      assert.strictEqual(decisionOf(result), 'deny', 'unreadable key must fail closed');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('an abandoned empty key file is repaired instead of disabling denials (#4140)', () => {
+      fs.mkdirSync(stateDir, { recursive: true });
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      fs.writeFileSync(keyPath, '', 'utf8');
+      const old = new Date(Date.now() - 60 * 1000);
+      fs.utimesSync(keyPath, old, old);
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/empty-key.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'first touch must still be denied after key repair');
+      assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'key file must hold a valid key after repair');
+      assert.ok(persistedStateVerifies(), 'state saved after repair must verify');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('concurrent recovery from a malformed key converges on one valid key (#4140)', () => {
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(path.join(stateDir, HMAC_KEY_FILE), 'not-a-valid-key', 'utf8');
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const payload = JSON.stringify({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/repair-race.js', old_string: 'a', new_string: 'b' }
+      });
+      const driver = [
+        "const { spawn } = require('child_process');",
+        'const results = [];',
+        'let pending = 8;',
+        'let sawDeny = false;',
+        'function finish() {',
+        "  if (!sawDeny) { process.stderr.write('no child observed a first-touch denial\\n'); process.exit(1); }",
+        '  const failures = results.filter(r => r.code !== 0 || !r.valid);',
+        '  if (failures.length) {',
+        "    process.stderr.write('concurrent child failures:\\n' + failures.map(f => `#${f.index} code=${f.code} signal=${f.signal} stdout=${f.stdout} stderr=${f.stderr}`).join('\\n') + '\\n');",
+        '    process.exit(1);',
+        '  }',
+        '}',
+        'for (let i = 0; i < 8; i++) {',
+        `  const child = spawn('node', [${JSON.stringify(runner)}, 'pre:edit-write:gateguard-fact-force', 'scripts/hooks/gateguard-fact-force.js', 'standard,strict'], {`,
+        `    cwd: ${JSON.stringify(repoRoot)},`,
+        '    env: { ...process.env,',
+        `      GATEGUARD_STATE_DIR: ${JSON.stringify(stateDir)},`,
+        `      CLAUDE_SESSION_ID: ${JSON.stringify(TEST_SESSION_ID)},`,
+        "      ECC_HOOK_PROFILE: 'standard',",
+        "      GATEGUARD_EXTERNAL_CONTRACT_QUESTION: '' },",
+        "    stdio: ['pipe', 'pipe', 'pipe'] });",
+        "  const rec = { index: i, code: null, signal: null, stdout: '', stderr: '', valid: false };",
+        '  results.push(rec);',
+        '  let done = false;',
+        '  const doneOne = (code, signal) => {',
+        '    if (done) return; done = true; rec.code = code; rec.signal = signal;',
+        '    let parsed = null;',
+        '    try { parsed = JSON.parse(rec.stdout); } catch (_) { parsed = null; }',
+        '    const decision = parsed && parsed.hookSpecificOutput && parsed.hookSpecificOutput.permissionDecision;',
+        "    if (decision === 'deny') sawDeny = true;",
+        `    rec.valid = code === 0 && (decision === 'deny' || rec.stdout.trim() === ${JSON.stringify(payload)});`,
+        '    if (--pending === 0) finish();',
+        '  };',
+        "  child.stdout.on('data', d => { rec.stdout += d; });",
+        "  child.stderr.on('data', d => { rec.stderr += d; });",
+        "  child.on('close', doneOne);",
+        "  child.on('error', err => { rec.stderr += String((err && err.message) || err); doneOne(-1, null); });",
+        "  child.stdin.on('error', () => {});",
+        `  child.stdin.end(${JSON.stringify(payload)});`,
+        '}'
+      ].join('\n');
+      const raced = spawnSync('node', ['-e', driver], { encoding: 'utf8', timeout: 30000 });
+      assert.strictEqual(raced.status, 0, raced.stderr);
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'repaired key file must hold one valid key');
+      assert.ok(persistedStateVerifies(), 'concurrent saves must converge on the surviving key');
+      const leftovers = fs.readdirSync(stateDir).filter(entry => entry.includes(`${HMAC_KEY_FILE}.tmp.`));
+      assert.strictEqual(leftovers.length, 0, 'no key temp files must be left behind');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('key fallback publishes a complete key atomically when hard links fail (#4140)', () => {
+      const hook = loadDirectHook();
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const lockPath = `${keyPath}.lock`;
+      const originalLinkSync = fs.linkSync;
+      const originalWriteFileSync = fs.writeFileSync;
+      const originalOpenSync = fs.openSync;
+      const originalRenameSync = fs.renameSync;
+      const writeTargets = [];
+      const keyOpens = [];
+      // The publication moment: the fallback must rename a complete temp
+      // file into place. Snapshot the destination at that instant — it must
+      // not exist yet, and the temp file must already hold a complete key.
+      // A fallback that creates the destination and then writes into it
+      // fails here: it never calls renameSync, and a reader can observe the
+      // empty or partial file.
+      let renameObserved = false;
+      fs.linkSync = () => {
+        const err = new Error('link unavailable');
+        err.code = 'EPERM';
+        throw err;
+      };
+      fs.renameSync = function (src, dest, ...rest) {
+        if (path.resolve(String(dest)) === path.resolve(keyPath)) {
+          renameObserved = true;
+          assert.throws(() => fs.readFileSync(keyPath, 'utf8'), { code: 'ENOENT' }, 'key destination must not exist before the atomic rename');
+          assert.ok(HMAC_HEX_RE.test(fs.readFileSync(String(src), 'utf8').trim()), 'temp file must hold a complete key before the atomic rename');
+        }
+        return originalRenameSync.apply(fs, [src, dest, ...rest]);
+      };
+      // Record every open of the key destination, with its flags: a fallback
+      // that opens the destination through a descriptor would expose an
+      // empty or partial file, and stubbing writeFileSync alone cannot see it.
+      fs.openSync = function (target, flags, ...rest) {
+        if (path.resolve(String(target)) === path.resolve(keyPath)) keyOpens.push(flags);
+        return originalOpenSync.apply(fs, [target, flags, ...rest]);
+      };
+      fs.writeFileSync = function (target, ...rest) {
+        writeTargets.push(String(target));
+        return originalWriteFileSync.apply(fs, [target, ...rest]);
+      };
+      try {
+        const result = hook.run({
+          tool_name: 'Edit',
+          tool_input: { file_path: '/src/fallback-key.js', old_string: 'a', new_string: 'b' }
+        });
+        const output = parseOutput(result.stdout);
+        assert.ok(output, 'hook must produce JSON output');
+        assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'first touch must be denied');
+      } finally {
+        fs.linkSync = originalLinkSync;
+        fs.writeFileSync = originalWriteFileSync;
+        fs.openSync = originalOpenSync;
+        fs.renameSync = originalRenameSync;
+      }
+      assert.ok(renameObserved, 'fallback must publish through an atomic rename');
+      assert.ok(!writeTargets.some(t => path.resolve(t) === path.resolve(keyPath)), 'fallback must never write the key destination directly');
+      // The destination is published by rename alone: it must never be opened
+      // for writing at all. Any writing open (exclusive or not) exposes an
+      // empty or partial file to a concurrent reader. Reads use numeric
+      // O_RDONLY flags or the string flag 'r'.
+      for (const flags of keyOpens) {
+        if (typeof flags === 'string') {
+          assert.strictEqual(flags, 'r', `key destination must never be opened for writing, saw flags ${flags}`);
+        } else {
+          assert.strictEqual(flags & (fs.constants.O_WRONLY | fs.constants.O_RDWR), 0, 'key destination must never be opened for writing');
+          assert.strictEqual(flags & fs.constants.O_CREAT, 0, 'key destination must never be opened with O_CREAT');
+        }
+      }
+      assert.ok(!fs.existsSync(lockPath), 'fallback publication lock must be released');
+      assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'fallback must publish a complete key');
+      assert.ok(persistedStateVerifies(), 'state saved through the fallback must verify');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('a concurrent fallback writer adopts the published key instead of replacing it (#4140)', () => {
+      const hook = loadDirectHook();
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const lockPath = `${keyPath}.lock`;
+      const originalLinkSync = fs.linkSync;
+      const originalOpenSync = fs.openSync;
+      // A key published by a writer that slipped in between this run's key
+      // check and its publication. The interleaving is injected at the
+      // fallback's first step — acquiring the publication lock — so the
+      // winner is already in place when the fallback re-checks the
+      // destination under the lock and adopts it instead of replacing it.
+      // (Injecting at the rename would be too late: the rename is the
+      // publication itself, and nothing re-checks after it.)
+      const winnerKey = crypto.randomBytes(32).toString('hex');
+      let injected = false;
+      const injectWinner = () => {
+        if (injected) return;
+        injected = true;
+        fs.writeFileSync(keyPath, winnerKey, { encoding: 'utf8', mode: 0o600 });
+      };
+      fs.linkSync = () => {
+        const err = new Error('link unavailable');
+        err.code = 'EPERM';
+        throw err;
+      };
+      fs.openSync = function (target, flags, ...rest) {
+        if (path.resolve(String(target)) === path.resolve(lockPath)) injectWinner();
+        return originalOpenSync.apply(fs, [target, flags, ...rest]);
+      };
+      try {
+        const result = hook.run({
+          tool_name: 'Edit',
+          tool_input: { file_path: '/src/fallback-race.js', old_string: 'a', new_string: 'b' }
+        });
+        const output = parseOutput(result.stdout);
+        assert.ok(output, 'hook must produce JSON output');
+        assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'first touch must be denied');
+      } finally {
+        fs.linkSync = originalLinkSync;
+        fs.openSync = originalOpenSync;
+      }
+      assert.ok(injected, 'the interleaved writer must have published during the fallback');
+      assert.strictEqual(fs.readFileSync(keyPath, 'utf8').trim(), winnerKey, 'the published key must survive a concurrent fallback writer');
+      assert.ok(persistedStateVerifies(), 'state saved through the fallback must verify with the surviving key');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('a repair never retires a valid key published by a concurrent repair (#4140)', () => {
+      const { spawn } = require('child_process');
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const lockPath = `${keyPath}.lock`;
+      const flagFile = path.join(stateDir, 'repair-paused');
+      const releaseFile = path.join(stateDir, 'repair-release');
+      const atLockFile = path.join(stateDir, 'repair-contender-at-lock');
+      const repairResultFile = path.join(stateDir, 'repair-result.json');
+      const publisherResultFile = path.join(stateDir, 'publisher-result.json');
+      const waitCell = new Int32Array(new SharedArrayBuffer(4));
+      const waitForFile = (file, ms) => {
+        const deadline = Date.now() + ms;
+        while (!fs.existsSync(file) && Date.now() < deadline) Atomics.wait(waitCell, 0, 0, 10);
+        return fs.existsSync(file);
+      };
+      const waitForEither = (a, b, ms) => {
+        const deadline = Date.now() + ms;
+        while (!fs.existsSync(a) && !fs.existsSync(b) && Date.now() < deadline) Atomics.wait(waitCell, 0, 0, 10);
+        return fs.existsSync(a) || fs.existsSync(b);
+      };
+      // Seed a malformed key so both writers go through recoverExistingKey.
+      fs.writeFileSync(keyPath, 'not-a-valid-key', { encoding: 'utf8', mode: 0o600 });
+      const repairPayload = { tool_name: 'Edit', tool_input: { file_path: '/src/repair-race.js', old_string: 'a', new_string: 'b' } };
+      const publisherPayload = { tool_name: 'Edit', tool_input: { file_path: '/src/repair-publisher.js', old_string: 'a', new_string: 'b' } };
+      // The repair pauses at the retirement rename (the rename that moves
+      // the key aside under a .retired. name) and stays paused until the
+      // parent releases it. The publisher runs a full save while the repair
+      // is paused: it retires the malformed key, publishes a valid key,
+      // and saves state signed with it. On the old code the repair then
+      // resumes and renames that valid key aside, so the publisher's saved
+      // state stops verifying. On the fixed code the repair re-checks
+      // under the repair lock, finds the publisher's valid key, and adopts
+      // it instead of retiring it. A fixed pause could expire first on a
+      // loaded machine and let the test pass without the interleaving ever
+      // happening, so the parent releases the repair only after the
+      // publisher has signalled it reached the held lock (fixed code) or
+      // finished its save (old code, where no lock is held).
+      // Each writer's state is captured at its own state-file rename:
+      // reading the file after both finish could verify the other
+      // writer's write instead.
+      const repairDriver = [
+        'const fs = require("fs");',
+        'const path = require("path");',
+        `const resultFile = ${JSON.stringify(repairResultFile)};`,
+        `const stateFile = ${JSON.stringify(stateFile)};`,
+        'try {',
+        `  process.env.GATEGUARD_STATE_DIR = ${JSON.stringify(stateDir)};`,
+        `  process.env.CLAUDE_SESSION_ID = ${JSON.stringify(TEST_SESSION_ID)};`,
+        "  process.env.ECC_HOOK_PROFILE = 'standard';",
+        "  process.env.GATEGUARD_EXTERNAL_CONTRACT_QUESTION = '';",
+        '  const origRename = fs.renameSync;',
+        '  fs.linkSync = () => { const e = new Error("link unavailable"); e.code = "EPERM"; throw e; };',
+        '  let paused = false;',
+        '  let stateSnapshot = null;',
+        '  fs.renameSync = function (src, dest) {',
+        `    if (!paused && String(dest).startsWith(${JSON.stringify(keyPath + '.retired.')}) ) {`,
+        '      paused = true;',
+        `      fs.writeFileSync(${JSON.stringify(flagFile)}, "paused", "utf8");`,
+        '      const waitCell = new Int32Array(new SharedArrayBuffer(4));',
+        '      const releaseDeadline = Date.now() + 10000;',
+        `      while (!fs.existsSync(${JSON.stringify(releaseFile)}) && Date.now() < releaseDeadline) Atomics.wait(waitCell, 0, 0, 10);`,
+        '    }',
+        '    if (path.resolve(String(dest)) === path.resolve(stateFile)) {',
+        '      try { stateSnapshot = fs.readFileSync(String(src), "utf8"); } catch (_) {}',
+        '    }',
+        '    return origRename.apply(fs, [src, dest]);',
+        '  };',
+        `  const hook = require(${JSON.stringify(hookScript)});`,
+        `  const res = hook.run(${JSON.stringify(repairPayload)});`,
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: res.stdout || null, err: res.stderr || null, snapshot: stateSnapshot }), "utf8");',
+        '} catch (err) {',
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 1, error: String((err && err.stack) || err) }), "utf8");',
+        '}'
+      ].join('\n');
+      // The publisher signals the moment its lock acquisition meets the
+      // held lock, so the parent knows the wait actually happened before
+      // it releases the repair. On the old code there is no lock to meet,
+      // so it simply runs its save through and reports.
+      const publisherDriver = [
+        'const fs = require("fs");',
+        'const path = require("path");',
+        `const resultFile = ${JSON.stringify(publisherResultFile)};`,
+        `const stateFile = ${JSON.stringify(stateFile)};`,
+        'try {',
+        `  process.env.GATEGUARD_STATE_DIR = ${JSON.stringify(stateDir)};`,
+        `  process.env.CLAUDE_SESSION_ID = ${JSON.stringify(TEST_SESSION_ID)};`,
+        "  process.env.ECC_HOOK_PROFILE = 'standard';",
+        "  process.env.GATEGUARD_EXTERNAL_CONTRACT_QUESTION = '';",
+        '  const origOpenSync = fs.openSync;',
+        '  const origRename = fs.renameSync;',
+        '  fs.linkSync = () => { const e = new Error("link unavailable"); e.code = "EPERM"; throw e; };',
+        '  fs.openSync = function (target, flags, ...rest) {',
+        '    try {',
+        '      return origOpenSync.apply(fs, [target, flags, ...rest]);',
+        '    } catch (err) {',
+        `      if (err && err.code === "EEXIST" && path.resolve(String(target)) === ${JSON.stringify(lockPath)}) {`,
+        `        try { fs.writeFileSync(${JSON.stringify(atLockFile)}, "waiting", "utf8"); } catch (_) {}`,
+        '      }',
+        '      throw err;',
+        '    }',
+        '  };',
+        '  let stateSnapshot = null;',
+        '  fs.renameSync = function (src, dest) {',
+        '    if (path.resolve(String(dest)) === path.resolve(stateFile)) {',
+        '      try { stateSnapshot = fs.readFileSync(String(src), "utf8"); } catch (_) {}',
+        '    }',
+        '    return origRename.apply(fs, [src, dest]);',
+        '  };',
+        `  const hook = require(${JSON.stringify(hookScript)});`,
+        `  const res = hook.run(${JSON.stringify(publisherPayload)});`,
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: res.stdout || null, err: res.stderr || null, snapshot: stateSnapshot }), "utf8");',
+        '} catch (err) {',
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 1, error: String((err && err.stack) || err) }), "utf8");',
+        '}'
+      ].join('\n');
+      const repair = spawn('node', ['-e', repairDriver], { cwd: repoRoot, stdio: 'ignore' });
+      assert.ok(waitForFile(flagFile, 5000), 'repair must pause at the retirement rename');
+      const publisher = spawn('node', ['-e', publisherDriver], { cwd: repoRoot, stdio: 'ignore' });
+      assert.ok(waitForEither(atLockFile, publisherResultFile, 10000), 'publisher must reach the held lock or finish its save while the repair is paused');
+      fs.writeFileSync(releaseFile, 'go', 'utf8');
+      assert.ok(waitForFile(repairResultFile, 10000), 'repair must finish and report its result');
+      assert.ok(waitForFile(publisherResultFile, 10000), 'publisher must finish and report its result');
+      try { repair.kill(); } catch (_) { /* already gone */ }
+      try { publisher.kill(); } catch (_) { /* already gone */ }
+      const repairResult = JSON.parse(fs.readFileSync(repairResultFile, 'utf8'));
+      const publisherResult = JSON.parse(fs.readFileSync(publisherResultFile, 'utf8'));
+      assert.strictEqual(repairResult.code, 0, repairResult.error || 'repair failed');
+      assert.strictEqual(publisherResult.code, 0, publisherResult.error || 'publisher failed');
+      const repairOutput = parseOutput(repairResult.out);
+      assert.ok(repairOutput && repairOutput.hookSpecificOutput, 'repair must produce JSON output');
+      assert.strictEqual(repairOutput.hookSpecificOutput.permissionDecision, 'deny', 'repair first touch must be denied');
+      assert.ok(!String(repairResult.err || '').includes('could not be persisted'), 'repair must not warn of a persistence failure');
+      const publisherOutput = parseOutput(publisherResult.out);
+      assert.ok(publisherOutput && publisherOutput.hookSpecificOutput, 'publisher must produce JSON output');
+      assert.strictEqual(publisherOutput.hookSpecificOutput.permissionDecision, 'deny', 'publisher first touch must be denied');
+      assert.ok(!String(publisherResult.err || '').includes('could not be persisted'), 'publisher must not warn of a persistence failure');
+      assert.ok(!fs.existsSync(lockPath), 'repair lock must be released');
+      assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'one published key must survive');
+      assert.ok(repairResult.snapshot && stateTextVerifies(repairResult.snapshot), 'the repair save must verify with the published key');
+      assert.ok(publisherResult.snapshot && stateTextVerifies(publisherResult.snapshot), 'the publisher save must verify with the published key — a repair must never retire a valid key');
+      assert.ok(persistedStateVerifies(), 'the final state must verify with the published key');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('a repair never retires a valid key published by a concurrent hard-link writer (#4140)', () => {
+      const { spawn } = require('child_process');
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const lockPath = `${keyPath}.lock`;
+      const flagFile = path.join(stateDir, 'repair-hl-paused');
+      const releaseFile = path.join(stateDir, 'repair-hl-release');
+      const atLockFile = path.join(stateDir, 'repair-hl-contender-at-lock');
+      const repairResultFile = path.join(stateDir, 'repair-hl-result.json');
+      const publisherResultFile = path.join(stateDir, 'publisher-hl-result.json');
+      const waitCell = new Int32Array(new SharedArrayBuffer(4));
+      const waitForFile = (file, ms) => {
+        const deadline = Date.now() + ms;
+        while (!fs.existsSync(file) && Date.now() < deadline) Atomics.wait(waitCell, 0, 0, 10);
+        return fs.existsSync(file);
+      };
+      const waitForEither = (a, b, ms) => {
+        const deadline = Date.now() + ms;
+        while (!fs.existsSync(a) && !fs.existsSync(b) && Date.now() < deadline) Atomics.wait(waitCell, 0, 0, 10);
+        return fs.existsSync(a) || fs.existsSync(b);
+      };
+      // Seed a malformed key so both writers go through recoverExistingKey.
+      fs.writeFileSync(keyPath, 'not-a-valid-key', { encoding: 'utf8', mode: 0o600 });
+      const repairPayload = { tool_name: 'Edit', tool_input: { file_path: '/src/repair-hl-race.js', old_string: 'a', new_string: 'b' } };
+      const publisherPayload = { tool_name: 'Edit', tool_input: { file_path: '/src/repair-hl-publisher.js', old_string: 'a', new_string: 'b' } };
+      // Same shape as the fallback-repair test above, except the publisher
+      // is a HARD-LINK writer: its linkSync is deliberately NOT stubbed
+      // to EPERM, so it publishes without taking the fallback lock. The
+      // hard-link path can therefore only publish while the key path is
+      // absent — which is exactly what happens if a repair retires the
+      // malformed key and the publisher's link lands before the repair's
+      // own publish. On the old code (no lock in recoverExistingKey) the
+      // publisher runs its full save while the repair is paused at the
+      // retirement rename, publishes a valid key, and the repair then
+      // resumes and renames that valid key aside — so the publisher's
+      // saved state stops verifying. On the fixed code the repair holds
+      // the fallback lock, so the publisher's linkSync meets the
+      // malformed key (EEXIST), it goes through recoverExistingKey and
+      // waits on the lock, and once the parent releases the repair it
+      // adopts the repair's published key instead of racing it. A fixed
+      // pause could expire first on a loaded machine and let the test
+      // pass without the interleaving ever happening, so the parent
+      // releases the repair only after the publisher has signalled it
+      // reached the held lock (fixed code) or finished its save (old
+      // code, where no lock is held).
+      // Each writer's state is captured at its own state-file rename:
+      // reading the file after both finish could verify the other
+      // writer's write instead.
+      const repairDriver = [
+        'const fs = require("fs");',
+        'const path = require("path");',
+        `const resultFile = ${JSON.stringify(repairResultFile)};`,
+        `const stateFile = ${JSON.stringify(stateFile)};`,
+        'try {',
+        `  process.env.GATEGUARD_STATE_DIR = ${JSON.stringify(stateDir)};`,
+        `  process.env.CLAUDE_SESSION_ID = ${JSON.stringify(TEST_SESSION_ID)};`,
+        "  process.env.ECC_HOOK_PROFILE = 'standard';",
+        "  process.env.GATEGUARD_EXTERNAL_CONTRACT_QUESTION = '';",
+        '  const origRename = fs.renameSync;',
+        '  fs.linkSync = () => { const e = new Error("link unavailable"); e.code = "EPERM"; throw e; };',
+        '  let paused = false;',
+        '  let stateSnapshot = null;',
+        '  fs.renameSync = function (src, dest) {',
+        `    if (!paused && String(dest).startsWith(${JSON.stringify(keyPath + '.retired.')}) ) {`,
+        '      paused = true;',
+        `      fs.writeFileSync(${JSON.stringify(flagFile)}, "paused", "utf8");`,
+        '      const waitCell = new Int32Array(new SharedArrayBuffer(4));',
+        '      const releaseDeadline = Date.now() + 10000;',
+        `      while (!fs.existsSync(${JSON.stringify(releaseFile)}) && Date.now() < releaseDeadline) Atomics.wait(waitCell, 0, 0, 10);`,
+        '    }',
+        '    if (path.resolve(String(dest)) === path.resolve(stateFile)) {',
+        '      try { stateSnapshot = fs.readFileSync(String(src), "utf8"); } catch (_) {}',
+        '    }',
+        '    return origRename.apply(fs, [src, dest]);',
+        '  };',
+        `  const hook = require(${JSON.stringify(hookScript)});`,
+        `  const res = hook.run(${JSON.stringify(repairPayload)});`,
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: res.stdout || null, err: res.stderr || null, snapshot: stateSnapshot }), "utf8");',
+        '} catch (err) {',
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 1, error: String((err && err.stack) || err) }), "utf8");',
+        '}'
+      ].join('\n');
+      // The publisher signals the moment its lock acquisition meets the
+      // held lock, so the parent knows the wait actually happened before
+      // it releases the repair. On the old code there is no lock to meet,
+      // so it simply runs its save through and reports. Its linkSync is
+      // NOT stubbed: this writer takes the hard-link path.
+      const publisherDriver = [
+        'const fs = require("fs");',
+        'const path = require("path");',
+        `const resultFile = ${JSON.stringify(publisherResultFile)};`,
+        `const stateFile = ${JSON.stringify(stateFile)};`,
+        'try {',
+        `  process.env.GATEGUARD_STATE_DIR = ${JSON.stringify(stateDir)};`,
+        `  process.env.CLAUDE_SESSION_ID = ${JSON.stringify(TEST_SESSION_ID)};`,
+        "  process.env.ECC_HOOK_PROFILE = 'standard';",
+        "  process.env.GATEGUARD_EXTERNAL_CONTRACT_QUESTION = '';",
+        '  const origOpenSync = fs.openSync;',
+        '  const origRename = fs.renameSync;',
+        '  fs.openSync = function (target, flags, ...rest) {',
+        '    try {',
+        '      return origOpenSync.apply(fs, [target, flags, ...rest]);',
+        '    } catch (err) {',
+        `      if (err && err.code === "EEXIST" && path.resolve(String(target)) === ${JSON.stringify(lockPath)}) {`,
+        `        try { fs.writeFileSync(${JSON.stringify(atLockFile)}, "waiting", "utf8"); } catch (_) {}`,
+        '      }',
+        '      throw err;',
+        '    }',
+        '  };',
+        '  let stateSnapshot = null;',
+        '  fs.renameSync = function (src, dest) {',
+        '    if (path.resolve(String(dest)) === path.resolve(stateFile)) {',
+        '      try { stateSnapshot = fs.readFileSync(String(src), "utf8"); } catch (_) {}',
+        '    }',
+        '    return origRename.apply(fs, [src, dest]);',
+        '  };',
+        `  const hook = require(${JSON.stringify(hookScript)});`,
+        `  const res = hook.run(${JSON.stringify(publisherPayload)});`,
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: res.stdout || null, err: res.stderr || null, snapshot: stateSnapshot }), "utf8");',
+        '} catch (err) {',
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 1, error: String((err && err.stack) || err) }), "utf8");',
+        '}'
+      ].join('\n');
+      let repair;
+      let publisher;
+      try {
+        repair = spawn('node', ['-e', repairDriver], { cwd: repoRoot, stdio: 'ignore' });
+        assert.ok(waitForFile(flagFile, 5000), 'repair must pause at the retirement rename');
+        publisher = spawn('node', ['-e', publisherDriver], { cwd: repoRoot, stdio: 'ignore' });
+        assert.ok(waitForEither(atLockFile, publisherResultFile, 10000), 'publisher must reach the held lock or finish its save while the repair is paused');
+        fs.writeFileSync(releaseFile, 'go', 'utf8');
+        assert.ok(waitForFile(repairResultFile, 10000), 'repair must finish and report its result');
+        assert.ok(waitForFile(publisherResultFile, 10000), 'publisher must finish and report its result');
+        const repairResult = JSON.parse(fs.readFileSync(repairResultFile, 'utf8'));
+        const publisherResult = JSON.parse(fs.readFileSync(publisherResultFile, 'utf8'));
+        assert.strictEqual(repairResult.code, 0, repairResult.error || 'repair failed');
+        assert.strictEqual(publisherResult.code, 0, publisherResult.error || 'publisher failed');
+        const repairOutput = parseOutput(repairResult.out);
+        assert.ok(repairOutput && repairOutput.hookSpecificOutput, 'repair must produce JSON output');
+        assert.strictEqual(repairOutput.hookSpecificOutput.permissionDecision, 'deny', 'repair first touch must be denied');
+        assert.ok(!String(repairResult.err || '').includes('could not be persisted'), 'repair must not warn of a persistence failure');
+        const publisherOutput = parseOutput(publisherResult.out);
+        assert.ok(publisherOutput && publisherOutput.hookSpecificOutput, 'publisher must produce JSON output');
+        assert.strictEqual(publisherOutput.hookSpecificOutput.permissionDecision, 'deny', 'publisher first touch must be denied');
+        assert.ok(!String(publisherResult.err || '').includes('could not be persisted'), 'publisher must not warn of a persistence failure');
+        assert.ok(!fs.existsSync(lockPath), 'repair lock must be released');
+        assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'one published key must survive');
+        assert.ok(repairResult.snapshot && stateTextVerifies(repairResult.snapshot), 'the repair save must verify with the published key');
+        assert.ok(publisherResult.snapshot && stateTextVerifies(publisherResult.snapshot), 'the publisher save must verify with the published key — a repair must never retire a valid key');
+        assert.ok(persistedStateVerifies(), 'the final state must verify with the published key');
+      } finally {
+        // Unpause the repair and stop both children even when an
+        // assertion above threw, so a failure here never hangs the
+        // suite: the repair waits at most 10s for the release file and
+        // the publisher at most 1s on the lock, but kill them
+        // deterministically instead of relying on those caps.
+        try { fs.writeFileSync(releaseFile, 'go', 'utf8'); } catch (_) { /* already released or gone */ }
+        try { if (repair) repair.kill(); } catch (_) { /* already gone */ }
+        try { if (publisher) publisher.kill(); } catch (_) { /* already gone */ }
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('a fallback writer waits for a live lock holder instead of warning through (#4140)', () => {
+      const { spawn } = require('child_process');
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const lockPath = `${keyPath}.lock`;
+      const flagFile = path.join(stateDir, 'publisher-paused');
+      const releaseFile = path.join(stateDir, 'publisher-release');
+      const atLockFile = path.join(stateDir, 'contender-at-lock');
+      const publisherResultFile = path.join(stateDir, 'publisher-result.json');
+      const contenderResultFile = path.join(stateDir, 'contender-result.json');
+      const waitCell = new Int32Array(new SharedArrayBuffer(4));
+      const waitForFile = (file, ms) => {
+        const deadline = Date.now() + ms;
+        while (!fs.existsSync(file) && Date.now() < deadline) Atomics.wait(waitCell, 0, 0, 10);
+        return fs.existsSync(file);
+      };
+      const publisherPayload = { tool_name: 'Edit', tool_input: { file_path: '/src/lock-holder.js', old_string: 'a', new_string: 'b' } };
+      const contenderPayload = { tool_name: 'Edit', tool_input: { file_path: '/src/lock-contender.js', old_string: 'a', new_string: 'b' } };
+      // The publisher pauses at the rename that publishes the key and
+      // stays paused until the parent releases it, so the contender
+      // cannot slip in after publication: the parent releases the
+      // publisher only after the contender has signalled it reached the
+      // held lock. A fixed pause could expire first on a loaded machine
+      // and let the test pass without the interleaving ever happening.
+      // Each writer's state is captured at its own state-file rename:
+      // reading the file after both finish could verify the other
+      // writer's write instead.
+      const publisherDriver = [
+        'const fs = require("fs");',
+        'const path = require("path");',
+        `const resultFile = ${JSON.stringify(publisherResultFile)};`,
+        `const stateFile = ${JSON.stringify(stateFile)};`,
+        'try {',
+        `  process.env.GATEGUARD_STATE_DIR = ${JSON.stringify(stateDir)};`,
+        `  process.env.CLAUDE_SESSION_ID = ${JSON.stringify(TEST_SESSION_ID)};`,
+        "  process.env.ECC_HOOK_PROFILE = 'standard';",
+        "  process.env.GATEGUARD_EXTERNAL_CONTRACT_QUESTION = '';",
+        '  const origRename = fs.renameSync;',
+        '  fs.linkSync = () => { const e = new Error("link unavailable"); e.code = "EPERM"; throw e; };',
+        '  let paused = false;',
+        '  let stateSnapshot = null;',
+        '  fs.renameSync = function (src, dest) {',
+        `    if (!paused && path.resolve(String(dest)) === ${JSON.stringify(keyPath)}) {`,
+        '      paused = true;',
+        `      fs.writeFileSync(${JSON.stringify(flagFile)}, "paused", "utf8");`,
+        '      const waitCell = new Int32Array(new SharedArrayBuffer(4));',
+        '      const releaseDeadline = Date.now() + 10000;',
+        `      while (!fs.existsSync(${JSON.stringify(releaseFile)}) && Date.now() < releaseDeadline) Atomics.wait(waitCell, 0, 0, 10);`,
+        '    }',
+        '    if (path.resolve(String(dest)) === path.resolve(stateFile)) {',
+        '      try { stateSnapshot = fs.readFileSync(String(src), "utf8"); } catch (_) {}',
+        '    }',
+        '    return origRename.apply(fs, [src, dest]);',
+        '  };',
+        `  const hook = require(${JSON.stringify(hookScript)});`,
+        `  const res = hook.run(${JSON.stringify(publisherPayload)});`,
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: res.stdout || null, err: res.stderr || null, snapshot: stateSnapshot }), "utf8");',
+        '} catch (err) {',
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 1, error: String((err && err.stack) || err) }), "utf8");',
+        '}'
+      ].join('\n');
+      // The contender signals the moment its lock acquisition meets the
+      // held lock, so the parent knows the wait actually happened before
+      // it releases the publisher.
+      const contenderDriver = [
+        'const fs = require("fs");',
+        'const path = require("path");',
+        `const resultFile = ${JSON.stringify(contenderResultFile)};`,
+        `const stateFile = ${JSON.stringify(stateFile)};`,
+        'try {',
+        `  process.env.GATEGUARD_STATE_DIR = ${JSON.stringify(stateDir)};`,
+        `  process.env.CLAUDE_SESSION_ID = ${JSON.stringify(TEST_SESSION_ID)};`,
+        "  process.env.ECC_HOOK_PROFILE = 'standard';",
+        "  process.env.GATEGUARD_EXTERNAL_CONTRACT_QUESTION = '';",
+        '  const origOpenSync = fs.openSync;',
+        '  const origRename = fs.renameSync;',
+        '  fs.linkSync = () => { const e = new Error("link unavailable"); e.code = "EPERM"; throw e; };',
+        '  fs.openSync = function (target, flags, ...rest) {',
+        '    try {',
+        '      return origOpenSync.apply(fs, [target, flags, ...rest]);',
+        '    } catch (err) {',
+        `      if (err && err.code === "EEXIST" && path.resolve(String(target)) === ${JSON.stringify(lockPath)}) {`,
+        `        try { fs.writeFileSync(${JSON.stringify(atLockFile)}, "waiting", "utf8"); } catch (_) {}`,
+        '      }',
+        '      throw err;',
+        '    }',
+        '  };',
+        '  let stateSnapshot = null;',
+        '  fs.renameSync = function (src, dest) {',
+        '    if (path.resolve(String(dest)) === path.resolve(stateFile)) {',
+        '      try { stateSnapshot = fs.readFileSync(String(src), "utf8"); } catch (_) {}',
+        '    }',
+        '    return origRename.apply(fs, [src, dest]);',
+        '  };',
+        `  const hook = require(${JSON.stringify(hookScript)});`,
+        `  const res = hook.run(${JSON.stringify(contenderPayload)});`,
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: res.stdout || null, err: res.stderr || null, snapshot: stateSnapshot }), "utf8");',
+        '} catch (err) {',
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 1, error: String((err && err.stack) || err) }), "utf8");',
+        '}'
+      ].join('\n');
+      const publisher = spawn('node', ['-e', publisherDriver], { cwd: repoRoot, stdio: 'ignore' });
+      assert.ok(waitForFile(flagFile, 5000), 'publisher must hold the lock before the competing save runs');
+      const contender = spawn('node', ['-e', contenderDriver], { cwd: repoRoot, stdio: 'ignore' });
+      assert.ok(waitForFile(atLockFile, 5000), 'contender must reach the held lock before the publisher is released');
+      fs.writeFileSync(releaseFile, 'go', 'utf8');
+      assert.ok(waitForFile(publisherResultFile, 10000), 'publisher must finish and report its result');
+      assert.ok(waitForFile(contenderResultFile, 10000), 'contender must finish and report its result');
+      try { publisher.kill(); } catch (_) { /* already gone */ }
+      try { contender.kill(); } catch (_) { /* already gone */ }
+      const publisherResult = JSON.parse(fs.readFileSync(publisherResultFile, 'utf8'));
+      const contenderResult = JSON.parse(fs.readFileSync(contenderResultFile, 'utf8'));
+      assert.strictEqual(publisherResult.code, 0, publisherResult.error || 'publisher failed');
+      assert.strictEqual(contenderResult.code, 0, contenderResult.error || 'contender failed');
+      const publisherOutput = parseOutput(publisherResult.out);
+      assert.ok(publisherOutput && publisherOutput.hookSpecificOutput, 'publisher must produce JSON output');
+      assert.strictEqual(publisherOutput.hookSpecificOutput.permissionDecision, 'deny', 'publisher first touch must be denied');
+      assert.ok(!String(publisherResult.err || '').includes('could not be persisted'), 'publisher must not warn of a persistence failure');
+      const contenderOutput = parseOutput(contenderResult.out);
+      assert.ok(contenderOutput && contenderOutput.hookSpecificOutput, 'contender must produce JSON output');
+      assert.strictEqual(contenderOutput.hookSpecificOutput.permissionDecision, 'deny', 'competing first touch must be denied, not warned through');
+      assert.ok(!String(contenderResult.err || '').includes('could not be persisted'), 'competing save must not warn of a persistence failure');
+      assert.ok(!fs.existsSync(lockPath), 'fallback publication lock must be released');
+      assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'one published key must survive');
+      assert.ok(publisherResult.snapshot && stateTextVerifies(publisherResult.snapshot), 'the publisher save must verify with the published key');
+      assert.ok(contenderResult.snapshot && stateTextVerifies(contenderResult.snapshot), 'the competing save must verify with the published key');
+      assert.ok(persistedStateVerifies(), 'the final state must verify with the published key');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('a fallback writer retries acquisition when the lock holder releases without publishing (#4140)', () => {
+      const { spawn } = require('child_process');
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const lockPath = `${keyPath}.lock`;
+      const holdingFile = path.join(stateDir, 'holder-holding');
+      const attemptedFile = path.join(stateDir, 'contender-attempted');
+      const doneFile = path.join(stateDir, 'holder-done');
+      // A holder that takes the publication lock and releases it without
+      // publishing: the contender must retry acquisition and publish its
+      // own key instead of waiting out the budget and warning through.
+      // The holder releases only after the contender has attempted the
+      // lock, so the retry — not a lucky first acquisition — is what
+      // decides this test.
+      const holderDriver = [
+        'const fs = require("fs");',
+        `const lockPath = ${JSON.stringify(lockPath)};`,
+        'try {',
+        '  fs.writeFileSync(lockPath, String(process.pid), { encoding: "utf8", mode: 0o600 });',
+        `  fs.writeFileSync(${JSON.stringify(holdingFile)}, "holding", "utf8");`,
+        '  const waitCell = new Int32Array(new SharedArrayBuffer(4));',
+        '  const attemptDeadline = Date.now() + 5000;',
+        `  while (!fs.existsSync(${JSON.stringify(attemptedFile)}) && Date.now() < attemptDeadline) Atomics.wait(waitCell, 0, 0, 10);`,
+        '  Atomics.wait(waitCell, 0, 0, 50);',
+        '  fs.unlinkSync(lockPath);',
+        `  fs.writeFileSync(${JSON.stringify(doneFile)}, "done", "utf8");`,
+        '} catch (err) {',
+        '  try { fs.unlinkSync(lockPath); } catch (_) {}',
+        '  throw err;',
+        '}'
+      ].join('\n');
+      const holder = spawn('node', ['-e', holderDriver], { cwd: repoRoot, stdio: 'ignore' });
+      const waitCell = new Int32Array(new SharedArrayBuffer(4));
+      const holdDeadline = Date.now() + 5000;
+      while (!fs.existsSync(holdingFile) && Date.now() < holdDeadline) Atomics.wait(waitCell, 0, 0, 10);
+      assert.ok(fs.existsSync(holdingFile), 'holder must take the lock before the competing save runs');
+      const hook = loadDirectHook();
+      const originalLinkSync = fs.linkSync;
+      const originalOpenSync = fs.openSync;
+      fs.linkSync = () => { const err = new Error('link unavailable'); err.code = 'EPERM'; throw err; };
+      fs.openSync = function (target, flags, ...rest) {
+        try {
+          return originalOpenSync.apply(fs, [target, flags, ...rest]);
+        } catch (err) {
+          if (err && err.code === 'EEXIST' && path.resolve(String(target)) === path.resolve(lockPath)) {
+            try { fs.writeFileSync(attemptedFile, 'attempted', 'utf8'); } catch (_) { /* ignore */ }
+          }
+          throw err;
+        }
+      };
+      let result;
+      try {
+        result = hook.run({ tool_name: 'Edit', tool_input: { file_path: '/src/lock-released.js', old_string: 'a', new_string: 'b' } });
+      } finally {
+        fs.linkSync = originalLinkSync;
+        fs.openSync = originalOpenSync;
+      }
+      // The holder signals completion with a file: polling exitCode from
+      // this blocked thread never observes the exit, so that loop always
+      // ran out its full deadline.
+      const doneDeadline = Date.now() + 5000;
+      while (!fs.existsSync(doneFile) && Date.now() < doneDeadline) Atomics.wait(waitCell, 0, 0, 10);
+      assert.ok(fs.existsSync(doneFile), 'holder must release the lock and finish');
+      try { holder.kill(); } catch (_) { /* already gone */ }
+      const output = parseOutput(result.stdout);
+      assert.ok(output && output.hookSpecificOutput, 'hook must produce JSON output');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'first touch must be denied after retrying acquisition');
+      assert.ok(!String(result.stderr || '').includes('could not be persisted'), 'retried save must not warn of a persistence failure');
+      assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'the retried writer must publish the key');
+      assert.ok(!fs.existsSync(lockPath), 'fallback publication lock must be released');
+      assert.ok(persistedStateVerifies(), 'state saved after retrying acquisition must verify');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('a failed lock pid write releases the fallback lock (#4140)', () => {
+      const hook = loadDirectHook();
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const lockPath = `${keyPath}.lock`;
+      const originalLinkSync = fs.linkSync;
+      const originalWriteFileSync = fs.writeFileSync;
+      let fdWrites = 0;
+      fs.linkSync = () => { const err = new Error('link unavailable'); err.code = 'EPERM'; throw err; };
+      fs.writeFileSync = function (target, ...rest) {
+        if (typeof target === 'number' && ++fdWrites === 2) {
+          const err = new Error('no space left on device');
+          err.code = 'ENOSPC';
+          throw err;
+        }
+        return originalWriteFileSync.apply(fs, [target, ...rest]);
+      };
+      let first;
+      try {
+        first = hook.run({ tool_name: 'Edit', tool_input: { file_path: '/src/lock-write-fail.js', old_string: 'a', new_string: 'b' } });
+      } finally {
+        fs.linkSync = originalLinkSync;
+        fs.writeFileSync = originalWriteFileSync;
+      }
+      assert.ok(String(first.stderr || '').includes('could not be persisted'), 'a failed pid write must surface as a persistence failure');
+      assert.ok(!fs.existsSync(lockPath), 'the lock must be released when its pid write fails');
+      const second = loadDirectHook().run({ tool_name: 'Edit', tool_input: { file_path: '/src/lock-write-fail.js', old_string: 'a', new_string: 'b' } });
+      const output = parseOutput(second.stdout);
+      assert.ok(output && output.hookSpecificOutput, 'hook must produce JSON output');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'a later save must still deny after the lock is released');
+      assert.ok(persistedStateVerifies(), 'state saved after lock release must verify');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('a __proto__ field in verified state cannot shadow checked entries (#4140)', () => {
+      const key = ensureTestKey();
+      // The shadowed entry names a file this run never edits: the hook
+      // legitimately marks the edited target checked when it denies, so
+      // asserting on the edited target cannot tell acceptance from shadowing.
+      const parsed = JSON.parse(`{"__proto__":{"checked":["/src/shadowed.js"]},"fact_force_denials":3,"last_active":${Date.now()}}`);
+      const signed = signStateForSession(TEST_SESSION_ID, key, parsed);
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/proto.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'prototype-shadowed checked entries must not pass the gate');
+      // The denial must increment the fixture's counter instead of resetting
+      // it: a rejected fixture would restart from empty state (denials 1),
+      // so 4 proves signature verification accepted the seeded state.
+      const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      assert.strictEqual(persisted.fact_force_denials, 4, 'accepted state must increment its denial counter, not reset it');
+      assert.ok(!persisted.checked.includes('/src/shadowed.js'), 'accepted state must not supply a checked entry through __proto__');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('expired state is not deleted by the read path (#4140)', () => {
+      const hook = loadDirectHook();
+      writeExpiredState();
+      // Setup failures must not pass silently: if the fixture was never
+      // written or signed, the hook would see a normal first touch and this
+      // test would pass without ever reading an expired file.
+      assert.ok(fs.existsSync(stateFile), 'expired fixture must exist before the hook runs');
+      assert.ok(persistedStateVerifies(), 'expired fixture must be signed before the hook runs');
+      const originalUnlinkSync = fs.unlinkSync;
+      const unlinked = [];
+      fs.unlinkSync = function (target, ...rest) {
+        unlinked.push(String(target));
+        return originalUnlinkSync.apply(fs, [target, ...rest]);
+      };
+      try {
+        const result = hook.run({
+          tool_name: 'Edit',
+          tool_input: { file_path: 'some_file.js', old_string: 'a', new_string: 'b' }
+        });
+        const output = parseOutput(result.stdout);
+        assert.ok(output, 'hook must produce JSON output');
+        assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'expired state must reset to a fresh first touch');
+      } finally {
+        fs.unlinkSync = originalUnlinkSync;
+      }
+      assert.ok(!unlinked.some(t => path.resolve(t) === path.resolve(stateFile)), 'the read path must not delete the state file');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('a directory at the key path is left untouched and surfaces a persist warning (#4140)', () => {
+      fs.mkdirSync(stateDir, { recursive: true });
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      fs.mkdirSync(keyPath);
+      fs.writeFileSync(path.join(keyPath, 'sentinel.txt'), 'keep me', 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/key-dir.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.ok(result.stderr.includes('could not be persisted'), 'persist failure must surface a warning');
+      assert.ok(fs.statSync(keyPath).isDirectory(), 'directory at the key path must be left in place');
+      assert.strictEqual(fs.readFileSync(path.join(keyPath, 'sentinel.txt'), 'utf8'), 'keep me', 'directory contents must be untouched');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('creates one consistent integrity key under concurrent first runs (#4140)', () => {
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const payload = JSON.stringify({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/race.js', old_string: 'a', new_string: 'b' }
+      });
+      const driver = [
+        "const { spawn } = require('child_process');",
+        'const results = [];',
+        'let pending = 8;',
+        'let sawDeny = false;',
+        'function finish() {',
+        "  if (!sawDeny) { process.stderr.write('no child observed a first-touch denial\\n'); process.exit(1); }",
+        '  const failures = results.filter(r => r.code !== 0 || !r.valid);',
+        '  if (failures.length) {',
+        "    process.stderr.write('concurrent child failures:\\n' + failures.map(f => `#${f.index} code=${f.code} signal=${f.signal} stdout=${f.stdout} stderr=${f.stderr}`).join('\\n') + '\\n');",
+        '    process.exit(1);',
+        '  }',
+        '}',
+        'for (let i = 0; i < 8; i++) {',
+        `  const child = spawn('node', [${JSON.stringify(runner)}, 'pre:edit-write:gateguard-fact-force', 'scripts/hooks/gateguard-fact-force.js', 'standard,strict'], {`,
+        `    cwd: ${JSON.stringify(repoRoot)},`,
+        '    env: { ...process.env,',
+        `      GATEGUARD_STATE_DIR: ${JSON.stringify(stateDir)},`,
+        `      CLAUDE_SESSION_ID: ${JSON.stringify(TEST_SESSION_ID)},`,
+        "      ECC_HOOK_PROFILE: 'standard',",
+        "      GATEGUARD_EXTERNAL_CONTRACT_QUESTION: '' },",
+        "    stdio: ['pipe', 'pipe', 'pipe'] });",
+        "  const rec = { index: i, code: null, signal: null, stdout: '', stderr: '', valid: false };",
+        '  results.push(rec);',
+        '  let done = false;',
+        '  const doneOne = (code, signal) => {',
+        '    if (done) return; done = true; rec.code = code; rec.signal = signal;',
+        '    let parsed = null;',
+        '    try { parsed = JSON.parse(rec.stdout); } catch (_) { parsed = null; }',
+        '    const decision = parsed && parsed.hookSpecificOutput && parsed.hookSpecificOutput.permissionDecision;',
+        "    if (decision === 'deny') sawDeny = true;",
+        `    rec.valid = code === 0 && (decision === 'deny' || rec.stdout.trim() === ${JSON.stringify(payload)});`,
+        '    if (--pending === 0) finish();',
+        '  };',
+        "  child.stdout.on('data', d => { rec.stdout += d; });",
+        "  child.stderr.on('data', d => { rec.stderr += d; });",
+        "  child.on('close', doneOne);",
+        "  child.on('error', err => { rec.stderr += String((err && err.message) || err); doneOne(-1, null); });",
+        "  child.stdin.on('error', () => {});",
+        `  child.stdin.end(${JSON.stringify(payload)});`,
+        '}'
+      ].join('\n');
+      const raced = spawnSync('node', ['-e', driver], { encoding: 'utf8', timeout: 30000 });
+      assert.strictEqual(raced.status, 0, raced.stderr);
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      assert.ok(fs.existsSync(keyPath), 'concurrent runs must leave exactly one key file');
+      assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'key file must hold one valid key');
+      const leftovers = fs.readdirSync(stateDir).filter(entry => entry.includes(`${HMAC_KEY_FILE}.tmp.`));
+      assert.strictEqual(leftovers.length, 0, 'no key temp files must be left behind');
+      assert.ok(persistedStateVerifies(), 'concurrent saves must converge on the surviving key');
+      // The first-touch deny marks the target checked and counts the denial
+      // (deny-once-then-retry), so the settled edit is allowed through the
+      // verified path. The bypass would be a checked entry with no denial
+      // recorded; assert the denial is there.
+      const settledInput = {
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/race.js', old_string: 'a', new_string: 'b' }
+      };
+      const settled = runHook(settledInput);
+      assert.deepStrictEqual(parseOutput(settled.stdout), settledInput, 'settled edit must be the JSON pass-through allow');
+      const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      assert.ok(persisted.fact_force_denials >= 1, 'checked entry must arrive with a recorded denial, not a forgery');
+      assert.ok(
+        persisted.checked.some(k => k === '/src/race.js' || /^[a-z]:\/src\/race\.js$/.test(k)),
+        'settled checked entry should be persisted'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('keeps the integrity key file at 0600 on POSIX (#4140)', () => {
+      runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/key-mode.js', old_string: 'a', new_string: 'b' }
+      });
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      assert.ok(fs.existsSync(keyPath), 'key file should exist after a save');
+      if (process.platform !== 'win32') {
+        assert.strictEqual(fs.statSync(keyPath).mode & 0o777, 0o600, 'key file must be owner-only');
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('does not prune the integrity key file when backdated past the idle window (#4140)', () => {
+      runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/key-prune.js', old_string: 'a', new_string: 'b' }
+      });
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const before = fs.readFileSync(keyPath, 'utf8');
+      const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      fs.utimesSync(keyPath, old, old);
+      runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/key-prune-again.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.ok(fs.existsSync(keyPath), 'backdated key file must survive pruning');
+      assert.strictEqual(fs.readFileSync(keyPath, 'utf8'), before, 'key contents must be untouched by pruning');
+      assert.ok(persistedStateVerifies(), 'state must still verify after the pruning pass');
     })
   )
     passed++;
