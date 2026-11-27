@@ -513,6 +513,481 @@ async function runTests() {
     }
   })) passed++; else failed++;
 
+  // The server is named by the mcp__<server>__<tool> tool name. tool_input holds the
+  // MCP tool's own arguments, so an argument called server/mcp_server/connector must
+  // never rename the server, and an object value must never be stringified into it.
+  const missingConfigLog = (input) => {
+    const tempDir = createTempDir();
+    try {
+      const result = runHook(input, {
+        CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
+        ECC_MCP_CONFIG_PATH: path.join(tempDir, 'missing.json'),
+        ECC_MCP_HEALTH_STATE_PATH: path.join(tempDir, 'state.json')
+      });
+      assert.strictEqual(result.code, 0, result.stderr);
+      return result.stderr;
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  };
+
+  if (test('does not stringify an object tool_input.server into the server name', () => {
+    const stderr = missingConfigLog({ tool_name: 'mcp__realsrv__lookup', tool_input: { server: { host: 'x' }, connector: { a: 1 } } });
+    assert.ok(stderr.includes('No MCP config found for realsrv;'), stderr);
+    assert.ok(!stderr.includes('[object Object]'), stderr);
+  })) passed++; else failed++;
+
+  if (test('does not stringify an object top-level server into the server name', () => {
+    const stderr = missingConfigLog({ tool_name: 'mcp__realsrv__lookup', server: { host: 'x' }, mcp_server: ['a'] });
+    assert.ok(stderr.includes('No MCP config found for realsrv;'), stderr);
+  })) passed++; else failed++;
+
+  if (test('a string tool_input.server argument does not override the server in an mcp__ tool name', () => {
+    const stderr = missingConfigLog({ tool_name: 'mcp__realsrv__lookup', tool_input: { server: 'unrelated', mcp_server: 'other', connector: 'conn' } });
+    assert.ok(stderr.includes('No MCP config found for realsrv;'), stderr);
+  })) passed++; else failed++;
+
+  // Explicit server fields are read only when the tool name is not an mcp__ name,
+  // so these cases go through a generic wrapper tool.
+  for (const [label, fields] of [
+    ['empty, then containing a space', { server: '', mcp_server: 'has space; rm' }],
+    ['65 characters', { server: 'a'.repeat(65) }]
+  ]) {
+    if (test(`ignores explicit server values that cannot be a server id (${label})`, () => {
+      const stderr = missingConfigLog({ tool_name: 'call_mcp', ...fields });
+      assert.strictEqual(stderr, '', 'No usable server value means pass through silently');
+    })) passed++; else failed++;
+  }
+
+  if (test('accepts a 64-character explicit server id', () => {
+    const stderr = missingConfigLog({ tool_name: 'call_mcp', server: 'a'.repeat(64) });
+    assert.ok(stderr.includes(`No MCP config found for ${'a'.repeat(64)};`), stderr);
+  })) passed++; else failed++;
+
+  if (test('falls back to a valid explicit server value after an invalid one', () => {
+    const stderr = missingConfigLog({ tool_name: 'call_mcp', server: 'has space; rm', mcp_server: 'goodsrv' });
+    assert.ok(stderr.includes('No MCP config found for goodsrv;'), stderr);
+  })) passed++; else failed++;
+
+  if (test('does not stringify an object tool_input.server for a generic wrapper tool', () => {
+    const stderr = missingConfigLog({ tool_name: 'call_mcp', tool_input: { server: { host: 'x' } } });
+    assert.ok(!stderr.includes('[object Object]'), stderr);
+    assert.strictEqual(stderr, '', 'No usable server value means pass through silently');
+  })) passed++; else failed++;
+
+  // A tool name that starts with mcp__ but does not parse as mcp__<server>__<tool> is still
+  // an MCP tool: its arguments must not pick the probed server, so there is no target.
+  for (const [label, toolName] of [
+    ['no second separator', 'mcp__foo'],
+    ['empty server', 'mcp____tool'],
+    ['bare prefix', 'mcp__']
+  ]) {
+    if (test(`ignores tool_input server arguments for an unparseable mcp__ tool name (${label})`, () => {
+      const stderr = missingConfigLog({
+        tool_name: toolName,
+        tool_input: { server: 'argchosen', mcp_server: 'argchosen2', connector: 'argchosen3', tool: 'x' }
+      });
+      assert.strictEqual(stderr, '', 'No target means pass through silently');
+    })) passed++; else failed++;
+  }
+
+  if (await asyncTest('ignores tool_input server arguments for an unparseable mcp__ tool name in truncated input', async () => {
+    // A hook without the run() export would execute main() at require time and exit
+    // this test process with 0, so check the export before require()ing it.
+    assert.ok(/module\.exports\s*=\s*\{[^}]*\brun\b/.test(fs.readFileSync(script, 'utf8')), 'hook must export run()');
+    const hook = require(script);
+    const raw = '{"tool_name":"mcp__foo","tool_input":{"server":"argchosen","tool":"x"}}';
+    const result = await hook.run(raw, { truncated: true, maxStdin: 10 });
+    assert.strictEqual(result.exitCode, 0);
+    assert.strictEqual(result.stderr, '');
+    assert.strictEqual(result.stdout, raw);
+  })) passed++; else failed++;
+
+  if (await asyncTest('never launches or records a decoy server named in tool_input of an mcp__ tool call', async () => {
+    const tempDir = createTempDir();
+    const configPath = path.join(tempDir, 'claude.json');
+    const statePath = path.join(tempDir, 'mcp-health.json');
+    const markerPath = path.join(tempDir, 'decoy-ran.txt');
+    const realScript = path.join(tempDir, 'real-server.js');
+    const decoyScript = path.join(tempDir, 'decoy-server.js');
+
+    try {
+      fs.writeFileSync(realScript, 'setInterval(() => {}, 1000);\n');
+      fs.writeFileSync(decoyScript, `require('fs').appendFileSync(${JSON.stringify(markerPath)}, 'decoy\\n'); setInterval(() => {}, 1000);\n`);
+      writeConfig(configPath, {
+        mcpServers: {
+          real: createCommandConfig(realScript),
+          decoy: createCommandConfig(decoyScript)
+        }
+      });
+
+      const result = runHook(
+        { tool_name: 'mcp__real__do', tool_input: { server: 'decoy', mcp_server: 'decoy', connector: 'decoy' } },
+        {
+          CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
+          ECC_MCP_CONFIG_PATH: configPath,
+          ECC_MCP_HEALTH_STATE_PATH: statePath,
+          ECC_MCP_HEALTH_TIMEOUT_MS: '1000'
+        }
+      );
+
+      assert.strictEqual(result.code, 0, hookFailureDetails(result, statePath));
+      assert.ok(!fs.existsSync(markerPath), 'Decoy server command must never be launched');
+      const state = readState(statePath);
+      assert.strictEqual(state.servers.decoy, undefined, 'No health state may be recorded for the decoy');
+      assert.strictEqual(state.servers.real.status, 'healthy', 'The server named by the tool name is the one probed');
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
+  for (const [label, toolName, serverName] of [
+    ['plugin-provided', 'mcp__plugin_claude-mem_mcp-search__search', 'plugin_claude-mem_mcp-search'],
+    ['connector UUID', 'mcp__0f8fad5b-d9cb-469f-a165-70867728950e__list_things', '0f8fad5b-d9cb-469f-a165-70867728950e']
+  ]) {
+    if (test(`derives the server name from ${label} tool names`, () => {
+      const stderr = missingConfigLog({ tool_name: toolName, tool_input: { server: { nested: true } } });
+      assert.ok(stderr.includes(`No MCP config found for ${serverName};`), stderr);
+    })) passed++; else failed++;
+  }
+
+  if (test('runs in-process through run-with-flags without spawning a second node process', () => {
+    const tempDir = createTempDir();
+    try {
+      const root = path.join(__dirname, '..', '..');
+      const runner = path.join(root, 'scripts', 'hooks', 'run-with-flags.js');
+      const raw = JSON.stringify({ tool_name: 'mcp__inproc__ping', tool_input: {} });
+      const driver = `
+        const { runHook } = require(${JSON.stringify(runner)});
+        runHook('pre:mcp-health-check', 'scripts/hooks/mcp-health-check.js', 'standard,strict', { raw: ${JSON.stringify(raw)}, truncated: false })
+          .then(r => process.stdout.write('RESULT=' + JSON.stringify({ r, loaded: Object.keys(require.cache).some(k => k.endsWith('mcp-health-check.js')) })));
+      `;
+      const result = spawnSync(process.execPath, ['-e', driver], {
+        encoding: 'utf8',
+        env: buildHookEnv({
+          CLAUDE_PLUGIN_ROOT: root,
+          CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
+          ECC_MCP_CONFIG_PATH: path.join(tempDir, 'missing.json'),
+          ECC_MCP_HEALTH_STATE_PATH: path.join(tempDir, 'state.json')
+        }),
+        timeout: 15000
+      });
+      const parsed = JSON.parse(result.stdout.split('RESULT=')[1]);
+      assert.strictEqual(parsed.loaded, true, 'hook module must be require()d in-process: ' + result.stderr);
+      assert.deepStrictEqual(parsed.r, { stdout: raw, exitCode: 0 });
+      assert.ok(result.stderr.includes('No MCP config found for inproc;'), result.stderr);
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('in-process truncation still blocks, and fail-open still allows', () => {
+    const tempDir = createTempDir();
+    try {
+      const root = path.join(__dirname, '..', '..');
+      const runner = path.join(root, 'scripts', 'hooks', 'run-with-flags.js');
+      const raw = '{"tool_name":"mcp__inproc__ping","tool_input":{"x":"';
+      const driver = `
+        const { runHook } = require(${JSON.stringify(runner)});
+        runHook('pre:mcp-health-check', 'scripts/hooks/mcp-health-check.js', 'standard,strict', { raw: ${JSON.stringify(raw)}, truncated: true, hookContext: {} })
+          .then(r => process.stdout.write('RESULT=' + JSON.stringify(r)));
+      `;
+      const exec = env => spawnSync(process.execPath, ['-e', driver], {
+        encoding: 'utf8',
+        env: buildHookEnv({ CLAUDE_PLUGIN_ROOT: root, ECC_MCP_HEALTH_STATE_PATH: path.join(tempDir, 'state.json'), ...env }),
+        timeout: 15000
+      });
+      const blocked = exec({ ECC_MCP_HEALTH_FAIL_OPEN: null });
+      assert.deepStrictEqual(JSON.parse(blocked.stdout.split('RESULT=')[1]), { stdout: '', exitCode: 2 });
+      const open = exec({ ECC_MCP_HEALTH_FAIL_OPEN: '1' });
+      assert.deepStrictEqual(JSON.parse(open.stdout.split('RESULT=')[1]), { stdout: '', exitCode: 0 });
+      assert.ok(open.stderr.includes('allowing') && open.stderr.includes('inproc'), open.stderr);
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
+  // post:mcp-health-check is not in run-with-flags' fail-closed truncation set, so the
+  // hook's own in-process run() is what blocks a truncated PostToolUseFailure payload.
+  if (test('in-process post:mcp-health-check blocks truncated input from the hook run()', () => {
+    const tempDir = createTempDir();
+    try {
+      const root = path.join(__dirname, '..', '..');
+      const runner = path.join(root, 'scripts', 'hooks', 'run-with-flags.js');
+      const raw = '{"tool_name":"mcp__inproc__ping","tool_input":{"x":"';
+      const driver = `
+        const { runHook } = require(${JSON.stringify(runner)});
+        runHook('post:mcp-health-check', 'scripts/hooks/mcp-health-check.js', 'standard,strict', { raw: ${JSON.stringify(raw)}, truncated: true, hookContext: {} })
+          .then(r => process.stdout.write('RESULT=' + JSON.stringify({ r, loaded: Object.keys(require.cache).some(k => k.endsWith('mcp-health-check.js')) })));
+      `;
+      const result = spawnSync(process.execPath, ['-e', driver], {
+        encoding: 'utf8',
+        env: buildHookEnv({
+          CLAUDE_PLUGIN_ROOT: root,
+          CLAUDE_HOOK_EVENT_NAME: 'PostToolUseFailure',
+          ECC_MCP_HEALTH_FAIL_OPEN: null,
+          ECC_MCP_HEALTH_STATE_PATH: path.join(tempDir, 'state.json')
+        }),
+        timeout: 15000
+      });
+      const parsed = JSON.parse(result.stdout.split('RESULT=')[1]);
+      assert.strictEqual(parsed.loaded, true, 'hook module must be require()d in-process: ' + result.stderr);
+      assert.deepStrictEqual(parsed.r, { stdout: '', exitCode: 2 });
+      assert.ok(result.stderr.includes('[MCPHealthCheck]') && result.stderr.includes('blocking') && result.stderr.includes('inproc'), result.stderr);
+      assert.ok(!result.stderr.includes('BLOCKED: Hook input exceeded'), 'The block must come from the hook, not the runner: ' + result.stderr);
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
+  // The plugin bootstrap runs the hook in-process and ends with process.exitCode,
+  // not process.exit(), so the process exits only once its event loop drains. An
+  // SSE server answers the probe GET with a body that never ends; the probe must
+  // drop that response after reading the status instead of keeping it open.
+  for (const [label, pingMs] of [['with keepalive pings', 500], ['without pings', 0]]) {
+    if (test(`bootstrap exits promptly after probing a streaming SSE server (${label})`, () => {
+      const tempDir = createTempDir();
+      const configPath = path.join(tempDir, 'claude.json');
+      const statePath = path.join(tempDir, 'mcp-health.json');
+      const serverScript = path.join(tempDir, 'sse-server.js');
+      const portFile = path.join(tempDir, 'server-port.txt');
+      fs.writeFileSync(
+        serverScript,
+        [
+          "const fs = require('fs');",
+          "const http = require('http');",
+          "const [portFile, pingMs] = [process.argv[2], Number(process.argv[3])];",
+          "const server = http.createServer((req, res) => {",
+          "  res.writeHead(200, { 'Content-Type': 'text/event-stream' });",
+          "  res.write(': open\\n\\n');",
+          "  if (pingMs > 0) {",
+          "    const timer = setInterval(() => res.write(': ping\\n\\n'), pingMs);",
+          "    req.on('close', () => clearInterval(timer));",
+          "  }",
+          "});",
+          "server.listen(0, '127.0.0.1', () => {",
+          "  fs.writeFileSync(portFile, String(server.address().port));",
+          "});",
+          "setTimeout(() => process.exit(0), 60000);"
+        ].join('\n')
+      );
+
+      const serverProcess = spawn(process.execPath, [serverScript, portFile, String(pingMs)], { stdio: 'ignore' });
+      try {
+        const port = waitForFile(portFile).trim();
+        writeConfig(configPath, { mcpServers: { sse: { type: 'sse', url: `http://127.0.0.1:${port}/sse` } } });
+
+        const root = path.join(__dirname, '..', '..');
+        const input = { tool_name: 'mcp__sse__search', tool_input: {} };
+        const started = Date.now();
+        const result = spawnSync(process.execPath, [
+          path.join(root, 'scripts', 'hooks', 'plugin-hook-bootstrap.js'),
+          'node',
+          'scripts/hooks/run-with-flags.js',
+          'pre:mcp-health-check',
+          'scripts/hooks/mcp-health-check.js',
+          'standard,strict'
+        ], {
+          input: JSON.stringify(input),
+          encoding: 'utf8',
+          env: buildHookEnv({
+            CLAUDE_PLUGIN_ROOT: root,
+            CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
+            ECC_MCP_CONFIG_PATH: configPath,
+            ECC_MCP_HEALTH_STATE_PATH: statePath,
+            ECC_MCP_HEALTH_TIMEOUT_MS: '10000',
+            ECC_MCP_HEALTH_FAIL_OPEN: null
+          }),
+          timeout: 20000
+        });
+        const elapsed = Date.now() - started;
+
+        assert.ok(!result.error, `bootstrap did not exit: ${result.error && result.error.code} after ${elapsed} ms`);
+        assert.strictEqual(result.status, 0, `exit=${result.status}; stderr=${result.stderr}`);
+        assert.ok(elapsed < 3000, `bootstrap took ${elapsed} ms; the probe response is keeping the process alive`);
+        assert.strictEqual(readState(statePath).servers.sse.status, 'healthy', 'Expected the SSE server to be probed and marked healthy');
+      } finally {
+        serverProcess.kill();
+        cleanupTempDir(tempDir);
+      }
+    })) passed++; else failed++;
+  }
+
+  // Same exit-by-drain constraint for stdio probes: killing the probed server on
+  // timeout does not kill a grandchild that inherited its stdio, and on POSIX that
+  // grandchild holds the probe's stdin and stderr pipes open.
+  if (test('bootstrap exits promptly after probing a stdio server whose grandchild inherits its stdio', () => {
+    const tempDir = createTempDir();
+    const configPath = path.join(tempDir, 'claude.json');
+    const statePath = path.join(tempDir, 'mcp-health.json');
+    const wrapperScript = path.join(tempDir, 'wrapper-server.js');
+    const pidFile = path.join(tempDir, 'grandchild.pid');
+    fs.writeFileSync(
+      wrapperScript,
+      [
+        "const { spawn } = require('child_process');",
+        "const grandchild = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], { stdio: 'inherit' });",
+        `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(grandchild.pid));`,
+        "setInterval(() => {}, 1000);"
+      ].join('\n')
+    );
+    writeConfig(configPath, { mcpServers: { wrapped: createCommandConfig(wrapperScript) } });
+
+    try {
+      const root = path.join(__dirname, '..', '..');
+      const started = Date.now();
+      const result = spawnSync(process.execPath, [
+        path.join(root, 'scripts', 'hooks', 'plugin-hook-bootstrap.js'),
+        'node',
+        'scripts/hooks/run-with-flags.js',
+        'pre:mcp-health-check',
+        'scripts/hooks/mcp-health-check.js',
+        'standard,strict'
+      ], {
+        input: JSON.stringify({ tool_name: 'mcp__wrapped__search', tool_input: {} }),
+        encoding: 'utf8',
+        env: buildHookEnv({
+          CLAUDE_PLUGIN_ROOT: root,
+          CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
+          ECC_MCP_CONFIG_PATH: configPath,
+          ECC_MCP_HEALTH_STATE_PATH: statePath,
+          ECC_MCP_HEALTH_TIMEOUT_MS: '1000',
+          ECC_MCP_HEALTH_FAIL_OPEN: null
+        }),
+        timeout: 30000
+      });
+      const elapsed = Date.now() - started;
+
+      assert.ok(!result.error, `bootstrap did not exit: ${result.error && result.error.code} after ${elapsed} ms`);
+      assert.strictEqual(result.status, 0, `exit=${result.status}; stderr=${result.stderr}`);
+      assert.ok(elapsed < 6000, `bootstrap took ${elapsed} ms; the probe's stdio pipes are keeping the process alive`);
+      assert.strictEqual(readState(statePath).servers.wrapped.status, 'healthy', 'Expected the stdio server to be probed and marked healthy');
+    } finally {
+      try {
+        process.kill(Number(fs.readFileSync(pidFile, 'utf8')));
+      } catch {
+        // grandchild never started or already exited
+      }
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
+  // In-process, run-with-flags.js awaits run() with no deadline of its own, so the
+  // hook must bound itself. This server sends a status line, then one header byte
+  // every 200 ms and never ends the headers: the socket is never idle, so a socket
+  // inactivity timeout alone never fires and the response callback never runs.
+  const startTrickleServer = tempDir => {
+    const serverScript = path.join(tempDir, 'trickle-server.js');
+    const portFile = path.join(tempDir, 'trickle-port.txt');
+    fs.writeFileSync(
+      serverScript,
+      [
+        "const fs = require('fs');",
+        "const net = require('net');",
+        "const server = net.createServer(socket => {",
+        "  socket.on('error', () => {});",
+        "  socket.once('data', () => {",
+        "    socket.write('HTTP/1.1 200 OK\\r\\nX-Trickle: ');",
+        "    const timer = setInterval(() => socket.write('a'), 200);",
+        "    socket.on('close', () => clearInterval(timer));",
+        "  });",
+        "});",
+        "server.listen(0, '127.0.0.1', () => fs.writeFileSync(process.argv[2], String(server.address().port)));",
+        "setTimeout(() => process.exit(0), 60000);"
+      ].join('\n')
+    );
+    const serverProcess = spawn(process.execPath, [serverScript, portFile], { stdio: 'ignore' });
+    return { serverProcess, port: waitForFile(portFile).trim() };
+  };
+
+  if (test('bootstrap times out an HTTP probe whose server trickles headers without finishing them', () => {
+    const tempDir = createTempDir();
+    const configPath = path.join(tempDir, 'claude.json');
+    const statePath = path.join(tempDir, 'mcp-health.json');
+    const { serverProcess, port } = startTrickleServer(tempDir);
+    try {
+      writeConfig(configPath, { mcpServers: { trickle: { type: 'http', url: `http://127.0.0.1:${port}/mcp` } } });
+      const root = path.join(__dirname, '..', '..');
+      const started = Date.now();
+      const result = spawnSync(process.execPath, [
+        path.join(root, 'scripts', 'hooks', 'plugin-hook-bootstrap.js'),
+        'node',
+        'scripts/hooks/run-with-flags.js',
+        'pre:mcp-health-check',
+        'scripts/hooks/mcp-health-check.js',
+        'standard,strict'
+      ], {
+        input: JSON.stringify({ tool_name: 'mcp__trickle__search', tool_input: {} }),
+        encoding: 'utf8',
+        env: buildHookEnv({
+          CLAUDE_PLUGIN_ROOT: root,
+          CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
+          ECC_MCP_CONFIG_PATH: configPath,
+          ECC_MCP_HEALTH_STATE_PATH: statePath,
+          ECC_MCP_HEALTH_TIMEOUT_MS: '1000',
+          ECC_MCP_HEALTH_FAIL_OPEN: null,
+          ECC_HOOK_DEADLINE_MS: null
+        }),
+        timeout: 15000
+      });
+      const elapsed = Date.now() - started;
+
+      assert.ok(!result.error, `bootstrap did not exit: ${result.error && result.error.code} after ${elapsed} ms`);
+      assert.ok(elapsed < 6000, `bootstrap took ${elapsed} ms; the probe outlived ECC_MCP_HEALTH_TIMEOUT_MS`);
+      assert.strictEqual(result.status, 2, `exit=${result.status}; stderr=${result.stderr}`);
+      assert.ok(result.stderr.includes('request timed out'), result.stderr);
+      assert.strictEqual(readState(statePath).servers.trickle.status, 'unhealthy');
+    } finally {
+      serverProcess.kill();
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
+  // The spawned (legacy) path gave a hook min(now + 30 s, ECC_HOOK_DEADLINE_MS).
+  // In-process the hook keeps that limit itself: when it runs out, the probe is
+  // cancelled and the call is allowed without recording a verdict.
+  if (test('in-process run stops probing at ECC_HOOK_DEADLINE_MS and allows the call', () => {
+    const tempDir = createTempDir();
+    const configPath = path.join(tempDir, 'claude.json');
+    const statePath = path.join(tempDir, 'mcp-health.json');
+    const { serverProcess, port } = startTrickleServer(tempDir);
+    try {
+      writeConfig(configPath, { mcpServers: { trickle: { type: 'http', url: `http://127.0.0.1:${port}/mcp` } } });
+      const root = path.join(__dirname, '..', '..');
+      const runner = path.join(root, 'scripts', 'hooks', 'run-with-flags.js');
+      const raw = JSON.stringify({ tool_name: 'mcp__trickle__search', tool_input: {} });
+      const driver = `
+        const { runHook } = require(${JSON.stringify(runner)});
+        runHook('pre:mcp-health-check', 'scripts/hooks/mcp-health-check.js', 'standard,strict', { raw: ${JSON.stringify(raw)}, truncated: false })
+          .then(r => process.stdout.write('RESULT=' + JSON.stringify(r)));
+      `;
+      const started = Date.now();
+      const result = spawnSync(process.execPath, ['-e', driver], {
+        encoding: 'utf8',
+        env: buildHookEnv({
+          CLAUDE_PLUGIN_ROOT: root,
+          CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
+          ECC_MCP_CONFIG_PATH: configPath,
+          ECC_MCP_HEALTH_STATE_PATH: statePath,
+          ECC_MCP_HEALTH_TIMEOUT_MS: '20000',
+          ECC_MCP_HEALTH_FAIL_OPEN: null,
+          ECC_HOOK_DEADLINE_MS: String(Date.now() + 2500)
+        }),
+        timeout: 15000
+      });
+      const elapsed = Date.now() - started;
+
+      assert.ok(!result.error, `run did not finish: ${result.error && result.error.code} after ${elapsed} ms`);
+      assert.ok(elapsed < 7000, `run took ${elapsed} ms; ECC_HOOK_DEADLINE_MS did not bound it`);
+      assert.deepStrictEqual(JSON.parse(result.stdout.split('RESULT=')[1]), { stdout: raw, exitCode: 0 });
+      assert.ok(result.stderr.includes('time budget') && result.stderr.includes('trickle'), result.stderr);
+      assert.ok(!fs.existsSync(statePath) || !readState(statePath).servers.trickle, 'An unfinished probe must not record a verdict');
+    } finally {
+      serverProcess.kill();
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
   if (await asyncTest('supports explicit tool_input server targets and mcp_servers config aliases', async () => {
     const tempDir = createTempDir();
     const configPath = path.join(tempDir, 'claude.json');
@@ -936,6 +1411,48 @@ async function runTests() {
       cleanupTempDir(tempDir);
     }
   })) passed++; else failed++;
+
+  // spawnSync blocks the event loop until its child exits. With the default
+  // SIGTERM kill signal, a reconnect command that ignores SIGTERM would hold
+  // the hook past its deadline. Windows kills with TerminateProcess instead.
+  if (process.platform !== 'win32') {
+    if (test('post-failure reconnect stops at the hook deadline when the command ignores SIGTERM', () => {
+      const tempDir = createTempDir();
+      const statePath = path.join(tempDir, 'mcp-health.json');
+
+      try {
+        const started = Date.now();
+        const result = spawnSync('node', [script], {
+          input: JSON.stringify({
+            tool_name: 'mcp__stubborn__messages',
+            tool_input: {},
+            tool_response: 'service unavailable 503'
+          }),
+          encoding: 'utf8',
+          env: buildHookEnv({
+            CLAUDE_HOOK_EVENT_NAME: 'PostToolUseFailure',
+            ECC_MCP_HEALTH_STATE_PATH: statePath,
+            ECC_MCP_RECONNECT_ALLOW: '1',
+            ECC_MCP_RECONNECT_COMMAND: `sh -c 'trap "" TERM; sleep 30'`,
+            ECC_MCP_RECONNECT_TIMEOUT_MS: '60000',
+            ECC_HOOK_DEADLINE_MS: String(Date.now() + 1500)
+          }),
+          timeout: 20000,
+          killSignal: 'SIGKILL'
+        });
+        const elapsed = Date.now() - started;
+
+        assert.ok(!result.error, `hook did not finish: ${result.error && result.error.code} after ${elapsed} ms`);
+        assert.ok(elapsed < 8000, `hook took ${elapsed} ms; the reconnect outlived the hook deadline`);
+        assert.strictEqual(result.status, 0, `Expected a non-blocking exit, got ${result.status}: ${result.stderr}`);
+        assert.ok(result.stderr.includes('stubborn reconnect failed'), `Expected reconnect failure log, got: ${result.stderr}`);
+      } finally {
+        cleanupTempDir(tempDir);
+      }
+    })) passed++; else failed++;
+  } else {
+    console.log('  - skipped: post-failure reconnect stops at the hook deadline when the command ignores SIGTERM (Windows)');
+  }
 
   if (test('post-failure expands per-server reconnect commands before follow-up config checks', () => {
     const tempDir = createTempDir();
