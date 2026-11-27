@@ -121,13 +121,17 @@ function signTestState(state) {
   return signStateForSession(TEST_SESSION_ID, ensureTestKey(), state);
 }
 
-function persistedStateVerifies() {
+function stateTextVerifies(text) {
   const keyHex = fs.readFileSync(path.join(stateDir, HMAC_KEY_FILE), 'utf8').trim();
   if (!HMAC_HEX_RE.test(keyHex)) return false;
-  const parsed = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  const parsed = JSON.parse(text);
   if (typeof parsed._sig !== 'string') return false;
   const expected = crypto.createHmac('sha256', Buffer.from(keyHex, 'hex')).update(`${HMAC_DOMAIN}\0${TEST_SESSION_ID}\0`).update(testCanonicalJson(parsed, '_sig')).digest('hex');
   return parsed._sig === expected;
+}
+
+function persistedStateVerifies() {
+  return stateTextVerifies(fs.readFileSync(stateFile, 'utf8'));
 }
 
 function runHook(input, env = {}) {
@@ -8811,12 +8815,28 @@ function runTests() {
       const keyPath = path.join(stateDir, HMAC_KEY_FILE);
       const lockPath = `${keyPath}.lock`;
       const flagFile = path.join(stateDir, 'publisher-paused');
-      const resultFile = path.join(stateDir, 'publisher-result.json');
-      const payload = { tool_name: 'Edit', tool_input: { file_path: '/src/lock-holder.js', old_string: 'a', new_string: 'b' } };
-      const driver = [
+      const releaseFile = path.join(stateDir, 'publisher-release');
+      const atLockFile = path.join(stateDir, 'contender-at-lock');
+      const publisherResultFile = path.join(stateDir, 'publisher-result.json');
+      const contenderResultFile = path.join(stateDir, 'contender-result.json');
+      const waitCell = new Int32Array(new SharedArrayBuffer(4));
+      const waitForFile = (file, ms) => {
+        const deadline = Date.now() + ms;
+        while (!fs.existsSync(file) && Date.now() < deadline) Atomics.wait(waitCell, 0, 0, 10);
+        return fs.existsSync(file);
+      };
+      const publisherPayload = { tool_name: 'Edit', tool_input: { file_path: '/src/lock-holder.js', old_string: 'a', new_string: 'b' } };
+      const contenderPayload = { tool_name: 'Edit', tool_input: { file_path: '/src/lock-contender.js', old_string: 'a', new_string: 'b' } };
+      // The publisher pauses at the rename that publishes the key and
+      // stays paused until the parent releases it, so the contender
+      // cannot slip in after publication: the parent releases the
+      // publisher only after the contender has signalled it reached the
+      // held lock. A fixed pause could expire first on a loaded machine
+      // and let the test pass without the interleaving ever happening.
+      const publisherDriver = [
         'const fs = require("fs");',
         'const path = require("path");',
-        `const resultFile = ${JSON.stringify(resultFile)};`,
+        `const resultFile = ${JSON.stringify(publisherResultFile)};`,
         'try {',
         `  process.env.GATEGUARD_STATE_DIR = ${JSON.stringify(stateDir)};`,
         `  process.env.CLAUDE_SESSION_ID = ${JSON.stringify(TEST_SESSION_ID)};`,
@@ -8829,48 +8849,150 @@ function runTests() {
         `    if (!paused && path.resolve(String(dest)) === ${JSON.stringify(keyPath)}) {`,
         '      paused = true;',
         `      fs.writeFileSync(${JSON.stringify(flagFile)}, "paused", "utf8");`,
-        '      const until = Date.now() + 400;',
-        '      while (Date.now() < until) {}',
+        '      const waitCell = new Int32Array(new SharedArrayBuffer(4));',
+        '      const releaseDeadline = Date.now() + 10000;',
+        `      while (!fs.existsSync(${JSON.stringify(releaseFile)}) && Date.now() < releaseDeadline) Atomics.wait(waitCell, 0, 0, 10);`,
         '    }',
         '    return origRename.apply(fs, [src, dest]);',
         '  };',
         `  const hook = require(${JSON.stringify(hookScript)});`,
-        `  const res = hook.run(${JSON.stringify(payload)});`,
-        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: typeof res === "string" ? res : (res.stdout || JSON.stringify(res)) }), "utf8");',
+        `  const res = hook.run(${JSON.stringify(publisherPayload)});`,
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: res.stdout || null, err: res.stderr || null }), "utf8");',
         '} catch (err) {',
         '  fs.writeFileSync(resultFile, JSON.stringify({ code: 1, error: String((err && err.stack) || err) }), "utf8");',
         '}'
       ].join('\n');
-      const child = spawn('node', ['-e', driver], { cwd: repoRoot, stdio: 'ignore' });
-      const waitCell = new Int32Array(new SharedArrayBuffer(4));
-      const flagDeadline = Date.now() + 5000;
-      while (!fs.existsSync(flagFile) && Date.now() < flagDeadline) Atomics.wait(waitCell, 0, 0, 10);
-      assert.ok(fs.existsSync(flagFile), 'publisher must hold the lock before the competing save runs');
-      const hook = loadDirectHook();
-      const originalLinkSync = fs.linkSync;
-      fs.linkSync = () => { const err = new Error('link unavailable'); err.code = 'EPERM'; throw err; };
-      let raced;
-      try {
-        raced = hook.run({ tool_name: 'Edit', tool_input: { file_path: '/src/lock-contender.js', old_string: 'a', new_string: 'b' } });
-      } finally {
-        fs.linkSync = originalLinkSync;
-      }
-      const resultDeadline = Date.now() + 10000;
-      while (!fs.existsSync(resultFile) && Date.now() < resultDeadline) Atomics.wait(waitCell, 0, 0, 10);
-      try { child.kill(); } catch (_) { /* already gone */ }
-      assert.ok(fs.existsSync(resultFile), 'publisher must finish and report its result');
-      const publisher = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
-      assert.strictEqual(publisher.code, 0, publisher.error || 'publisher failed');
-      const output = parseOutput(raced.stdout);
-      assert.ok(output && output.hookSpecificOutput, 'hook must produce JSON output');
-      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'competing first touch must be denied, not warned through');
-      assert.ok(!String(raced.stderr || '').includes('could not be persisted'), 'competing save must not warn of a persistence failure');
-      const childOutput = parseOutput(publisher.out);
-      assert.ok(childOutput && childOutput.hookSpecificOutput, 'publisher must produce JSON output');
-      assert.strictEqual(childOutput.hookSpecificOutput.permissionDecision, 'deny', 'publisher first touch must be denied');
+      // The contender signals the moment its lock acquisition meets the
+      // held lock, so the parent knows the wait actually happened before
+      // it releases the publisher.
+      const contenderDriver = [
+        'const fs = require("fs");',
+        'const path = require("path");',
+        `const resultFile = ${JSON.stringify(contenderResultFile)};`,
+        `const stateFile = ${JSON.stringify(stateFile)};`,
+        'try {',
+        `  process.env.GATEGUARD_STATE_DIR = ${JSON.stringify(stateDir)};`,
+        `  process.env.CLAUDE_SESSION_ID = ${JSON.stringify(TEST_SESSION_ID)};`,
+        "  process.env.ECC_HOOK_PROFILE = 'standard';",
+        "  process.env.GATEGUARD_EXTERNAL_CONTRACT_QUESTION = '';",
+        '  const origOpenSync = fs.openSync;',
+        '  fs.linkSync = () => { const e = new Error("link unavailable"); e.code = "EPERM"; throw e; };',
+        '  fs.openSync = function (target, flags, ...rest) {',
+        '    try {',
+        '      return origOpenSync.apply(fs, [target, flags, ...rest]);',
+        '    } catch (err) {',
+        `      if (err && err.code === "EEXIST" && path.resolve(String(target)) === ${JSON.stringify(lockPath)}) {`,
+        `        try { fs.writeFileSync(${JSON.stringify(atLockFile)}, "waiting", "utf8"); } catch (_) {}`,
+        '      }',
+        '      throw err;',
+        '    }',
+        '  };',
+        `  const hook = require(${JSON.stringify(hookScript)});`,
+        `  const res = hook.run(${JSON.stringify(contenderPayload)});`,
+        '  let snapshot = null;',
+        '  try { snapshot = fs.readFileSync(stateFile, "utf8"); } catch (_) {}',
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: res.stdout || null, err: res.stderr || null, snapshot }), "utf8");',
+        '} catch (err) {',
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 1, error: String((err && err.stack) || err) }), "utf8");',
+        '}'
+      ].join('\n');
+      const publisher = spawn('node', ['-e', publisherDriver], { cwd: repoRoot, stdio: 'ignore' });
+      assert.ok(waitForFile(flagFile, 5000), 'publisher must hold the lock before the competing save runs');
+      const contender = spawn('node', ['-e', contenderDriver], { cwd: repoRoot, stdio: 'ignore' });
+      assert.ok(waitForFile(atLockFile, 5000), 'contender must reach the held lock before the publisher is released');
+      fs.writeFileSync(releaseFile, 'go', 'utf8');
+      assert.ok(waitForFile(publisherResultFile, 10000), 'publisher must finish and report its result');
+      assert.ok(waitForFile(contenderResultFile, 10000), 'contender must finish and report its result');
+      try { publisher.kill(); } catch (_) { /* already gone */ }
+      try { contender.kill(); } catch (_) { /* already gone */ }
+      const publisherResult = JSON.parse(fs.readFileSync(publisherResultFile, 'utf8'));
+      const contenderResult = JSON.parse(fs.readFileSync(contenderResultFile, 'utf8'));
+      assert.strictEqual(publisherResult.code, 0, publisherResult.error || 'publisher failed');
+      assert.strictEqual(contenderResult.code, 0, contenderResult.error || 'contender failed');
+      const publisherOutput = parseOutput(publisherResult.out);
+      assert.ok(publisherOutput && publisherOutput.hookSpecificOutput, 'publisher must produce JSON output');
+      assert.strictEqual(publisherOutput.hookSpecificOutput.permissionDecision, 'deny', 'publisher first touch must be denied');
+      assert.ok(!String(publisherResult.err || '').includes('could not be persisted'), 'publisher must not warn of a persistence failure');
+      const contenderOutput = parseOutput(contenderResult.out);
+      assert.ok(contenderOutput && contenderOutput.hookSpecificOutput, 'contender must produce JSON output');
+      assert.strictEqual(contenderOutput.hookSpecificOutput.permissionDecision, 'deny', 'competing first touch must be denied, not warned through');
+      assert.ok(!String(contenderResult.err || '').includes('could not be persisted'), 'competing save must not warn of a persistence failure');
       assert.ok(!fs.existsSync(lockPath), 'fallback publication lock must be released');
       assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'one published key must survive');
-      assert.ok(persistedStateVerifies(), 'both saves must verify with the same key');
+      assert.ok(contenderResult.snapshot && stateTextVerifies(contenderResult.snapshot), 'the competing save must verify with the published key');
+      assert.ok(persistedStateVerifies(), 'the final state must verify with the published key');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('a fallback writer retries acquisition when the lock holder releases without publishing (#4140)', () => {
+      const { spawn } = require('child_process');
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const lockPath = `${keyPath}.lock`;
+      const holdingFile = path.join(stateDir, 'holder-holding');
+      const attemptedFile = path.join(stateDir, 'contender-attempted');
+      // A holder that takes the publication lock and releases it without
+      // publishing: the contender must retry acquisition and publish its
+      // own key instead of waiting out the budget and warning through.
+      // The holder releases only after the contender has attempted the
+      // lock, so the retry — not a lucky first acquisition — is what
+      // decides this test.
+      const holderDriver = [
+        'const fs = require("fs");',
+        `const lockPath = ${JSON.stringify(lockPath)};`,
+        'try {',
+        '  fs.writeFileSync(lockPath, String(process.pid), { encoding: "utf8", mode: 0o600 });',
+        `  fs.writeFileSync(${JSON.stringify(holdingFile)}, "holding", "utf8");`,
+        '  const waitCell = new Int32Array(new SharedArrayBuffer(4));',
+        '  const attemptDeadline = Date.now() + 5000;',
+        `  while (!fs.existsSync(${JSON.stringify(attemptedFile)}) && Date.now() < attemptDeadline) Atomics.wait(waitCell, 0, 0, 10);`,
+        '  Atomics.wait(waitCell, 0, 0, 50);',
+        '  fs.unlinkSync(lockPath);',
+        '} catch (err) {',
+        '  try { fs.unlinkSync(lockPath); } catch (_) {}',
+        '  throw err;',
+        '}'
+      ].join('\n');
+      const holder = spawn('node', ['-e', holderDriver], { cwd: repoRoot, stdio: 'ignore' });
+      const waitCell = new Int32Array(new SharedArrayBuffer(4));
+      const holdDeadline = Date.now() + 5000;
+      while (!fs.existsSync(holdingFile) && Date.now() < holdDeadline) Atomics.wait(waitCell, 0, 0, 10);
+      assert.ok(fs.existsSync(holdingFile), 'holder must take the lock before the competing save runs');
+      const hook = loadDirectHook();
+      const originalLinkSync = fs.linkSync;
+      const originalOpenSync = fs.openSync;
+      fs.linkSync = () => { const err = new Error('link unavailable'); err.code = 'EPERM'; throw err; };
+      fs.openSync = function (target, flags, ...rest) {
+        try {
+          return originalOpenSync.apply(fs, [target, flags, ...rest]);
+        } catch (err) {
+          if (err && err.code === 'EEXIST' && path.resolve(String(target)) === path.resolve(lockPath)) {
+            try { fs.writeFileSync(attemptedFile, 'attempted', 'utf8'); } catch (_) { /* ignore */ }
+          }
+          throw err;
+        }
+      };
+      let result;
+      try {
+        result = hook.run({ tool_name: 'Edit', tool_input: { file_path: '/src/lock-released.js', old_string: 'a', new_string: 'b' } });
+      } finally {
+        fs.linkSync = originalLinkSync;
+        fs.openSync = originalOpenSync;
+      }
+      const exitDeadline = Date.now() + 5000;
+      while (holder.exitCode === null && Date.now() < exitDeadline) Atomics.wait(waitCell, 0, 0, 10);
+      try { holder.kill(); } catch (_) { /* already gone */ }
+      const output = parseOutput(result.stdout);
+      assert.ok(output && output.hookSpecificOutput, 'hook must produce JSON output');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'first touch must be denied after retrying acquisition');
+      assert.ok(!String(result.stderr || '').includes('could not be persisted'), 'retried save must not warn of a persistence failure');
+      assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'the retried writer must publish the key');
+      assert.ok(!fs.existsSync(lockPath), 'fallback publication lock must be released');
+      assert.ok(persistedStateVerifies(), 'state saved after retrying acquisition must verify');
     })
   )
     passed++;

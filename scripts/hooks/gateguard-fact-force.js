@@ -1897,24 +1897,38 @@ function publishKeyFile(keyPath, tmpPath) {
 // mid-publication, and failing here turns a first-touch denial into a
 // persistence warning that lets the edit through. Bounded: publication is
 // sub-second, and a holder that never publishes must not stall the hook.
-function waitForPublishedKey() {
+// If the holder releases the lock without publishing, the slot is free
+// again, so the wait reports the release and the caller retries
+// acquisition within the same budget instead of failing outright.
+function waitForPublishedKey(lockPath, deadline) {
   const waitCell = new Int32Array(new SharedArrayBuffer(4));
-  const deadline = Date.now() + 1000;
   while (!readKeyIfExists() && Date.now() < deadline) {
+    try {
+      fs.lstatSync(lockPath);
+    } catch (err) {
+      if (err && err.code === 'ENOENT') return 'released';
+      // Any other failure leaves the lock's state unknown: keep waiting
+      // until the budget runs out rather than guessing.
+    }
     Atomics.wait(waitCell, 0, 0, 10);
   }
+  return readKeyIfExists() ? 'published' : 'timeout';
 }
 
 function publishKeyFileFallback(keyPath, tmpPath) {
   const lockPath = `${keyPath}.lock`;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  const deadline = Date.now() + 1000;
+  for (;;) {
+    if (Date.now() >= deadline) return false;
     let lockFd;
     try {
       lockFd = fs.openSync(lockPath, 'wx', 0o600);
     } catch (err) {
       if (err && err.code === 'EEXIST') {
-        if (attempt === 0 && stealStaleKeyLock(lockPath)) continue;
-        waitForPublishedKey();
+        if (stealStaleKeyLock(lockPath)) continue;
+        const outcome = waitForPublishedKey(lockPath, deadline);
+        if (outcome === 'published') return false;
+        if (outcome === 'released') continue;
         return false;
       }
       throw err;
@@ -1947,7 +1961,6 @@ function publishKeyFileFallback(keyPath, tmpPath) {
       }
     }
   }
-  return false;
 }
 
 // Remove a fallback-publication lock only when its holder is provably gone:
