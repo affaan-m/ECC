@@ -143,6 +143,11 @@
       },
       "description": "Optional. CodeScene Code Health MCP (community skill: codehealth-mcp). Not enabled by default — copy only if you opt in. Requires your own CS_ACCESS_TOKEN (no bundled credentials). See skills/codehealth-mcp/SKILL.md for data boundaries and failure behavior."
     },
+    "npmscan": {
+      "type": "http",
+      "url": "https://npmscan.com/api/mcp",
+      "description": "Optional. npm supply-chain checks before install: known malware and vulnerabilities per version, maintainer and publisher changes, publish provenance against the source repo, and install-script analysis; also audits package.json and lockfiles. Free and read-only, no API key. Lookups send package names and versions; the audit tools also receive whatever package.json, lockfile or SBOM text, or repository URL, you pass them."
+    },
     "magic": {
       "command": "npx",
       "args": ["-y", "@magicuidesign/mcp@latest"],
