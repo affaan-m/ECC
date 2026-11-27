@@ -28,6 +28,22 @@ function test(name, fn) {
 }
 
 const { RUBRIC } = require('../../scripts/lib/astra-review/prompt');
+// Windows cmd shims as npm and pnpm 12 write them: the line that runs the JS entry point.
+const NPM_SHIM = '@ECHO off\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n';
+const PNPM_SHIM = '@SETLOCAL\r\n"%~dp0\\..\\global\\v11\\abc123\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n';
+const npmEntry = (dir) => path.win32.join(dir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+
+// A fake Windows file system: existsSync and readFileSync over a map of path -> content.
+function winFs(files) {
+  return {
+    existsSync: (file) => Object.prototype.hasOwnProperty.call(files, file),
+    readFileSync: (file) => {
+      if (!Object.prototype.hasOwnProperty.call(files, file)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      return files[file];
+    },
+  };
+}
+
 
 const reviewJson = JSON.stringify({
   verdict: 'PASS',
@@ -127,12 +143,10 @@ test('buildEnvironment keeps Windows-style Path and other allowlisted keys case-
 test('filtered Windows environment still lets resolveCodexCommand find the npm shim', () => {
   const dir = 'C:\\npm';
   const entry = path.win32.join(dir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
-  const existing = new Set([path.win32.join(dir, 'codex.cmd'), entry]);
+  const fsFake = winFs({ [path.win32.join(dir, 'codex.cmd')]: NPM_SHIM, [entry]: '' });
   const env = codex.buildEnvironment({ Path: `C:\\Windows;${dir}` });
 
-  const resolved = codex.resolveCodexCommand({
-    platform: 'win32', env, existsSync: (file) => existing.has(file), execPath: 'node.exe',
-  });
+  const resolved = codex.resolveCodexCommand({ platform: 'win32', env, ...fsFake, execPath: 'node.exe' });
 
   assert.deepStrictEqual(resolved, { command: 'node.exe', prefixArgs: [entry] });
 });
@@ -255,12 +269,12 @@ test('resolveCodexCommand uses the bare codex binary outside Windows', () => {
 test('resolveCodexCommand runs the npm shim entry point through node on Windows', () => {
   const dir = 'C:\\Users\\me\\AppData\\Roaming\\npm';
   const entry = path.win32.join(dir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
-  const existing = new Set([path.win32.join(dir, 'codex.cmd'), entry]);
+  const fsFake = winFs({ [path.win32.join(dir, 'codex.cmd')]: NPM_SHIM, [entry]: '' });
 
   const resolved = codex.resolveCodexCommand({
     platform: 'win32',
     env: { PATH: `C:\\Windows;${dir}` },
-    existsSync: (file) => existing.has(file),
+    ...fsFake,
     execPath: 'C:\\node\\node.exe',
   });
 
@@ -284,6 +298,64 @@ test('resolveCodexCommand falls back to codex on Windows when nothing is found',
   });
 
   assert.deepStrictEqual(resolved, { command: 'codex', prefixArgs: [] });
+});
+
+test('resolveCodexCommand follows a pnpm shim to the @openai/codex script it points to', () => {
+  const dir = 'C:\\pnpm\\bin';
+  const entry = path.win32.join(dir, '..', 'global', 'v11', 'abc123', 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+  const fsFake = winFs({ [path.win32.join(dir, 'codex.cmd')]: PNPM_SHIM, [entry]: '' });
+
+  const resolved = codex.resolveCodexCommand({ platform: 'win32', env: { PATH: dir }, ...fsFake, execPath: 'node.exe' });
+
+  assert.deepStrictEqual(resolved, { command: 'node.exe', prefixArgs: [entry] });
+});
+
+test('resolveCodexCommand takes the first codex on PATH, as cmd.exe does, so an earlier shim beats a later codex.exe', () => {
+  const npm = 'C:\\npm';
+  const tools = 'C:\\tools';
+  const fsFake = winFs({
+    [path.win32.join(npm, 'codex.cmd')]: NPM_SHIM,
+    [npmEntry(npm)]: '',
+    [path.win32.join(tools, 'codex.exe')]: '',
+  });
+
+  const resolved = codex.resolveCodexCommand({ platform: 'win32', env: { PATH: `${npm};${tools}` }, ...fsFake, execPath: 'node.exe' });
+
+  assert.deepStrictEqual(resolved, { command: 'node.exe', prefixArgs: [npmEntry(npm)] });
+});
+
+test('resolveCodexCommand skips a stale shim and keeps walking PATH', () => {
+  const stale = 'C:\\old-npm';
+  const npm = 'C:\\npm';
+  const fsFake = winFs({
+    [path.win32.join(stale, 'codex.cmd')]: NPM_SHIM,
+    [path.win32.join(npm, 'codex.cmd')]: NPM_SHIM,
+    [npmEntry(npm)]: '',
+  });
+
+  const resolved = codex.resolveCodexCommand({ platform: 'win32', env: { PATH: `${stale};${npm}` }, ...fsFake, execPath: 'node.exe' });
+
+  assert.deepStrictEqual(resolved, { command: 'node.exe', prefixArgs: [npmEntry(npm)] });
+});
+
+test('resolveCodexCommand reports a shim it cannot launch instead of "not installed"', () => {
+  const stale = 'C:\\old-npm';
+  const fsFake = winFs({ [path.win32.join(stale, 'codex.cmd')]: NPM_SHIM });
+
+  assert.throws(
+    () => codex.resolveCodexCommand({ platform: 'win32', env: { PATH: stale }, ...fsFake, execPath: 'node.exe' }),
+    /Codex CLI was found at C:\\old-npm\\codex\.cmd but could not be launched/
+  );
+});
+
+test('resolveCodexCommand returns an absolute path for a relative PATH entry', () => {
+  const exe = path.win32.join(path.win32.resolve('tools'), 'codex.exe');
+  const fsFake = winFs({ [exe]: '' });
+
+  const resolved = codex.resolveCodexCommand({ platform: 'win32', env: { PATH: 'tools' }, ...fsFake, execPath: 'node.exe' });
+
+  assert.ok(path.win32.isAbsolute(resolved.command), resolved.command);
+  assert.strictEqual(resolved.command, exe);
 });
 
 test('runCodexReview spawns the resolved command with prefix args first', () => {

@@ -120,32 +120,71 @@ function listConfiguredMcpServers(launcher, deps = {}) {
   return servers.map((server) => String(server && server.name));
 }
 
+// The quoted script path in an npm (`%dp0%\...`) or pnpm (`%~dp0\...`) cmd shim.
+const CMD_SHIM_ENTRY = /"%(?:dp0%|~dp0)\\([^"%]+\.[cm]?js)"/gi;
+const CODEX_PACKAGE_SEGMENT = '\\node_modules\\@openai\\codex\\';
+
+function windowsPathDirs(env) {
+  const pathValue = env.PATH || env.Path || env.path || '';
+  return pathValue
+    .split(';')
+    .map((dir) => dir.trim().replace(/^"(.*)"$/, '$1'))
+    .filter(Boolean)
+    // cmd.exe resolves a relative entry against the caller's directory; Codex
+    // runs from a temp dir, so the launcher must be absolute.
+    .map((dir) => path.win32.resolve(dir));
+}
+
+function readShimEntry(shimPath, readFile, exists) {
+  let shim;
+  try {
+    shim = String(readFile(shimPath, 'utf8'));
+  } catch {
+    return null;
+  }
+  const shimDir = path.win32.dirname(shimPath);
+  for (const match of shim.matchAll(CMD_SHIM_ENTRY)) {
+    const entry = path.win32.join(shimDir, match[1]);
+    if (entry.toLowerCase().includes(CODEX_PACKAGE_SEGMENT) && exists(entry)) return entry;
+  }
+  return null;
+}
+
 /**
- * The npm-installed Codex CLI is a `codex.cmd` shim on Windows, which Node
- * cannot spawn without a shell. Run its JavaScript entry point through node
- * instead; a native codex.exe is used as-is. Elsewhere `codex` on PATH is enough.
- * @param {{platform?: string, env?: object, existsSync?: Function, execPath?: string}} [deps]
+ * The npm or pnpm Codex CLI is a `codex.cmd` shim on Windows, which Node
+ * cannot spawn without a shell. PATH is walked in order, as cmd.exe would:
+ * `codex.exe` runs as-is, and a `codex.cmd` shim is replaced by node running
+ * the @openai/codex script it points to. A shim that points elsewhere (a stale
+ * one, another package's wrapper) is skipped; if no launchable Codex follows,
+ * that is an error rather than "not installed". Elsewhere `codex` on PATH is enough.
+ * @param {{platform?: string, env?: object, existsSync?: Function, readFileSync?: Function, execPath?: string}} [deps]
  * @returns {{command: string, prefixArgs: string[]}}
  */
 function resolveCodexCommand(deps = {}) {
-  const platform = deps.platform || process.platform;
-  if (platform !== 'win32') return { command: 'codex', prefixArgs: [] };
+  const fallback = { command: 'codex', prefixArgs: [] };
+  if ((deps.platform || process.platform) !== 'win32') return fallback;
 
-  const env = deps.env || process.env;
   const exists = deps.existsSync || fs.existsSync;
+  const readFile = deps.readFileSync || fs.readFileSync;
   const execPath = deps.execPath || process.execPath;
-  const pathValue = env.PATH || env.Path || env.path || '';
-  const dirs = pathValue.split(';').filter(Boolean);
+  let unlaunchableShim = null;
+  for (const dir of windowsPathDirs(deps.env || process.env)) {
+    const exePath = path.win32.join(dir, 'codex.exe');
+    if (exists(exePath)) return { command: exePath, prefixArgs: [] };
 
-  const exeDir = dirs.find((dir) => exists(path.win32.join(dir, 'codex.exe')));
-  if (exeDir) return { command: path.win32.join(exeDir, 'codex.exe'), prefixArgs: [] };
-
-  const shimDir = dirs.find((dir) => exists(path.win32.join(dir, 'codex.cmd')));
-  if (shimDir) {
-    const entry = path.win32.join(shimDir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
-    if (exists(entry)) return { command: execPath, prefixArgs: [entry] };
+    const shimPath = path.win32.join(dir, 'codex.cmd');
+    if (!exists(shimPath)) continue;
+    const entry = readShimEntry(shimPath, readFile, exists);
+    if (entry) return { command: execPath, prefixArgs: [entry] };
+    unlaunchableShim = unlaunchableShim || shimPath;
   }
-  return { command: 'codex', prefixArgs: [] };
+  if (unlaunchableShim) {
+    throw new Error(
+      `Codex CLI was found at ${unlaunchableShim} but could not be launched: `
+      + 'it does not point to an installed @openai/codex script'
+    );
+  }
+  return fallback;
 }
 
 function translateSpawnError(error, task = 'review') {
