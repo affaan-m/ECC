@@ -1768,13 +1768,17 @@ function readKeyOnce(keyPath, nofollow) {
 function readKeyIfExists() {
   const keyPath = path.join(STATE_DIR, HMAC_KEY_FILE);
   const nofollow = fs.constants.O_NOFOLLOW || 0;
-  // A concurrent creator using the plain-write fallback can leave a
-  // transiently empty file; re-read briefly before concluding the key is
-  // missing. A non-empty malformed key is corruption, not a race, and fails
-  // at once. Any failure here fails closed downstream, never throws.
+  // Atomic publication never leaves a visible empty file, so a transiently
+  // empty read can only come from a key stranded by a killed pre-fix writer;
+  // pause briefly between re-reads so the retry can actually observe the
+  // file settling instead of spinning through all five attempts in
+  // microseconds. A non-empty malformed key is corruption, not a race, and
+  // fails at once. Any failure here fails closed downstream, never throws.
+  const waitCell = new Int32Array(new SharedArrayBuffer(4));
   for (let attempt = 0; attempt < 5; attempt++) {
     const hex = readKeyOnce(keyPath, nofollow);
     if (hex !== '') return HMAC_HEX_RE.test(hex) ? Buffer.from(hex, 'hex') : null;
+    if (attempt < 4) Atomics.wait(waitCell, 0, 0, 2);
   }
   return null;
 }
@@ -1811,7 +1815,7 @@ function keyFileIsReplaceable(keyPath) {
 // Retire an untrusted key file and publish the fresh key exclusively, so
 // concurrent repairs converge instead of overwriting each other: the file
 // is moved aside under a unique name (never deleted outright), the new key
-// is published with a hard link (or an exclusive create where hard links
+// is published with a hard link (or a locked atomic rename where hard links
 // are unavailable), and losing the publication race means another repair
 // won — re-read the winner instead of racing it. The caller re-reads after
 // any replacement so it never signs with a superseded key. Directories are
@@ -1862,13 +1866,12 @@ function recoverExistingKey(keyPath, tmpPath, key, err = new Error('integrity ke
 }
 
 // Publish a fresh key file so concurrent writers converge on one key and no
-// writer ever overwrites a live key: a hard link on POSIX, or an exclusive
-// create where hard links are unavailable (Windows/FAT). Both fail instead
-// of replacing a key another writer just published. The exclusive-create
-// bytes are read back from the temp file, so the published key is exactly
-// the complete key this writer generated — no reader ever observes a
-// partially written key. Returns true when this writer published, false
-// when another writer won the race.
+// writer ever overwrites a live key: a hard link on POSIX, or a locked
+// atomic rename where hard links are unavailable (Windows/FAT). Both fail
+// instead of replacing a key another writer just published. The rename
+// publishes the complete temp file in one step, so a reader sees either no
+// key file or the complete key — never an empty or partial one. Returns
+// true when this writer published, false when another writer won the race.
 function publishKeyFile(keyPath, tmpPath) {
   try {
     fs.linkSync(tmpPath, keyPath);
@@ -1876,29 +1879,113 @@ function publishKeyFile(keyPath, tmpPath) {
   } catch (err) {
     if (err && err.code === 'EEXIST') return false;
     if (err && (err.code === 'EPERM' || err.code === 'ENOTSUP' || err.code === 'EXDEV')) {
-      let fd;
-      try {
-        fd = fs.openSync(keyPath, 'wx', 0o600);
-      } catch (openErr) {
-        if (openErr && openErr.code === 'EEXIST') return false;
-        throw openErr;
-      }
-      try {
-        fs.writeFileSync(fd, fs.readFileSync(tmpPath, 'utf8'), 'utf8');
-        fs.fsyncSync(fd);
-      } finally {
-        fs.closeSync(fd);
-      }
-      return true;
+      return publishKeyFileFallback(keyPath, tmpPath);
     }
     throw err;
   }
 }
 
+// Fallback publication where hard links are unavailable: the complete temp
+// file is published with a single atomic rename, so no reader ever observes
+// an empty or partial key. A sibling lockfile serialises fallback writers —
+// rename on its own is not exclusive (POSIX rename replaces), so without
+// the lock a second writer could rename over the winner's key. The lock
+// holds the holder's pid, so a contender can tell a stale lock (holder
+// dead) from a live one and recover instead of wedging forever.
+function publishKeyFileFallback(keyPath, tmpPath) {
+  const lockPath = `${keyPath}.lock`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let lockFd;
+    try {
+      lockFd = fs.openSync(lockPath, 'wx', 0o600);
+      fs.writeFileSync(lockFd, String(process.pid), 'utf8');
+    } catch (err) {
+      if (err && err.code === 'EEXIST') {
+        if (attempt === 0 && stealStaleKeyLock(lockPath)) continue;
+        return false;
+      }
+      throw err;
+    }
+    try {
+      // Publish only into an absent destination. An existing file — valid
+      // or corrupt — is the caller's problem: recoverExistingKey retires it
+      // or adopts the winner. Checking under the lock is what makes the
+      // rename safe: no cooperating writer can publish between the check
+      // and the rename.
+      try {
+        fs.lstatSync(keyPath);
+        return false;
+      } catch (err) {
+        if (!err || err.code !== 'ENOENT') throw err;
+      }
+      fs.renameSync(tmpPath, keyPath);
+      return true;
+    } finally {
+      try {
+        fs.closeSync(lockFd);
+      } catch (_) {
+        /* ignore */
+      }
+      try {
+        fs.unlinkSync(lockPath);
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  }
+  return false;
+}
+
+// Remove a fallback-publication lock only when its holder is provably gone:
+// the pid recorded in the lockfile is dead, or the lock is old and its pid
+// unreadable (publication is sub-second; a lock older than the grace with
+// no readable holder cannot be a live publisher). The lock is unlinked only
+// if it is still the same file that was examined — same inode and mtime —
+// so a contender that already stole and re-created it is never disturbed.
+// Returns true when the lock was removed and the caller should retry.
+const STALE_KEY_LOCK_MS = 30000;
+function stealStaleKeyLock(lockPath) {
+  let before;
+  try {
+    before = fs.statSync(lockPath);
+  } catch (_) {
+    return true; // lock vanished; retry the acquisition
+  }
+  let pid = NaN;
+  try {
+    pid = parseInt(fs.readFileSync(lockPath, 'utf8').trim(), 10);
+  } catch (_) {
+    /* unreadable lockfile: fall through to the age check */
+  }
+  if (Number.isInteger(pid) && pid > 0) {
+    try {
+      process.kill(pid, 0);
+      return false; // holder is alive
+    } catch (err) {
+      if (!err || err.code !== 'ESRCH') return false; // cannot tell; leave it
+    }
+    // Holder is dead: the lock is stale regardless of age.
+  } else if (Date.now() - before.mtimeMs < STALE_KEY_LOCK_MS) {
+    return false; // no holder pid and too young to call stale
+  }
+  try {
+    const after = fs.statSync(lockPath);
+    if (after.mtimeMs !== before.mtimeMs || (before.ino !== 0 && after.ino !== before.ino)) return false;
+  } catch (_) {
+    return true; // lock vanished; retry the acquisition
+  }
+  try {
+    fs.unlinkSync(lockPath);
+    return true;
+  } catch (_) {
+    return false; // someone else removed it or raced us
+  }
+}
+
 // Read the integrity key, creating it when a save needs one. Reads must
 // never create it: a state file with no key file cannot have been signed by
-// this hook. Publication is exclusive (hard link on POSIX, exclusive create
-// where hard links are unavailable), so a concurrent reader never sees a
+// this hook. Publication is exclusive (hard link on POSIX, a locked atomic
+// rename where hard links are unavailable), so a concurrent reader never sees a
 // partial key and concurrent first writers converge on one key; losers
 // re-read the winner's key instead of overwriting it. A recent empty key
 // file is never replaced: the repair path enforces the abandonment age
@@ -1913,7 +2000,16 @@ function getOrCreateKey() {
   const keyHex = key.toString('hex');
   const tmpPath = path.join(STATE_DIR, `${HMAC_KEY_FILE}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`);
   try {
-    fs.writeFileSync(tmpPath, keyHex, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    // Write the complete key and flush it before publication, so whichever
+    // path publishes it (hard link or rename) moves a durable, complete
+    // file into place.
+    const tmpFd = fs.openSync(tmpPath, 'wx', 0o600);
+    try {
+      fs.writeFileSync(tmpFd, keyHex, 'utf8');
+      fs.fsyncSync(tmpFd);
+    } finally {
+      fs.closeSync(tmpFd);
+    }
     if (publishKeyFile(keyPath, tmpPath)) return key;
     return recoverExistingKey(keyPath, tmpPath, key);
   } finally {

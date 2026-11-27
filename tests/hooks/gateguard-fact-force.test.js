@@ -8678,16 +8678,32 @@ function runTests() {
     test('key fallback publishes a complete key atomically when hard links fail (#4140)', () => {
       const hook = loadDirectHook();
       const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const lockPath = `${keyPath}.lock`;
       const originalLinkSync = fs.linkSync;
       const originalWriteFileSync = fs.writeFileSync;
       const originalOpenSync = fs.openSync;
-      const originalCloseSync = fs.closeSync;
+      const originalRenameSync = fs.renameSync;
       const writeTargets = [];
       const keyOpens = [];
+      // The publication moment: the fallback must rename a complete temp
+      // file into place. Snapshot the destination at that instant — it must
+      // not exist yet, and the temp file must already hold a complete key.
+      // A fallback that creates the destination and then writes into it
+      // fails here: it never calls renameSync, and a reader can observe the
+      // empty or partial file.
+      let renameObserved = false;
       fs.linkSync = () => {
         const err = new Error('link unavailable');
         err.code = 'EPERM';
         throw err;
+      };
+      fs.renameSync = function (src, dest, ...rest) {
+        if (path.resolve(String(dest)) === path.resolve(keyPath)) {
+          renameObserved = true;
+          assert.throws(() => fs.readFileSync(keyPath, 'utf8'), { code: 'ENOENT' }, 'key destination must not exist before the atomic rename');
+          assert.ok(HMAC_HEX_RE.test(fs.readFileSync(String(src), 'utf8').trim()), 'temp file must hold a complete key before the atomic rename');
+        }
+        return originalRenameSync.apply(fs, [src, dest, ...rest]);
       };
       // Record every open of the key destination, with its flags: a fallback
       // that opens the destination through a descriptor would expose an
@@ -8698,14 +8714,6 @@ function runTests() {
       };
       fs.writeFileSync = function (target, ...rest) {
         writeTargets.push(String(target));
-        // Simulate a process killed mid-write: the destination appears empty.
-        if (path.resolve(String(target)) === path.resolve(keyPath)) {
-          const fd = originalOpenSync(target, 'wx');
-          originalCloseSync(fd);
-          const err = new Error('interrupted write');
-          err.code = 'EIO';
-          throw err;
-        }
         return originalWriteFileSync.apply(fs, [target, ...rest]);
       };
       try {
@@ -8720,19 +8728,23 @@ function runTests() {
         fs.linkSync = originalLinkSync;
         fs.writeFileSync = originalWriteFileSync;
         fs.openSync = originalOpenSync;
+        fs.renameSync = originalRenameSync;
       }
+      assert.ok(renameObserved, 'fallback must publish through an atomic rename');
       assert.ok(!writeTargets.some(t => path.resolve(t) === path.resolve(keyPath)), 'fallback must never write the key destination directly');
-      // A writing open of the destination is only safe as an exclusive
-      // create: it fails instead of replacing a live key. Reads use numeric
-      // O_RDONLY flags; the exclusive-create publish open uses 'wx'.
+      // The destination is published by rename alone: it must never be opened
+      // for writing at all. Any writing open (exclusive or not) exposes an
+      // empty or partial file to a concurrent reader. Reads use numeric
+      // O_RDONLY flags or the string flag 'r'.
       for (const flags of keyOpens) {
         if (typeof flags === 'string') {
-          assert.strictEqual(flags, 'wx', `key destination must only be opened with exclusive create, saw flags ${flags}`);
+          assert.strictEqual(flags, 'r', `key destination must never be opened for writing, saw flags ${flags}`);
         } else {
-          assert.strictEqual(flags & (fs.constants.O_WRONLY | fs.constants.O_RDWR), 0, 'key destination must never be opened for writing except by exclusive create');
-          assert.strictEqual(flags & fs.constants.O_CREAT, 0, 'key destination must never be opened with O_CREAT except by exclusive create');
+          assert.strictEqual(flags & (fs.constants.O_WRONLY | fs.constants.O_RDWR), 0, 'key destination must never be opened for writing');
+          assert.strictEqual(flags & fs.constants.O_CREAT, 0, 'key destination must never be opened with O_CREAT');
         }
       }
+      assert.ok(!fs.existsSync(lockPath), 'fallback publication lock must be released');
       assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'fallback must publish a complete key');
       assert.ok(persistedStateVerifies(), 'state saved through the fallback must verify');
     })
@@ -8745,13 +8757,16 @@ function runTests() {
     test('a concurrent fallback writer adopts the published key instead of replacing it (#4140)', () => {
       const hook = loadDirectHook();
       const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const lockPath = `${keyPath}.lock`;
       const originalLinkSync = fs.linkSync;
-      const originalRenameSync = fs.renameSync;
       const originalOpenSync = fs.openSync;
       // A key published by a writer that slipped in between this run's key
       // check and its publication. The interleaving is injected at the
-      // publication primitive itself, so it fires for the rename fallback
-      // and the exclusive-create fallback alike.
+      // fallback's first step — acquiring the publication lock — so the
+      // winner is already in place when the fallback re-checks the
+      // destination under the lock and adopts it instead of replacing it.
+      // (Injecting at the rename would be too late: the rename is the
+      // publication itself, and nothing re-checks after it.)
       const winnerKey = crypto.randomBytes(32).toString('hex');
       let injected = false;
       const injectWinner = () => {
@@ -8764,18 +8779,8 @@ function runTests() {
         err.code = 'EPERM';
         throw err;
       };
-      fs.renameSync = function (src, dest, ...rest) {
-        if (path.resolve(String(dest)) === path.resolve(keyPath)) injectWinner();
-        return originalRenameSync.apply(fs, [src, dest, ...rest]);
-      };
       fs.openSync = function (target, flags, ...rest) {
-        const isPublishOpen =
-          path.resolve(String(target)) === path.resolve(keyPath) &&
-          (flags === 'wx' ||
-            (typeof flags === 'number' &&
-              (flags & fs.constants.O_CREAT) !== 0 &&
-              (flags & (fs.constants.O_WRONLY | fs.constants.O_RDWR)) !== 0));
-        if (isPublishOpen) injectWinner();
+        if (path.resolve(String(target)) === path.resolve(lockPath)) injectWinner();
         return originalOpenSync.apply(fs, [target, flags, ...rest]);
       };
       try {
@@ -8788,7 +8793,6 @@ function runTests() {
         assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'first touch must be denied');
       } finally {
         fs.linkSync = originalLinkSync;
-        fs.renameSync = originalRenameSync;
         fs.openSync = originalOpenSync;
       }
       assert.ok(injected, 'the interleaved writer must have published during the fallback');
