@@ -169,6 +169,18 @@ function safeParse(raw) {
   }
 }
 
+const SERVER_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+// An explicit server value is only usable when it is a string that could be a
+// server id. Objects and other types must never be stringified into a name.
+function serverIdOrNull(value) {
+  return typeof value === 'string' && SERVER_ID_PATTERN.test(value) ? value : null;
+}
+
+function nonEmptyStringOrNull(value) {
+  return typeof value === 'string' && value ? value : null;
+}
+
 function extractMcpTarget(input) {
   const toolName = String(input.tool_name || input.name || '');
   // A native MCP tool name identifies the dispatch target. A similarly named
@@ -180,23 +192,20 @@ function extractMcpTarget(input) {
     }
   }
 
-
-  const explicitServer = input.server
-    || input.mcp_server
-    || input.tool_input?.server
-    || input.tool_input?.mcp_server
-    || input.tool_input?.connector
-    || null;
-  const explicitTool = input.tool
-    || input.mcp_tool
-    || input.tool_input?.tool
-    || input.tool_input?.mcp_tool
-    || null;
+  // tool_input is the MCP tool's own arguments whenever the tool name starts
+  // with mcp__, including a name that does not parse as mcp__<server>__<tool>,
+  // so it never chooses the probed server there. It is consulted only for
+  // generic wrapper tools that carry the target in their arguments.
+  const nested = toolName.startsWith('mcp__') ? null : input.tool_input;
+  const explicitServer = [input.server, input.mcp_server, nested?.server, nested?.mcp_server, nested?.connector]
+    .map(serverIdOrNull).find(Boolean);
+  const explicitTool = [input.tool, input.mcp_tool, nested?.tool, nested?.mcp_tool]
+    .map(nonEmptyStringOrNull).find(Boolean);
 
   if (explicitServer) {
     return {
-      server: String(explicitServer),
-      tool: explicitTool ? String(explicitTool) : toolName
+      server: explicitServer,
+      tool: explicitTool || toolName
     };
   }
 
@@ -208,10 +217,14 @@ function extractMcpTargetFromRaw(raw) {
   const serverMatch = raw.match(/"(?:server|mcp_server|connector)"\s*:\s*"([^"]+)"/);
   const toolMatch = raw.match(/"(?:tool|mcp_tool)"\s*:\s*"([^"]+)"/);
 
+  // The patterns match anywhere in the raw text, so a value found this way may
+  // be a tool argument: pass it as tool_input so an mcp__ tool name wins.
   return extractMcpTarget({
     tool_name: toolNameMatch ? toolNameMatch[1] : '',
-    server: serverMatch ? serverMatch[1] : undefined,
-    tool: toolMatch ? toolMatch[1] : undefined
+    tool_input: {
+      server: serverMatch ? serverMatch[1] : undefined,
+      tool: toolMatch ? toolMatch[1] : undefined
+    }
   });
 }
 
@@ -219,7 +232,7 @@ function resolveServerConfig(serverName) {
   // SECURITY: serverName flows into env-var lookup and shell-adjacent paths.
   // Reject anything outside a strict token so config-controlled names cannot
   // inject shell metachars ($(..), backticks, ;) downstream.
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(String(serverName || ''))) {
+  if (!SERVER_ID_PATTERN.test(String(serverName || ''))) {
     return null;
   }
   for (const filePath of configPaths()) {
@@ -678,7 +691,7 @@ function reconnectCommand(serverName) {
   if (!/^(1|true|yes)$/i.test(String(process.env.ECC_MCP_RECONNECT_ALLOW || ''))) {
     return null;
   }
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(String(serverName || ''))) {
+  if (!SERVER_ID_PATTERN.test(String(serverName || ''))) {
     return null;
   }
   const key = `ECC_MCP_RECONNECT_${String(serverName).toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;

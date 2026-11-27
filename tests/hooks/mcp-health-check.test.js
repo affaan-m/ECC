@@ -513,6 +513,144 @@ async function runTests() {
     }
   })) passed++; else failed++;
 
+  // The server is named by the mcp__<server>__<tool> tool name. tool_input holds the
+  // MCP tool's own arguments, so an argument called server/mcp_server/connector must
+  // never rename the server, and an object value must never be stringified into it.
+  const missingConfigLog = (input) => {
+    const tempDir = createTempDir();
+    try {
+      const result = runHook(input, {
+        CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
+        ECC_MCP_CONFIG_PATH: path.join(tempDir, 'missing.json'),
+        ECC_MCP_HEALTH_STATE_PATH: path.join(tempDir, 'state.json')
+      });
+      assert.strictEqual(result.code, 0, result.stderr);
+      return result.stderr;
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  };
+
+  if (test('does not stringify an object tool_input.server into the server name', () => {
+    const stderr = missingConfigLog({ tool_name: 'mcp__realsrv__lookup', tool_input: { server: { host: 'x' }, connector: { a: 1 } } });
+    assert.ok(stderr.includes('No MCP config found for realsrv;'), stderr);
+    assert.ok(!stderr.includes('[object Object]'), stderr);
+  })) passed++; else failed++;
+
+  if (test('does not stringify an object top-level server into the server name', () => {
+    const stderr = missingConfigLog({ tool_name: 'mcp__realsrv__lookup', server: { host: 'x' }, mcp_server: ['a'] });
+    assert.ok(stderr.includes('No MCP config found for realsrv;'), stderr);
+  })) passed++; else failed++;
+
+  if (test('a string tool_input.server argument does not override the server in an mcp__ tool name', () => {
+    const stderr = missingConfigLog({ tool_name: 'mcp__realsrv__lookup', tool_input: { server: 'unrelated', mcp_server: 'other', connector: 'conn' } });
+    assert.ok(stderr.includes('No MCP config found for realsrv;'), stderr);
+  })) passed++; else failed++;
+
+  // Explicit server fields are read only when the tool name is not an mcp__ name,
+  // so these cases go through a generic wrapper tool.
+  for (const [label, fields] of [
+    ['empty, then containing a space', { server: '', mcp_server: 'has space; rm' }],
+    ['65 characters', { server: 'a'.repeat(65) }]
+  ]) {
+    if (test(`ignores explicit server values that cannot be a server id (${label})`, () => {
+      const stderr = missingConfigLog({ tool_name: 'call_mcp', ...fields });
+      assert.strictEqual(stderr, '', 'No usable server value means pass through silently');
+    })) passed++; else failed++;
+  }
+
+  if (test('accepts a 64-character explicit server id', () => {
+    const stderr = missingConfigLog({ tool_name: 'call_mcp', server: 'a'.repeat(64) });
+    assert.ok(stderr.includes(`No MCP config found for ${'a'.repeat(64)};`), stderr);
+  })) passed++; else failed++;
+
+  if (test('falls back to a valid explicit server value after an invalid one', () => {
+    const stderr = missingConfigLog({ tool_name: 'call_mcp', server: 'has space; rm', mcp_server: 'goodsrv' });
+    assert.ok(stderr.includes('No MCP config found for goodsrv;'), stderr);
+  })) passed++; else failed++;
+
+  if (test('does not stringify an object tool_input.server for a generic wrapper tool', () => {
+    const stderr = missingConfigLog({ tool_name: 'call_mcp', tool_input: { server: { host: 'x' } } });
+    assert.ok(!stderr.includes('[object Object]'), stderr);
+    assert.strictEqual(stderr, '', 'No usable server value means pass through silently');
+  })) passed++; else failed++;
+
+  // A tool name that starts with mcp__ but does not parse as mcp__<server>__<tool> is still
+  // an MCP tool: its arguments must not pick the probed server, so there is no target.
+  for (const [label, toolName] of [
+    ['no second separator', 'mcp__foo'],
+    ['empty server', 'mcp____tool'],
+    ['bare prefix', 'mcp__']
+  ]) {
+    if (test(`ignores tool_input server arguments for an unparseable mcp__ tool name (${label})`, () => {
+      const stderr = missingConfigLog({
+        tool_name: toolName,
+        tool_input: { server: 'argchosen', mcp_server: 'argchosen2', connector: 'argchosen3', tool: 'x' }
+      });
+      assert.strictEqual(stderr, '', 'No target means pass through silently');
+    })) passed++; else failed++;
+  }
+
+  if (await asyncTest('ignores tool_input server arguments for an unparseable mcp__ tool name in truncated input', async () => {
+    // A hook without the run() export would execute main() at require time and exit
+    // this test process with 0, so check the export before require()ing it.
+    assert.ok(/module\.exports\s*=\s*\{[^}]*\brun\b/.test(fs.readFileSync(script, 'utf8')), 'hook must export run()');
+    const hook = require(script);
+    const raw = '{"tool_name":"mcp__foo","tool_input":{"server":"argchosen","tool":"x"}}';
+    const result = await hook.run(raw, { truncated: true, maxStdin: 10 });
+    assert.strictEqual(result.exitCode, 0);
+    assert.strictEqual(result.stderr, '');
+    assert.strictEqual(result.stdout, raw);
+  })) passed++; else failed++;
+
+  if (await asyncTest('never launches or records a decoy server named in tool_input of an mcp__ tool call', async () => {
+    const tempDir = createTempDir();
+    const configPath = path.join(tempDir, 'claude.json');
+    const statePath = path.join(tempDir, 'mcp-health.json');
+    const markerPath = path.join(tempDir, 'decoy-ran.txt');
+    const realScript = path.join(tempDir, 'real-server.js');
+    const decoyScript = path.join(tempDir, 'decoy-server.js');
+
+    try {
+      fs.writeFileSync(realScript, 'setInterval(() => {}, 1000);\n');
+      fs.writeFileSync(decoyScript, `require('fs').appendFileSync(${JSON.stringify(markerPath)}, 'decoy\\n'); setInterval(() => {}, 1000);\n`);
+      writeConfig(configPath, {
+        mcpServers: {
+          real: createCommandConfig(realScript),
+          decoy: createCommandConfig(decoyScript)
+        }
+      });
+
+      const result = runHook(
+        { tool_name: 'mcp__real__do', tool_input: { server: 'decoy', mcp_server: 'decoy', connector: 'decoy' } },
+        {
+          CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
+          ECC_MCP_CONFIG_PATH: configPath,
+          ECC_MCP_HEALTH_STATE_PATH: statePath,
+          ECC_MCP_HEALTH_TIMEOUT_MS: '1000'
+        }
+      );
+
+      assert.strictEqual(result.code, 0, hookFailureDetails(result, statePath));
+      assert.ok(!fs.existsSync(markerPath), 'Decoy server command must never be launched');
+      const state = readState(statePath);
+      assert.strictEqual(state.servers.decoy, undefined, 'No health state may be recorded for the decoy');
+      assert.strictEqual(state.servers.real.status, 'healthy', 'The server named by the tool name is the one probed');
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
+  for (const [label, toolName, serverName] of [
+    ['plugin-provided', 'mcp__plugin_claude-mem_mcp-search__search', 'plugin_claude-mem_mcp-search'],
+    ['connector UUID', 'mcp__0f8fad5b-d9cb-469f-a165-70867728950e__list_things', '0f8fad5b-d9cb-469f-a165-70867728950e']
+  ]) {
+    if (test(`derives the server name from ${label} tool names`, () => {
+      const stderr = missingConfigLog({ tool_name: toolName, tool_input: { server: { nested: true } } });
+      assert.ok(stderr.includes(`No MCP config found for ${serverName};`), stderr);
+    })) passed++; else failed++;
+  }
+
   if (test('runs in-process through run-with-flags without spawning a second node process', () => {
     const tempDir = createTempDir();
     try {
