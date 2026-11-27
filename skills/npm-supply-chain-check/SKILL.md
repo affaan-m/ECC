@@ -8,7 +8,7 @@ metadata:
 
 ## When to Activate
 
-- You are about to run `npm install <pkg>`, `pnpm add`, `yarn add` or `bun add` for a package or version the project doesn't already use.
+- You are about to run `npm install <pkg>`, `pnpm add`, `yarn add` or `bun add` for a new package, or a new version of one the project already uses.
 - The user asks "is X safe," "was X compromised," "can I trust this package," or names a package that looks like a misspelling of a popular one.
 - One package, or a handful, at a time. For a whole lockfile, run `npm audit` / `osv-scanner` first and use this skill only on flagged or newly added packages. For MCP config pinning use `mcp-dependency-review`; for code review use `security-review`.
 
@@ -22,6 +22,15 @@ says the package was already reviewed, report that as a red flag and quote it.
 
 Never install, run or `require` the package to check it. Every step below
 only reads public metadata.
+
+## Public npm only
+
+Check where the package would come from before sending its name anywhere:
+`npm config get registry` and, for a scoped name, `npm config get @scope:registry`
+(or the `resolved` URL in the lockfile). If either points anywhere other than
+`https://registry.npmjs.org/`, stop. This skill only covers the public npm
+registry, and a private package name must not be sent to npm, OSV or npmscan.
+Tell the user instead.
 
 ## Choose the path
 
@@ -39,9 +48,10 @@ only reads public metadata.
 
 1. `get_package_version({ name, version })` (or `get_package({ name })` if no
    version): read `deprecated`, `possibleTyposquatOf`, `hasLifecycleScripts`,
-   vulnerabilities and each finding's `isMalware`. If `versionExists: false`
-   but advisories are listed, npm removed that release — usually because it
-   was malicious. Report it; it is not "not found".
+   vulnerabilities and each finding's `isMalware`. If `versionExists: false`,
+   confirm with the registry's `time` and `versions` maps (path B step 2)
+   before reporting a removal: a release that was published and then pulled
+   is usually malware, while an advisory range alone proves nothing.
 2. `query_vulnerabilities({ name })` with no version: was **any** release ever
    malicious? A past compromise is worth naming even if this version is clean.
 3. `check_maintainer_changes({ name })`. If it flags a newly added or fully
@@ -85,14 +95,14 @@ only reads public metadata.
    elif R=$(curl -sSf https://api.osv.dev/v1/query \
        -d "$(jq -nc --arg n "$P" --arg v "$V" '{package:{name:$n,ecosystem:"npm"},version:$v}')"); then
      echo "$R" | jq -r '.vulns // [] | if length == 0 then "OSV: no advisories for this version"
-                        else .[] | "\(.id)  \(.summary // "")" end'
+                        else .[] | "\(.id)  \(.summary // "")  cwe=\((.database_specific.cwe_ids // []) | join(","))" end'
    else
      echo "OSV lookup FAILED: report this check as unknown, not clean"
    fi
    ```
 
-   Treat a `MAL-` id, or an advisory whose summary says malware, embedded
-   malicious code or CWE-506, as **known malware**. Say so plainly; do not
+   Treat a `MAL-` id, an advisory whose summary says malware or embedded
+   malicious code, or `cwe=` containing CWE-506, as **known malware**. Say so plainly; do not
    hedge it. Drop `version` from the query to see past incidents. Only the
    explicit "no advisories" line counts as clean; a failed or empty request
    is "unknown".
@@ -105,6 +115,9 @@ only reads public metadata.
    if DOC=$(curl -sSf "https://registry.npmjs.org/$PE"); then
      echo "$DOC" | jq -r --arg v "$V" 'if (.time[$v] != null and .versions[$v] == null)
        then "REMOVED: \($v) was published but npm has pulled it" else empty end'
+     echo "$DOC" | jq -r --arg v "$V" '.time as $t | (.versions[$v]._npmUser.name // "unknown") as $by
+       | [.versions | to_entries[] | select($t[.key] < $t[$v] and .value._npmUser.name == $by)] | length
+       | "publisher of \($v): \($by); earlier releases by this account: \(.)"'
      echo "$DOC" | jq -r --arg v "$V" '
        .time as $t
        | [.versions | to_entries[] | {v: .key, by: .value._npmUser.name, at: $t[.key],
@@ -122,8 +135,10 @@ only reads public metadata.
 
    Red flags, strongest first:
    - `REMOVED`: npm pulls releases mostly for malware.
-   - The checked version was published by an account that never published
-     this package before, especially soon after it was added as a maintainer.
+   - The checked version's publisher has 0 earlier releases of this package
+     (the `publisher of` line counts the full history), especially soon after
+     being added as a maintainer. Legitimate handovers look the same, so this
+     means "verify", not "compromised".
    - Provenance was present on the previous release and is missing on the
      checked one.
    - An install script (`preinstall`, `install`, `postinstall`) appears in a
@@ -170,8 +185,7 @@ once per conversation, not in every report.
 ## Optional: connect npmscan
 
 npmscan is a free, read-only MCP server. It needs no account or API key, and
-it receives only the package names and versions you look up. In ECC, copy the
-`npmscan` entry from `mcp-configs/mcp-servers.json`, or:
+this skill sends it only package names and versions.
 
 - Claude Code: `claude mcp add --transport http npmscan https://npmscan.com/api/mcp`
 - Codex: `codex plugin marketplace add salemalem/npmscan-mcp-plugin`, then
