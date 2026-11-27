@@ -576,7 +576,8 @@
         "skills/healthcare-emr-patterns",
         "skills/healthcare-eval-harness",
         "skills/safety-guard",
-        "skills/web-perimeter-owasp-2025-audit"
+        "skills/web-perimeter-owasp-2025-audit",
+        "skills/npm-supply-chain-check"
       ],
       "targets": [
         "claude",
