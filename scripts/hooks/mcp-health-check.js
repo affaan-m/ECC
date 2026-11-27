@@ -43,9 +43,26 @@ const FAILURE_PATTERNS = [
   { code: 'transport', pattern: /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|timed? out|socket hang up|connection (?:failed|lost|reset|closed)/i }
 ];
 
+// run-with-flags.js gives a spawned hook min(now + 30 s, ECC_HOOK_DEADLINE_MS)
+// but awaits an exported run() with no deadline, so run() keeps that limit.
+const HOOK_BUDGET_MS = 30000;
+const BUDGET_EXHAUSTED_REASON = 'hook time budget exhausted';
+
+// Thrown when the deadline cuts a probe short. run() catches it and allows the
+// call without recording a result for the probe, which never finished.
+class HookBudgetExhausted extends Error {}
+
 function envNumber(name, fallback) {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function hookDeadline(now) {
+  const inherited = Number(process.env.ECC_HOOK_DEADLINE_MS);
+  return Math.min(
+    now + HOOK_BUDGET_MS,
+    Number.isSafeInteger(inherited) && inherited > 0 ? inherited : Infinity
+  );
 }
 
 // Resolve the Claude profile directory the same way everywhere.
@@ -300,6 +317,7 @@ function requestHttp(urlString, headers, timeoutMs) {
   return new Promise(resolve => {
     let settled = false;
     let timedOut = false;
+    let timer = null;
 
     const url = new URL(urlString);
     const client = url.protocol === 'https:' ? https : http;
@@ -313,7 +331,10 @@ function requestHttp(urlString, headers, timeoutMs) {
       res => {
         if (settled) return;
         settled = true;
-        res.resume();
+        clearTimeout(timer);
+        // Only the status code is used. Destroy the response so a body that never
+        // ends (an SSE stream) cannot keep the in-process bootstrap alive.
+        res.destroy();
         resolve({
           ok: HEALTHY_HTTP_CODES.has(res.statusCode),
           statusCode: res.statusCode,
@@ -322,17 +343,22 @@ function requestHttp(urlString, headers, timeoutMs) {
       }
     );
 
-    req.setTimeout(timeoutMs, () => {
+    // An absolute timer, not req.setTimeout(): that is a socket inactivity
+    // timeout, and a server that keeps sending header bytes resets it forever.
+    timer = setTimeout(() => {
       timedOut = true;
       req.destroy(new Error('timeout'));
-    });
+    }, timeoutMs);
+    timer.unref();
 
     req.on('error', error => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       resolve({
         ok: false,
         statusCode: null,
+        timedOut,
         reason: timedOut ? 'request timed out' : error.message
       });
     });
@@ -341,11 +367,10 @@ function requestHttp(urlString, headers, timeoutMs) {
   });
 }
 
-function probeCommandServer(serverName, config) {
+function probeCommandServer(serverName, config, timeoutMs) {
   return new Promise(resolve => {
     const command = config.command;
     const args = Array.isArray(config.args) ? config.args.map(arg => String(arg)) : [];
-    const timeoutMs = envNumber('ECC_MCP_HEALTH_TIMEOUT_MS', DEFAULT_TIMEOUT_MS);
     // SECURITY: config.env comes from repo-committed MCP configs. Never let it
     // override process-critical loader vars that turn into code execution
     // (LD_PRELOAD, DYLD_*, NODE_OPTIONS, PATH tampering, etc.).
@@ -431,6 +456,13 @@ function probeCommandServer(serverName, config) {
         if (timer) {
           clearTimeout(timer);
           timer = null;
+        }
+        // The hook runs in-process and the bootstrap exits only once the event
+        // loop drains. A grandchild that inherited the server's stdio keeps
+        // these pipes open after the server is killed, so close our ends.
+        if (child) {
+          if (child.stdin) child.stdin.destroy();
+          if (child.stderr) child.stderr.destroy();
         }
         finish(result);
       }
@@ -551,6 +583,7 @@ function probeCommandServer(serverName, config) {
         attemptFinish({
           ok: true,
           statusCode: null,
+          timedOut: true,
           reason: `${serverName} accepted a new stdio process`
         });
       }, timeoutMs);
@@ -564,7 +597,23 @@ function probeCommandServer(serverName, config) {
   });
 }
 
-async function probeServer(serverName, resolvedConfig) {
+// A probe ends at its own timeout or at the hook deadline, whichever comes
+// first. Returns null when the deadline cut it short, which is no verdict. An
+// HTTP timeout of 0 has always meant no probe timeout of its own.
+async function probeBeforeDeadline(serverName, config, isHttp, deadline) {
+  const configuredMs = envNumber('ECC_MCP_HEALTH_TIMEOUT_MS', DEFAULT_TIMEOUT_MS);
+  const limitMs = isHttp && configuredMs === 0 ? Infinity : configuredMs;
+  const remainingMs = deadline - Date.now();
+  if (remainingMs <= 0) return null;
+
+  const timeoutMs = Math.min(limitMs, remainingMs);
+  const result = isHttp
+    ? await requestHttp(config.url, config.headers || {}, timeoutMs)
+    : await probeCommandServer(serverName, config, timeoutMs);
+  return result.timedOut && timeoutMs < limitMs ? null : result;
+}
+
+async function probeServer(serverName, resolvedConfig, deadline) {
   const config = resolvedConfig.config;
 
   // SECURITY: cloning a malicious repo must not auto-execute its MCP servers.
@@ -599,19 +648,12 @@ async function probeServer(serverName, resolvedConfig) {
     // continue to normal probing for non-workspace sources.
   }
 
-  if (config.type === 'http' || config.url) {
-    const result = await requestHttp(config.url, config.headers || {}, envNumber('ECC_MCP_HEALTH_TIMEOUT_MS', DEFAULT_TIMEOUT_MS));
-
-    return {
-      ok: result.ok,
-      failureCode: RECONNECT_STATUS_CODES.has(result.statusCode) ? result.statusCode : null,
-      reason: result.reason,
-      source: resolvedConfig.source
-    };
-  }
-
-  if (config.command) {
-    const result = await probeCommandServer(serverName, config);
+  const isHttp = Boolean(config.type === 'http' || config.url);
+  if (isHttp || config.command) {
+    const result = await probeBeforeDeadline(serverName, config, isHttp, deadline);
+    if (!result) {
+      throw new HookBudgetExhausted(BUDGET_EXHAUSTED_REASON);
+    }
 
     return {
       ok: result.ok,
@@ -650,7 +692,7 @@ function reconnectCommand(serverName) {
     : command;
 }
 
-function attemptReconnect(serverName) {
+function attemptReconnect(serverName, deadline) {
   const command = reconnectCommand(serverName);
   if (!command) {
     return { attempted: false, success: false, reason: 'no reconnect command configured' };
@@ -708,12 +750,22 @@ function attemptReconnect(serverName) {
     return { attempted: false, success: false, reason: 'reconnect command contains unsafe characters' };
   }
 
+  // spawnSync blocks the event loop, so it must stop by the hook deadline too.
+  // A timeout of 0 has meant no reconnect timeout of its own. SIGKILL, because
+  // spawnSync does not return until the child exits, and a command that
+  // ignores SIGTERM would hold the hook past its deadline.
+  const remainingMs = deadline - Date.now();
+  if (remainingMs <= 0) {
+    return { attempted: false, success: false, reason: BUDGET_EXHAUSTED_REASON };
+  }
+  const configuredMs = envNumber('ECC_MCP_RECONNECT_TIMEOUT_MS', DEFAULT_TIMEOUT_MS);
   const result = spawnSync(bin, argv, {
     shell: false,
     env: process.env,
     cwd: process.cwd(),
     encoding: 'utf8',
-    timeout: envNumber('ECC_MCP_RECONNECT_TIMEOUT_MS', DEFAULT_TIMEOUT_MS)
+    timeout: configuredMs > 0 ? Math.min(configuredMs, remainingMs) : remainingMs,
+    killSignal: 'SIGKILL'
   });
 
   if (result.error) {
@@ -735,13 +787,7 @@ function shouldFailOpen() {
   return /^(1|true|yes)$/i.test(String(process.env.ECC_MCP_HEALTH_FAIL_OPEN || ''));
 }
 
-function emitLogs(logs) {
-  for (const line of logs) {
-    process.stderr.write(`${line}\n`);
-  }
-}
-
-async function handlePreToolUse(rawInput, input, target, statePathValue, now) {
+async function handlePreToolUse(rawInput, input, target, statePathValue, now, deadline) {
   const logs = [];
   const state = loadState(statePathValue);
   const resolvedConfig = resolveServerConfig(target.server);
@@ -764,7 +810,7 @@ async function handlePreToolUse(rawInput, input, target, statePathValue, now) {
     return { rawInput, exitCode: 0, logs };
   }
 
-  const probe = await probeServer(target.server, resolvedConfig);
+  const probe = await probeServer(target.server, resolvedConfig, deadline);
   if (probe.ok) {
     markHealthy(state, target.server, now, { source: resolvedConfig.source, cacheIdentity });
     saveState(statePathValue, state);
@@ -778,9 +824,9 @@ async function handlePreToolUse(rawInput, input, target, statePathValue, now) {
 
   let reconnect = { attempted: false, success: false, reason: 'probe failed' };
   if (probe.failureCode || previous.status === 'unhealthy') {
-    reconnect = attemptReconnect(target.server);
+    reconnect = attemptReconnect(target.server, deadline);
     if (reconnect.success) {
-      const reprobe = await probeServer(target.server, resolvedConfig);
+      const reprobe = await probeServer(target.server, resolvedConfig, deadline);
       if (reprobe.ok) {
         markHealthy(state, target.server, now, {
           source: resolvedConfig.source,
@@ -808,7 +854,7 @@ async function handlePreToolUse(rawInput, input, target, statePathValue, now) {
   return { rawInput, exitCode: shouldFailOpen() ? 0 : 2, logs };
 }
 
-async function handlePostToolUseFailure(rawInput, input, target, statePathValue, now) {
+async function handlePostToolUseFailure(rawInput, input, target, statePathValue, now, deadline) {
   const logs = [];
   const summary = failureSummary(input);
   const failureCode = detectFailureCode(summary);
@@ -824,7 +870,7 @@ async function handlePostToolUseFailure(rawInput, input, target, statePathValue,
 
   logs.push(`[MCPHealthCheck] ${target.server} reported ${failureCode}; marking server unhealthy and attempting reconnect`);
 
-  const reconnect = attemptReconnect(target.server);
+  const reconnect = attemptReconnect(target.server, deadline);
   if (!reconnect.attempted) {
     logs.push(`[MCPHealthCheck] ${target.server} reconnect skipped: ${reconnect.reason}`);
     return { rawInput, exitCode: 0, logs };
@@ -841,7 +887,7 @@ async function handlePostToolUseFailure(rawInput, input, target, statePathValue,
     return { rawInput, exitCode: 0, logs };
   }
 
-  const reprobe = await probeServer(target.server, resolvedConfig);
+  const reprobe = await probeServer(target.server, resolvedConfig, deadline);
   if (!reprobe.ok) {
     logs.push(`[MCPHealthCheck] ${target.server} reconnect command ran, but health probe still failed: ${reprobe.reason}`);
     return { rawInput, exitCode: 0, logs };
@@ -858,44 +904,64 @@ async function handlePostToolUseFailure(rawInput, input, target, statePathValue,
   return { rawInput, exitCode: 0, logs };
 }
 
-async function main() {
-  const { raw: rawInput, truncated } = await readRawStdin();
+// Runs the hook for one raw payload and returns { stdout, stderr, exitCode }.
+// run-with-flags.js require()s this and calls it in-process (see its run()
+// contract); main() below keeps direct execution working.
+async function run(rawInput, context = {}) {
   const input = safeParse(rawInput);
-  const target = extractMcpTarget(input) || (truncated ? extractMcpTargetFromRaw(rawInput) : null);
+  const target = extractMcpTarget(input) || (context.truncated ? extractMcpTargetFromRaw(rawInput) : null);
 
   if (!target) {
-    process.stdout.write(rawInput);
-    process.exit(0);
-    return;
+    return { stdout: rawInput, stderr: '', exitCode: 0 };
   }
 
-  if (truncated) {
-    const limit = Number(process.env.ECC_HOOK_INPUT_MAX_BYTES) || MAX_STDIN;
+  if (context.truncated) {
+    const limit = Number(context.maxStdin) || MAX_STDIN;
     const logs = [
       shouldFailOpen()
         ? `[MCPHealthCheck] Hook input exceeded ${limit} bytes while checking ${target.server}; allowing ${target.tool || 'tool'} because fail-open mode is enabled`
         : `[MCPHealthCheck] Hook input exceeded ${limit} bytes while checking ${target.server}; blocking ${target.tool || 'tool'} to avoid bypassing MCP health checks`
     ];
-    emitLogs(logs);
-    process.stdout.write(rawInput);
-    process.exit(shouldFailOpen() ? 0 : 2);
-    return;
+    return { stdout: rawInput, stderr: logs.join('\n'), exitCode: shouldFailOpen() ? 0 : 2 };
   }
 
   const eventName = process.env.CLAUDE_HOOK_EVENT_NAME || 'PreToolUse';
   const now = Date.now();
+  const deadline = hookDeadline(now);
   const statePathValue = stateFilePath();
 
-  const result = eventName === 'PostToolUseFailure'
-    ? await handlePostToolUseFailure(rawInput, input, target, statePathValue, now)
-    : await handlePreToolUse(rawInput, input, target, statePathValue, now);
+  let result;
+  try {
+    result = eventName === 'PostToolUseFailure'
+      ? await handlePostToolUseFailure(rawInput, input, target, statePathValue, now, deadline)
+      : await handlePreToolUse(rawInput, input, target, statePathValue, now, deadline);
+  } catch (error) {
+    if (!(error instanceof HookBudgetExhausted)) throw error;
+    const log = `[MCPHealthCheck] ${BUDGET_EXHAUSTED_REASON} while probing ${target.server}; allowing ${target.tool || 'tool'} without a health verdict`;
+    return { stdout: rawInput, stderr: log, exitCode: 0 };
+  }
 
-  emitLogs(result.logs);
-  process.stdout.write(result.rawInput);
+  return { stdout: result.rawInput, stderr: result.logs.join('\n'), exitCode: result.exitCode };
+}
+
+async function main() {
+  const { raw, truncated } = await readRawStdin();
+  const result = await run(raw, {
+    truncated,
+    maxStdin: Number(process.env.ECC_HOOK_INPUT_MAX_BYTES) || MAX_STDIN
+  });
+  if (result.stderr) {
+    process.stderr.write(`${result.stderr}\n`);
+  }
+  process.stdout.write(result.stdout);
   process.exit(result.exitCode);
 }
 
-main().catch(error => {
-  process.stderr.write(`[MCPHealthCheck] Unexpected error: ${error.message}\n`);
-  process.exit(0);
-});
+module.exports = { run };
+
+if (require.main === module) {
+  main().catch(error => {
+    process.stderr.write(`[MCPHealthCheck] Unexpected error: ${error.message}\n`);
+    process.exit(0);
+  });
+}
