@@ -519,6 +519,7 @@
     "!**/.pytest_cache/**",
     "skills/conventional-commit-review/",
     "skills/brownfield-retrospective/",
+    "skills/launch-readiness-audit/",
     "skills/agent-runtime-gateway-smoke-test/"
   ],
   "bin": {
