@@ -8582,7 +8582,10 @@ function runTests() {
       assert.deepStrictEqual(parseOutput(settled.stdout), settledInput, 'settled edit must be the JSON pass-through allow');
       const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
       assert.ok(persisted.fact_force_denials >= 1, 'checked entry must arrive with a recorded denial, not a forgery');
-      assert.ok(persisted.checked.includes('/src/race.js'));
+      assert.ok(
+        persisted.checked.some(k => k === '/src/race.js' || /^[a-z]:\/src\/race\.js$/.test(k)),
+        'settled checked entry should be persisted'
+      );
     })
   )
     passed++;
