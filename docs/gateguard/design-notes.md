@@ -494,11 +494,17 @@ State files are integrity-protected with an HMAC-SHA256 signature (`_sig`)
 bound to the session key and keyed by a per-directory secret (`.hmac-key`,
 mode 0600 on POSIX) created lazily on first save. Both `loadState()` and the
 concurrent-writer merge in `saveState()` reject unsigned, tampered, or
-cross-session-replayed files fail-closed: the state is treated as empty, the
-gate denies, and a one-time warning is written to stderr. The signature is
+cross-session-replayed files fail-closed: the state is treated as empty,
+normal gate evaluation resumes from that empty state, and a one-time warning
+is written to stderr. Operations that require a first-touch denial are denied
+from the empty state; exempt targets, subagent edits, and capped denial
+budgets can still pass without checked state, and a persist failure still
+fails open with its own warning. The signature is
 verified before `last_active` is trusted, so expiry never acts on an
 unverifiable timestamp, and a failed verification never deletes or renames
-the file — the next successful save replaces it atomically. Residual risk:
+the file — an expired file is likewise left in place (deleting by pathname
+could remove a concurrent writer's replacement) and ages out through
+mtime-based pruning, while the next successful save replaces it atomically. Residual risk:
 because the hook and the gated agent share a host and OS user account, a
 local key file is defense-in-depth rather than a hard security boundary — a
 determined agent with unrestricted shell access can read `.hmac-key` and

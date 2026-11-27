@@ -1731,7 +1731,10 @@ function readKeyOnce(keyPath, nofollow) {
   let fd;
   try {
     if (nofollow) {
-      fd = fs.openSync(keyPath, fs.constants.O_RDONLY | nofollow);
+      // O_NONBLOCK: opening a FIFO without it blocks until a writer appears,
+      // and the fstatSync type check below would never run. Regular files
+      // are unaffected by the flag.
+      fd = fs.openSync(keyPath, fs.constants.O_RDONLY | nofollow | (fs.constants.O_NONBLOCK || 0));
     } else {
       const linkStat = fs.lstatSync(keyPath);
       if (linkStat.isSymbolicLink() || !linkStat.isFile()) return null;
@@ -1779,42 +1782,93 @@ function readKeyIfExists() {
 // A key file the hook will never trust: malformed contents, a symlink, or a
 // non-regular file. Replacing it (rather than failing the save) keeps a
 // corrupt key from converting a fail-closed verification into a fail-open
-// persist failure. The replacement is the atomic rename of the 0600 temp
-// file, so no reader sees a partial key.
+// persist failure. Replacement retires the file aside and publishes the
+// fresh key with a hard link, so concurrent repairs converge on one key.
+
+// How long an empty key file must have been sitting before it is treated
+// as abandoned mid-creation rather than a concurrent creator's in-flight
+// file. Atomic publish paths never leave a visible empty file, so an empty
+// file older than the grace period was stranded by a killed process. The
+// grace period exceeds FAT's 2s timestamp granularity.
+const EMPTY_KEY_GRACE_MS = 5000;
+
 function keyFileIsReplaceable(keyPath) {
   try {
     const linkStat = fs.lstatSync(keyPath);
-    if (linkStat.isSymbolicLink() || !linkStat.isFile()) return true;
+    if (linkStat.isSymbolicLink()) return true;
+    // A directory at the key path is never replaceable: it must be left in
+    // place and surface as a persist failure, never renamed or deleted.
+    if (linkStat.isDirectory()) return false;
+    if (!linkStat.isFile()) return true;
     const content = fs.readFileSync(keyPath, 'utf8').trim();
-    return content !== '' && !HMAC_HEX_RE.test(content);
+    if (content === '') return Date.now() - linkStat.mtimeMs > EMPTY_KEY_GRACE_MS;
+    return !HMAC_HEX_RE.test(content);
   } catch (_) {
     return false;
   }
 }
 
-function replaceUntrustedKey(keyPath, tmpPath) {
-  if (!keyFileIsReplaceable(keyPath)) return false;
-  fs.renameSync(tmpPath, keyPath);
-  return true;
-}
-
-// A concurrent first run may have published the key while this run was
-// creating its own. Prefer the published key; if the file holds nothing a
-// hook run will trust (malformed contents, a symlink), replace it with the
-// fresh key instead of failing the save open.
+// Retire an untrusted key file and publish the fresh key atomically, so
+// concurrent repairs converge instead of overwriting each other: the file
+// is moved aside under a unique name (never deleted outright), the new key
+// is published with a hard link, and an EEXIST means another repair won —
+// re-read the winner instead of racing it. The caller re-reads after any
+// replacement so it never signs with a superseded key. Directories are
+// never retired: they surface as a persist failure.
 function recoverExistingKey(keyPath, tmpPath, key, err) {
   const raced = readKeyIfExists();
   if (raced) return raced;
-  if (replaceUntrustedKey(keyPath, tmpPath)) return key;
-  throw err;
+  let linkStat;
+  try {
+    linkStat = fs.lstatSync(keyPath);
+  } catch (_) {
+    // Missing key file: nothing to repair.
+  }
+  if (!linkStat || linkStat.isDirectory() || !keyFileIsReplaceable(keyPath)) throw err;
+  const retiredPath = `${keyPath}.retired.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
+  let retired = false;
+  try {
+    fs.renameSync(keyPath, retiredPath);
+    retired = true;
+  } catch (_) {
+    // Another repair retired it first (or it vanished): publish below and
+    // let the link decide the winner.
+  }
+  try {
+    fs.linkSync(tmpPath, keyPath);
+  } catch (linkErr) {
+    if (linkErr && linkErr.code === 'EEXIST') {
+      const winner = readKeyIfExists();
+      if (winner) {
+        if (retired) {
+          try {
+            fs.unlinkSync(retiredPath);
+          } catch (_) {
+            /* best-effort cleanup of the retired file */
+          }
+        }
+        return winner;
+      }
+    }
+    throw linkErr;
+  }
+  if (retired) {
+    try {
+      fs.unlinkSync(retiredPath);
+    } catch (_) {
+      /* best-effort cleanup of the retired file */
+    }
+  }
+  const published = readKeyIfExists();
+  return published || key;
 }
 
 // Read the integrity key, creating it when a save needs one. Reads must
 // never create it: a state file with no key file cannot have been signed by
 // this hook. Publication is atomic on POSIX (write temp, hard-link into
 // place) so a concurrent reader never sees a partial key; where hard links
-// are unavailable (Windows/FAT) the fallback is an exclusive create, and
-// losers re-read the winner's key.
+// are unavailable (Windows/FAT) the fallback publishes the complete temp
+// file with an atomic rename, and losers re-read the winner's key.
 function getOrCreateKey() {
   const existing = readKeyIfExists();
   if (existing) return existing;
@@ -1832,12 +1886,21 @@ function getOrCreateKey() {
     } catch (err) {
       if (err && err.code === 'EEXIST') return recoverExistingKey(keyPath, tmpPath, key, err);
       if (err && (err.code === 'EPERM' || err.code === 'ENOTSUP' || err.code === 'EXDEV')) {
+        // Hard links are unavailable: publish the complete temp file with
+        // an atomic rename instead of writing the destination directly, so
+        // no reader ever observes a partially written key (a killed
+        // process must not strand an empty key). If a key appeared while
+        // this run was creating its own, adopt it instead of overwriting.
+        const raced = readKeyIfExists();
+        if (raced) return raced;
         try {
-          fs.writeFileSync(keyPath, keyHex, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+          fs.renameSync(tmpPath, keyPath);
           return key;
-        } catch (wxErr) {
-          if (wxErr && wxErr.code === 'EEXIST') return recoverExistingKey(keyPath, tmpPath, key, wxErr);
-          throw wxErr;
+        } catch (renameErr) {
+          if (renameErr && (renameErr.code === 'EEXIST' || renameErr.code === 'EPERM')) {
+            return recoverExistingKey(keyPath, tmpPath, key, renameErr);
+          }
+          throw renameErr;
         }
       }
       throw err;
@@ -1892,18 +1955,31 @@ function readVerifiedState(filePath, sessionKey) {
     return { state: null, status: 'invalid' };
   }
 
-  const expected = computeStateHmac(key, sessionKey, parsed);
+  // Canonicalization recurses, so a hostile nesting depth throws a
+  // RangeError here. Treat any such failure as invalid (fail closed):
+  // nothing unverifiable may escape into the gate, where the runner's
+  // catch would turn it into a silent pass.
+  let expected;
+  try {
+    expected = computeStateHmac(key, sessionKey, parsed);
+  } catch (_) {
+    warnIntegrityOnce();
+    return { state: null, status: 'invalid' };
+  }
   if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), expected)) {
     warnIntegrityOnce();
     return { state: null, status: 'invalid' };
   }
 
-  // A new object without the signature field; the parsed object is never
-  // mutated.
-  const state = {};
-  for (const field of Object.keys(parsed)) {
-    if (field !== '_sig') state[field] = parsed[field];
-  }
+  // Rebuild the payload as plain data: spreading copies `__proto__` as an
+  // own data property instead of setting the prototype (a direct
+  // assignment would not), and the signature field is dropped without
+  // mutating the parsed object. A missing or non-array `checked` defaults
+  // to empty so a signed-but-malformed payload cannot crash the gate into
+  // failing open through the runner's catch.
+  const state = { ...parsed };
+  delete state._sig;
+  if (!Array.isArray(state.checked)) state.checked = [];
   return { state, status: 'ok' };
 }
 
@@ -1913,15 +1989,11 @@ function loadState() {
   if (status !== 'ok') {
     return { checked: [], last_active: Date.now() };
   }
-  // The signature is verified before last_active is trusted: an expired file
-  // is unlinked only when its timestamp is authenticated. Unverifiable files
-  // are left in place — never deleted or renamed on the read path.
+  // The signature is verified before last_active is trusted. An expired
+  // file is left in place: deleting by pathname could remove a replacement
+  // published by a concurrent writer after this read, and stale files age
+  // out through pruneStaleFiles (mtime-based, no trust in contents).
   if (Date.now() - (state.last_active || 0) > activeIdleWindowMs) {
-    try {
-      fs.unlinkSync(stateFile);
-    } catch (_) {
-      /* ignore */
-    }
     return { checked: [], last_active: Date.now() };
   }
   return state;
@@ -1964,9 +2036,12 @@ function saveState(state) {
     try {
       // The merge reads through the verified reader: an unverifiable disk
       // file contributes nothing, so forged entries cannot resurrect when a
-      // concurrent writer saves.
+      // concurrent writer saves. An expired snapshot contributes nothing
+      // either: loadState no longer unlinks expired files, so the merge
+      // must not revive entries an expired file holds.
       const { state: diskState, status } = readVerifiedState(stateFile, activeSessionKey);
-      if (status === 'ok' && diskState) {
+      const diskExpired = status === 'ok' && diskState && (Date.now() - (diskState.last_active || 0) > activeIdleWindowMs);
+      if (status === 'ok' && diskState && !diskExpired) {
         if (Array.isArray(diskState.checked)) {
           mergedChecked = Array.from(new Set([...diskState.checked, ...mergedChecked]));
         }

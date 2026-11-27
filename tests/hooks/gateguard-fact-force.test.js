@@ -8542,14 +8542,87 @@ function runTests() {
 
   clearState();
   if (
-    test('creates one consistent integrity key under concurrent first runs (#4140)', () => {
+    test('deeply nested forged state fails closed instead of crashing the hook (#4140)', () => {
+      ensureTestKey();
+      const depth = 5000;
+      let nested = '[]';
+      for (let i = 0; i < depth; i++) nested = `[${nested}]`;
+      const raw = `{"a":${nested},"checked":[],"last_active":${Date.now()},"_sig":"${'ab'.repeat(32)}"}`;
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, raw, 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/nested.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'unverifiable deeply nested state must be denied');
+      assert.ok(result.stderr.includes('integrity verification'), 'verification failure must warn once');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('a named pipe at the key path cannot stall the hook (#4140)', () => {
+      if (process.platform === 'win32') return;
+      fs.mkdirSync(stateDir, { recursive: true });
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const made = spawnSync('mkfifo', [keyPath]);
+      assert.strictEqual(made.status, 0, 'mkfifo must succeed for the fixture');
+      const started = Date.now();
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/pipe.js', old_string: 'a', new_string: 'b' }
+      });
+      const elapsed = Date.now() - started;
+      assert.ok(elapsed < 10000, `hook must return promptly with a pipe key (took ${elapsed}ms)`);
+      assert.strictEqual(decisionOf(result), 'deny', 'unreadable key must fail closed');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('an abandoned empty key file is repaired instead of disabling denials (#4140)', () => {
+      fs.mkdirSync(stateDir, { recursive: true });
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      fs.writeFileSync(keyPath, '', 'utf8');
+      const old = new Date(Date.now() - 60 * 1000);
+      fs.utimesSync(keyPath, old, old);
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/empty-key.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'first touch must still be denied after key repair');
+      assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'key file must hold a valid key after repair');
+      assert.ok(persistedStateVerifies(), 'state saved after repair must verify');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('concurrent recovery from a malformed key converges on one valid key (#4140)', () => {
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(path.join(stateDir, HMAC_KEY_FILE), 'not-a-valid-key', 'utf8');
       const repoRoot = path.resolve(__dirname, '..', '..');
       const payload = JSON.stringify({
         tool_name: 'Edit',
-        tool_input: { file_path: '/src/race.js', old_string: 'a', new_string: 'b' }
+        tool_input: { file_path: '/src/repair-race.js', old_string: 'a', new_string: 'b' }
       });
       const driver = [
         "const { spawn } = require('child_process');",
+        'const results = [];',
+        'let pending = 8;',
+        'function finish() {',
+        '  const failures = results.filter(r => r.code !== 0 || !r.valid);',
+        '  if (failures.length) {',
+        "    process.stderr.write('concurrent child failures:\\n' + failures.map(f => `#${f.index} code=${f.code} signal=${f.signal} stdout=${f.stdout} stderr=${f.stderr}`).join('\\n') + '\\n');",
+        '    process.exit(1);',
+        '  }',
+        '}',
         'for (let i = 0; i < 8; i++) {',
         `  const child = spawn('node', [${JSON.stringify(runner)}, 'pre:edit-write:gateguard-fact-force', 'scripts/hooks/gateguard-fact-force.js', 'standard,strict'], {`,
         `    cwd: ${JSON.stringify(repoRoot)},`,
@@ -8558,7 +8631,194 @@ function runTests() {
         `      CLAUDE_SESSION_ID: ${JSON.stringify(TEST_SESSION_ID)},`,
         "      ECC_HOOK_PROFILE: 'standard',",
         "      GATEGUARD_EXTERNAL_CONTRACT_QUESTION: '' },",
-        "    stdio: ['pipe', 'ignore', 'ignore'] });",
+        "    stdio: ['pipe', 'pipe', 'pipe'] });",
+        "  const rec = { index: i, code: null, signal: null, stdout: '', stderr: '', valid: false };",
+        '  results.push(rec);',
+        '  let done = false;',
+        '  const doneOne = (code, signal) => {',
+        '    if (done) return; done = true; rec.code = code; rec.signal = signal;',
+        '    let parsed = null;',
+        '    try { parsed = JSON.parse(rec.stdout); } catch (_) { parsed = null; }',
+        '    const decision = parsed && parsed.hookSpecificOutput && parsed.hookSpecificOutput.permissionDecision;',
+        `    rec.valid = code === 0 && (typeof decision === 'string' || rec.stdout.trim() === ${JSON.stringify(payload)});`,
+        '    if (--pending === 0) finish();',
+        '  };',
+        "  child.stdout.on('data', d => { rec.stdout += d; });",
+        "  child.stderr.on('data', d => { rec.stderr += d; });",
+        "  child.on('close', doneOne);",
+        "  child.on('error', err => { rec.stderr += String((err && err.message) || err); doneOne(-1, null); });",
+        "  child.stdin.on('error', () => {});",
+        `  child.stdin.end(${JSON.stringify(payload)});`,
+        '}'
+      ].join('\n');
+      const raced = spawnSync('node', ['-e', driver], { encoding: 'utf8', timeout: 30000 });
+      assert.strictEqual(raced.status, 0, raced.stderr);
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'repaired key file must hold one valid key');
+      assert.ok(persistedStateVerifies(), 'concurrent saves must converge on the surviving key');
+      const leftovers = fs.readdirSync(stateDir).filter(entry => entry.includes(`${HMAC_KEY_FILE}.tmp.`));
+      assert.strictEqual(leftovers.length, 0, 'no key temp files must be left behind');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('key fallback publishes a complete key atomically when hard links fail (#4140)', () => {
+      const hook = loadDirectHook();
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const originalLinkSync = fs.linkSync;
+      const originalWriteFileSync = fs.writeFileSync;
+      const originalOpenSync = fs.openSync;
+      const originalCloseSync = fs.closeSync;
+      const writeTargets = [];
+      fs.linkSync = () => {
+        const err = new Error('link unavailable');
+        err.code = 'EPERM';
+        throw err;
+      };
+      fs.writeFileSync = function (target, ...rest) {
+        writeTargets.push(String(target));
+        // Simulate a process killed mid-write: the destination appears empty.
+        if (path.resolve(String(target)) === path.resolve(keyPath)) {
+          const fd = originalOpenSync(target, 'wx');
+          originalCloseSync(fd);
+          const err = new Error('interrupted write');
+          err.code = 'EIO';
+          throw err;
+        }
+        return originalWriteFileSync.apply(fs, [target, ...rest]);
+      };
+      try {
+        const result = hook.run({
+          tool_name: 'Edit',
+          tool_input: { file_path: '/src/fallback-key.js', old_string: 'a', new_string: 'b' }
+        });
+        const output = parseOutput(result.stdout);
+        assert.ok(output, 'hook must produce JSON output');
+        assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'first touch must be denied');
+      } finally {
+        fs.linkSync = originalLinkSync;
+        fs.writeFileSync = originalWriteFileSync;
+      }
+      assert.ok(!writeTargets.some(t => path.resolve(t) === path.resolve(keyPath)), 'fallback must never write the key destination directly');
+      assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'fallback must publish a complete key');
+      assert.ok(persistedStateVerifies(), 'state saved through the fallback must verify');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('a __proto__ field in verified state cannot shadow checked entries (#4140)', () => {
+      const key = ensureTestKey();
+      const parsed = JSON.parse(`{"__proto__":{"checked":["/src/proto.js"]},"last_active":${Date.now()}}`);
+      const signed = signStateForSession(TEST_SESSION_ID, key, parsed);
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(signed), 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/proto.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.strictEqual(decisionOf(result), 'deny', 'prototype-shadowed checked entries must not pass the gate');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('expired state is not deleted by the read path (#4140)', () => {
+      const hook = loadDirectHook();
+      writeExpiredState();
+      const originalUnlinkSync = fs.unlinkSync;
+      const unlinked = [];
+      fs.unlinkSync = function (target, ...rest) {
+        unlinked.push(String(target));
+        return originalUnlinkSync.apply(fs, [target, ...rest]);
+      };
+      try {
+        const result = hook.run({
+          tool_name: 'Edit',
+          tool_input: { file_path: 'some_file.js', old_string: 'a', new_string: 'b' }
+        });
+        const output = parseOutput(result.stdout);
+        assert.ok(output, 'hook must produce JSON output');
+        assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'expired state must reset to a fresh first touch');
+      } finally {
+        fs.unlinkSync = originalUnlinkSync;
+      }
+      assert.ok(!unlinked.some(t => path.resolve(t) === path.resolve(stateFile)), 'the read path must not delete the state file');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('a directory at the key path is left untouched and surfaces a persist warning (#4140)', () => {
+      fs.mkdirSync(stateDir, { recursive: true });
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      fs.mkdirSync(keyPath);
+      fs.writeFileSync(path.join(keyPath, 'sentinel.txt'), 'keep me', 'utf8');
+      const result = runHook({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/key-dir.js', old_string: 'a', new_string: 'b' }
+      });
+      assert.ok(result.stderr.includes('could not be persisted'), 'persist failure must surface a warning');
+      assert.ok(fs.statSync(keyPath).isDirectory(), 'directory at the key path must be left in place');
+      assert.strictEqual(fs.readFileSync(path.join(keyPath, 'sentinel.txt'), 'utf8'), 'keep me', 'directory contents must be untouched');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('creates one consistent integrity key under concurrent first runs (#4140)', () => {
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const payload = JSON.stringify({
+        tool_name: 'Edit',
+        tool_input: { file_path: '/src/race.js', old_string: 'a', new_string: 'b' }
+      });
+      const driver = [
+        "const { spawn } = require('child_process');",
+        'const results = [];',
+        'let pending = 8;',
+        'function finish() {',
+        '  const failures = results.filter(r => r.code !== 0 || !r.valid);',
+        '  if (failures.length) {',
+        "    process.stderr.write('concurrent child failures:\\n' + failures.map(f => `#${f.index} code=${f.code} signal=${f.signal} stdout=${f.stdout} stderr=${f.stderr}`).join('\\n') + '\\n');",
+        '    process.exit(1);',
+        '  }',
+        '}',
+        'for (let i = 0; i < 8; i++) {',
+        `  const child = spawn('node', [${JSON.stringify(runner)}, 'pre:edit-write:gateguard-fact-force', 'scripts/hooks/gateguard-fact-force.js', 'standard,strict'], {`,
+        `    cwd: ${JSON.stringify(repoRoot)},`,
+        '    env: { ...process.env,',
+        `      GATEGUARD_STATE_DIR: ${JSON.stringify(stateDir)},`,
+        `      CLAUDE_SESSION_ID: ${JSON.stringify(TEST_SESSION_ID)},`,
+        "      ECC_HOOK_PROFILE: 'standard',",
+        "      GATEGUARD_EXTERNAL_CONTRACT_QUESTION: '' },",
+        "    stdio: ['pipe', 'pipe', 'pipe'] });",
+        "  const rec = { index: i, code: null, signal: null, stdout: '', stderr: '', valid: false };",
+        '  results.push(rec);',
+        '  let done = false;',
+        '  const doneOne = (code, signal) => {',
+        '    if (done) return; done = true; rec.code = code; rec.signal = signal;',
+        '    let parsed = null;',
+        '    try { parsed = JSON.parse(rec.stdout); } catch (_) { parsed = null; }',
+        '    const decision = parsed && parsed.hookSpecificOutput && parsed.hookSpecificOutput.permissionDecision;',
+        `    rec.valid = code === 0 && (typeof decision === 'string' || rec.stdout.trim() === ${JSON.stringify(payload)});`,
+        '    if (--pending === 0) finish();',
+        '  };',
+        "  child.stdout.on('data', d => { rec.stdout += d; });",
+        "  child.stderr.on('data', d => { rec.stderr += d; });",
+        "  child.on('close', doneOne);",
+        "  child.on('error', err => { rec.stderr += String((err && err.message) || err); doneOne(-1, null); });",
+        "  child.stdin.on('error', () => {});",
         `  child.stdin.end(${JSON.stringify(payload)});`,
         '}'
       ].join('\n');
