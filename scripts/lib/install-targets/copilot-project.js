@@ -37,6 +37,25 @@ function supportsCopilotSourcePath(sourceRelativePath) {
     || SUPPORTED_SOURCE_PREFIXES.some(prefix => hasPrefix(normalizedPath, prefix));
 }
 
+function planCopilotMemoryOperations(module, sourceRelativePath, targetRoot) {
+  const normalizedPath = normalizeRelativePath(sourceRelativePath);
+  if (normalizedPath !== 'skills/unified-memory' && normalizedPath !== 'skills/unified-memory/SKILL.md') {
+    return null;
+  }
+  return [
+    createManagedOperation({
+      moduleId: module.id,
+      sourceRelativePath: 'manifests/install-assets/copilot-unified-memory-skill.md',
+      destinationPath: path.join(targetRoot, 'skills', 'unified-memory', 'SKILL.md'),
+    }),
+    createManagedOperation({
+      moduleId: module.id,
+      sourceRelativePath: 'scripts/copilot-memory.cjs',
+      destinationPath: path.join(targetRoot, 'ecc', 'scripts', 'memory', 'copilot-memory.cjs'),
+    }),
+  ];
+}
+
 function stripPrefix(normalizedPath, prefix) {
   return normalizedPath === prefix ? '' : normalizedPath.slice(`${prefix}/`.length);
 }
@@ -141,12 +160,8 @@ module.exports = createInstallTargetAdapter({
       const paths = Array.isArray(module.paths) ? module.paths : [];
       return paths
         .filter(supportsCopilotSourcePath)
-        .flatMap(sourceRelativePath => planSourcePathOperations(
-          module,
-          sourceRelativePath,
-          targetRoot,
-          repoRoot
-        ));
+        .flatMap(sourceRelativePath => planCopilotMemoryOperations(module, sourceRelativePath, targetRoot)
+          || planSourcePathOperations(module, sourceRelativePath, targetRoot, repoRoot));
     });
     const helper = operations.find(operation => COPILOT_HELPER_PATHS.has(operation.sourceRelativePath));
     if (!helper) return operations;

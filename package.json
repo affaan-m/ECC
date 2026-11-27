@@ -140,6 +140,7 @@
     "scripts/ecc.js",
     "scripts/feedback.js",
     "scripts/memory.js",
+    "scripts/copilot-memory.cjs",
     "scripts/memory-mcp.mjs",
     "scripts/gemini-adapt-agents.js",
     "scripts/gateguard-report.js",
