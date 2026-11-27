@@ -8809,6 +8809,322 @@ function runTests() {
 
   clearState();
   if (
+    test('a repair never retires a valid key published by a concurrent repair (#4140)', () => {
+      const { spawn } = require('child_process');
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const lockPath = `${keyPath}.lock`;
+      const flagFile = path.join(stateDir, 'repair-paused');
+      const releaseFile = path.join(stateDir, 'repair-release');
+      const atLockFile = path.join(stateDir, 'repair-contender-at-lock');
+      const repairResultFile = path.join(stateDir, 'repair-result.json');
+      const publisherResultFile = path.join(stateDir, 'publisher-result.json');
+      const waitCell = new Int32Array(new SharedArrayBuffer(4));
+      const waitForFile = (file, ms) => {
+        const deadline = Date.now() + ms;
+        while (!fs.existsSync(file) && Date.now() < deadline) Atomics.wait(waitCell, 0, 0, 10);
+        return fs.existsSync(file);
+      };
+      const waitForEither = (a, b, ms) => {
+        const deadline = Date.now() + ms;
+        while (!fs.existsSync(a) && !fs.existsSync(b) && Date.now() < deadline) Atomics.wait(waitCell, 0, 0, 10);
+        return fs.existsSync(a) || fs.existsSync(b);
+      };
+      // Seed a malformed key so both writers go through recoverExistingKey.
+      fs.writeFileSync(keyPath, 'not-a-valid-key', { encoding: 'utf8', mode: 0o600 });
+      const repairPayload = { tool_name: 'Edit', tool_input: { file_path: '/src/repair-race.js', old_string: 'a', new_string: 'b' } };
+      const publisherPayload = { tool_name: 'Edit', tool_input: { file_path: '/src/repair-publisher.js', old_string: 'a', new_string: 'b' } };
+      // The repair pauses at the retirement rename (the rename that moves
+      // the key aside under a .retired. name) and stays paused until the
+      // parent releases it. The publisher runs a full save while the repair
+      // is paused: it retires the malformed key, publishes a valid key,
+      // and saves state signed with it. On the old code the repair then
+      // resumes and renames that valid key aside, so the publisher's saved
+      // state stops verifying. On the fixed code the repair re-checks
+      // under the repair lock, finds the publisher's valid key, and adopts
+      // it instead of retiring it. A fixed pause could expire first on a
+      // loaded machine and let the test pass without the interleaving ever
+      // happening, so the parent releases the repair only after the
+      // publisher has signalled it reached the held lock (fixed code) or
+      // finished its save (old code, where no lock is held).
+      // Each writer's state is captured at its own state-file rename:
+      // reading the file after both finish could verify the other
+      // writer's write instead.
+      const repairDriver = [
+        'const fs = require("fs");',
+        'const path = require("path");',
+        `const resultFile = ${JSON.stringify(repairResultFile)};`,
+        `const stateFile = ${JSON.stringify(stateFile)};`,
+        'try {',
+        `  process.env.GATEGUARD_STATE_DIR = ${JSON.stringify(stateDir)};`,
+        `  process.env.CLAUDE_SESSION_ID = ${JSON.stringify(TEST_SESSION_ID)};`,
+        "  process.env.ECC_HOOK_PROFILE = 'standard';",
+        "  process.env.GATEGUARD_EXTERNAL_CONTRACT_QUESTION = '';",
+        '  const origRename = fs.renameSync;',
+        '  fs.linkSync = () => { const e = new Error("link unavailable"); e.code = "EPERM"; throw e; };',
+        '  let paused = false;',
+        '  let stateSnapshot = null;',
+        '  fs.renameSync = function (src, dest) {',
+        `    if (!paused && String(dest).startsWith(${JSON.stringify(keyPath + '.retired.')}) ) {`,
+        '      paused = true;',
+        `      fs.writeFileSync(${JSON.stringify(flagFile)}, "paused", "utf8");`,
+        '      const waitCell = new Int32Array(new SharedArrayBuffer(4));',
+        '      const releaseDeadline = Date.now() + 10000;',
+        `      while (!fs.existsSync(${JSON.stringify(releaseFile)}) && Date.now() < releaseDeadline) Atomics.wait(waitCell, 0, 0, 10);`,
+        '    }',
+        '    if (path.resolve(String(dest)) === path.resolve(stateFile)) {',
+        '      try { stateSnapshot = fs.readFileSync(String(src), "utf8"); } catch (_) {}',
+        '    }',
+        '    return origRename.apply(fs, [src, dest]);',
+        '  };',
+        `  const hook = require(${JSON.stringify(hookScript)});`,
+        `  const res = hook.run(${JSON.stringify(repairPayload)});`,
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: res.stdout || null, err: res.stderr || null, snapshot: stateSnapshot }), "utf8");',
+        '} catch (err) {',
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 1, error: String((err && err.stack) || err) }), "utf8");',
+        '}'
+      ].join('\n');
+      // The publisher signals the moment its lock acquisition meets the
+      // held lock, so the parent knows the wait actually happened before
+      // it releases the repair. On the old code there is no lock to meet,
+      // so it simply runs its save through and reports.
+      const publisherDriver = [
+        'const fs = require("fs");',
+        'const path = require("path");',
+        `const resultFile = ${JSON.stringify(publisherResultFile)};`,
+        `const stateFile = ${JSON.stringify(stateFile)};`,
+        'try {',
+        `  process.env.GATEGUARD_STATE_DIR = ${JSON.stringify(stateDir)};`,
+        `  process.env.CLAUDE_SESSION_ID = ${JSON.stringify(TEST_SESSION_ID)};`,
+        "  process.env.ECC_HOOK_PROFILE = 'standard';",
+        "  process.env.GATEGUARD_EXTERNAL_CONTRACT_QUESTION = '';",
+        '  const origOpenSync = fs.openSync;',
+        '  const origRename = fs.renameSync;',
+        '  fs.linkSync = () => { const e = new Error("link unavailable"); e.code = "EPERM"; throw e; };',
+        '  fs.openSync = function (target, flags, ...rest) {',
+        '    try {',
+        '      return origOpenSync.apply(fs, [target, flags, ...rest]);',
+        '    } catch (err) {',
+        `      if (err && err.code === "EEXIST" && path.resolve(String(target)) === ${JSON.stringify(lockPath)}) {`,
+        `        try { fs.writeFileSync(${JSON.stringify(atLockFile)}, "waiting", "utf8"); } catch (_) {}`,
+        '      }',
+        '      throw err;',
+        '    }',
+        '  };',
+        '  let stateSnapshot = null;',
+        '  fs.renameSync = function (src, dest) {',
+        '    if (path.resolve(String(dest)) === path.resolve(stateFile)) {',
+        '      try { stateSnapshot = fs.readFileSync(String(src), "utf8"); } catch (_) {}',
+        '    }',
+        '    return origRename.apply(fs, [src, dest]);',
+        '  };',
+        `  const hook = require(${JSON.stringify(hookScript)});`,
+        `  const res = hook.run(${JSON.stringify(publisherPayload)});`,
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: res.stdout || null, err: res.stderr || null, snapshot: stateSnapshot }), "utf8");',
+        '} catch (err) {',
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 1, error: String((err && err.stack) || err) }), "utf8");',
+        '}'
+      ].join('\n');
+      const repair = spawn('node', ['-e', repairDriver], { cwd: repoRoot, stdio: 'ignore' });
+      assert.ok(waitForFile(flagFile, 5000), 'repair must pause at the retirement rename');
+      const publisher = spawn('node', ['-e', publisherDriver], { cwd: repoRoot, stdio: 'ignore' });
+      assert.ok(waitForEither(atLockFile, publisherResultFile, 10000), 'publisher must reach the held lock or finish its save while the repair is paused');
+      fs.writeFileSync(releaseFile, 'go', 'utf8');
+      assert.ok(waitForFile(repairResultFile, 10000), 'repair must finish and report its result');
+      assert.ok(waitForFile(publisherResultFile, 10000), 'publisher must finish and report its result');
+      try { repair.kill(); } catch (_) { /* already gone */ }
+      try { publisher.kill(); } catch (_) { /* already gone */ }
+      const repairResult = JSON.parse(fs.readFileSync(repairResultFile, 'utf8'));
+      const publisherResult = JSON.parse(fs.readFileSync(publisherResultFile, 'utf8'));
+      assert.strictEqual(repairResult.code, 0, repairResult.error || 'repair failed');
+      assert.strictEqual(publisherResult.code, 0, publisherResult.error || 'publisher failed');
+      const repairOutput = parseOutput(repairResult.out);
+      assert.ok(repairOutput && repairOutput.hookSpecificOutput, 'repair must produce JSON output');
+      assert.strictEqual(repairOutput.hookSpecificOutput.permissionDecision, 'deny', 'repair first touch must be denied');
+      assert.ok(!String(repairResult.err || '').includes('could not be persisted'), 'repair must not warn of a persistence failure');
+      const publisherOutput = parseOutput(publisherResult.out);
+      assert.ok(publisherOutput && publisherOutput.hookSpecificOutput, 'publisher must produce JSON output');
+      assert.strictEqual(publisherOutput.hookSpecificOutput.permissionDecision, 'deny', 'publisher first touch must be denied');
+      assert.ok(!String(publisherResult.err || '').includes('could not be persisted'), 'publisher must not warn of a persistence failure');
+      assert.ok(!fs.existsSync(lockPath), 'repair lock must be released');
+      assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'one published key must survive');
+      assert.ok(repairResult.snapshot && stateTextVerifies(repairResult.snapshot), 'the repair save must verify with the published key');
+      assert.ok(publisherResult.snapshot && stateTextVerifies(publisherResult.snapshot), 'the publisher save must verify with the published key — a repair must never retire a valid key');
+      assert.ok(persistedStateVerifies(), 'the final state must verify with the published key');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('a repair never retires a valid key published by a concurrent hard-link writer (#4140)', () => {
+      const { spawn } = require('child_process');
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const keyPath = path.join(stateDir, HMAC_KEY_FILE);
+      const lockPath = `${keyPath}.lock`;
+      const flagFile = path.join(stateDir, 'repair-hl-paused');
+      const releaseFile = path.join(stateDir, 'repair-hl-release');
+      const atLockFile = path.join(stateDir, 'repair-hl-contender-at-lock');
+      const repairResultFile = path.join(stateDir, 'repair-hl-result.json');
+      const publisherResultFile = path.join(stateDir, 'publisher-hl-result.json');
+      const waitCell = new Int32Array(new SharedArrayBuffer(4));
+      const waitForFile = (file, ms) => {
+        const deadline = Date.now() + ms;
+        while (!fs.existsSync(file) && Date.now() < deadline) Atomics.wait(waitCell, 0, 0, 10);
+        return fs.existsSync(file);
+      };
+      const waitForEither = (a, b, ms) => {
+        const deadline = Date.now() + ms;
+        while (!fs.existsSync(a) && !fs.existsSync(b) && Date.now() < deadline) Atomics.wait(waitCell, 0, 0, 10);
+        return fs.existsSync(a) || fs.existsSync(b);
+      };
+      // Seed a malformed key so both writers go through recoverExistingKey.
+      fs.writeFileSync(keyPath, 'not-a-valid-key', { encoding: 'utf8', mode: 0o600 });
+      const repairPayload = { tool_name: 'Edit', tool_input: { file_path: '/src/repair-hl-race.js', old_string: 'a', new_string: 'b' } };
+      const publisherPayload = { tool_name: 'Edit', tool_input: { file_path: '/src/repair-hl-publisher.js', old_string: 'a', new_string: 'b' } };
+      // Same shape as the fallback-repair test above, except the publisher
+      // is a HARD-LINK writer: its linkSync is deliberately NOT stubbed
+      // to EPERM, so it publishes without taking the fallback lock. The
+      // hard-link path can therefore only publish while the key path is
+      // absent — which is exactly what happens if a repair retires the
+      // malformed key and the publisher's link lands before the repair's
+      // own publish. On the old code (no lock in recoverExistingKey) the
+      // publisher runs its full save while the repair is paused at the
+      // retirement rename, publishes a valid key, and the repair then
+      // resumes and renames that valid key aside — so the publisher's
+      // saved state stops verifying. On the fixed code the repair holds
+      // the fallback lock, so the publisher's linkSync meets the
+      // malformed key (EEXIST), it goes through recoverExistingKey and
+      // waits on the lock, and once the parent releases the repair it
+      // adopts the repair's published key instead of racing it. A fixed
+      // pause could expire first on a loaded machine and let the test
+      // pass without the interleaving ever happening, so the parent
+      // releases the repair only after the publisher has signalled it
+      // reached the held lock (fixed code) or finished its save (old
+      // code, where no lock is held).
+      // Each writer's state is captured at its own state-file rename:
+      // reading the file after both finish could verify the other
+      // writer's write instead.
+      const repairDriver = [
+        'const fs = require("fs");',
+        'const path = require("path");',
+        `const resultFile = ${JSON.stringify(repairResultFile)};`,
+        `const stateFile = ${JSON.stringify(stateFile)};`,
+        'try {',
+        `  process.env.GATEGUARD_STATE_DIR = ${JSON.stringify(stateDir)};`,
+        `  process.env.CLAUDE_SESSION_ID = ${JSON.stringify(TEST_SESSION_ID)};`,
+        "  process.env.ECC_HOOK_PROFILE = 'standard';",
+        "  process.env.GATEGUARD_EXTERNAL_CONTRACT_QUESTION = '';",
+        '  const origRename = fs.renameSync;',
+        '  fs.linkSync = () => { const e = new Error("link unavailable"); e.code = "EPERM"; throw e; };',
+        '  let paused = false;',
+        '  let stateSnapshot = null;',
+        '  fs.renameSync = function (src, dest) {',
+        `    if (!paused && String(dest).startsWith(${JSON.stringify(keyPath + '.retired.')}) ) {`,
+        '      paused = true;',
+        `      fs.writeFileSync(${JSON.stringify(flagFile)}, "paused", "utf8");`,
+        '      const waitCell = new Int32Array(new SharedArrayBuffer(4));',
+        '      const releaseDeadline = Date.now() + 10000;',
+        `      while (!fs.existsSync(${JSON.stringify(releaseFile)}) && Date.now() < releaseDeadline) Atomics.wait(waitCell, 0, 0, 10);`,
+        '    }',
+        '    if (path.resolve(String(dest)) === path.resolve(stateFile)) {',
+        '      try { stateSnapshot = fs.readFileSync(String(src), "utf8"); } catch (_) {}',
+        '    }',
+        '    return origRename.apply(fs, [src, dest]);',
+        '  };',
+        `  const hook = require(${JSON.stringify(hookScript)});`,
+        `  const res = hook.run(${JSON.stringify(repairPayload)});`,
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: res.stdout || null, err: res.stderr || null, snapshot: stateSnapshot }), "utf8");',
+        '} catch (err) {',
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 1, error: String((err && err.stack) || err) }), "utf8");',
+        '}'
+      ].join('\n');
+      // The publisher signals the moment its lock acquisition meets the
+      // held lock, so the parent knows the wait actually happened before
+      // it releases the repair. On the old code there is no lock to meet,
+      // so it simply runs its save through and reports. Its linkSync is
+      // NOT stubbed: this writer takes the hard-link path.
+      const publisherDriver = [
+        'const fs = require("fs");',
+        'const path = require("path");',
+        `const resultFile = ${JSON.stringify(publisherResultFile)};`,
+        `const stateFile = ${JSON.stringify(stateFile)};`,
+        'try {',
+        `  process.env.GATEGUARD_STATE_DIR = ${JSON.stringify(stateDir)};`,
+        `  process.env.CLAUDE_SESSION_ID = ${JSON.stringify(TEST_SESSION_ID)};`,
+        "  process.env.ECC_HOOK_PROFILE = 'standard';",
+        "  process.env.GATEGUARD_EXTERNAL_CONTRACT_QUESTION = '';",
+        '  const origOpenSync = fs.openSync;',
+        '  const origRename = fs.renameSync;',
+        '  fs.openSync = function (target, flags, ...rest) {',
+        '    try {',
+        '      return origOpenSync.apply(fs, [target, flags, ...rest]);',
+        '    } catch (err) {',
+        `      if (err && err.code === "EEXIST" && path.resolve(String(target)) === ${JSON.stringify(lockPath)}) {`,
+        `        try { fs.writeFileSync(${JSON.stringify(atLockFile)}, "waiting", "utf8"); } catch (_) {}`,
+        '      }',
+        '      throw err;',
+        '    }',
+        '  };',
+        '  let stateSnapshot = null;',
+        '  fs.renameSync = function (src, dest) {',
+        '    if (path.resolve(String(dest)) === path.resolve(stateFile)) {',
+        '      try { stateSnapshot = fs.readFileSync(String(src), "utf8"); } catch (_) {}',
+        '    }',
+        '    return origRename.apply(fs, [src, dest]);',
+        '  };',
+        `  const hook = require(${JSON.stringify(hookScript)});`,
+        `  const res = hook.run(${JSON.stringify(publisherPayload)});`,
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 0, out: res.stdout || null, err: res.stderr || null, snapshot: stateSnapshot }), "utf8");',
+        '} catch (err) {',
+        '  fs.writeFileSync(resultFile, JSON.stringify({ code: 1, error: String((err && err.stack) || err) }), "utf8");',
+        '}'
+      ].join('\n');
+      let repair;
+      let publisher;
+      try {
+        repair = spawn('node', ['-e', repairDriver], { cwd: repoRoot, stdio: 'ignore' });
+        assert.ok(waitForFile(flagFile, 5000), 'repair must pause at the retirement rename');
+        publisher = spawn('node', ['-e', publisherDriver], { cwd: repoRoot, stdio: 'ignore' });
+        assert.ok(waitForEither(atLockFile, publisherResultFile, 10000), 'publisher must reach the held lock or finish its save while the repair is paused');
+        fs.writeFileSync(releaseFile, 'go', 'utf8');
+        assert.ok(waitForFile(repairResultFile, 10000), 'repair must finish and report its result');
+        assert.ok(waitForFile(publisherResultFile, 10000), 'publisher must finish and report its result');
+        const repairResult = JSON.parse(fs.readFileSync(repairResultFile, 'utf8'));
+        const publisherResult = JSON.parse(fs.readFileSync(publisherResultFile, 'utf8'));
+        assert.strictEqual(repairResult.code, 0, repairResult.error || 'repair failed');
+        assert.strictEqual(publisherResult.code, 0, publisherResult.error || 'publisher failed');
+        const repairOutput = parseOutput(repairResult.out);
+        assert.ok(repairOutput && repairOutput.hookSpecificOutput, 'repair must produce JSON output');
+        assert.strictEqual(repairOutput.hookSpecificOutput.permissionDecision, 'deny', 'repair first touch must be denied');
+        assert.ok(!String(repairResult.err || '').includes('could not be persisted'), 'repair must not warn of a persistence failure');
+        const publisherOutput = parseOutput(publisherResult.out);
+        assert.ok(publisherOutput && publisherOutput.hookSpecificOutput, 'publisher must produce JSON output');
+        assert.strictEqual(publisherOutput.hookSpecificOutput.permissionDecision, 'deny', 'publisher first touch must be denied');
+        assert.ok(!String(publisherResult.err || '').includes('could not be persisted'), 'publisher must not warn of a persistence failure');
+        assert.ok(!fs.existsSync(lockPath), 'repair lock must be released');
+        assert.ok(HMAC_HEX_RE.test(fs.readFileSync(keyPath, 'utf8').trim()), 'one published key must survive');
+        assert.ok(repairResult.snapshot && stateTextVerifies(repairResult.snapshot), 'the repair save must verify with the published key');
+        assert.ok(publisherResult.snapshot && stateTextVerifies(publisherResult.snapshot), 'the publisher save must verify with the published key — a repair must never retire a valid key');
+        assert.ok(persistedStateVerifies(), 'the final state must verify with the published key');
+      } finally {
+        // Unpause the repair and stop both children even when an
+        // assertion above threw, so a failure here never hangs the
+        // suite: the repair waits at most 10s for the release file and
+        // the publisher at most 1s on the lock, but kill them
+        // deterministically instead of relying on those caps.
+        try { fs.writeFileSync(releaseFile, 'go', 'utf8'); } catch (_) { /* already released or gone */ }
+        try { if (repair) repair.kill(); } catch (_) { /* already gone */ }
+        try { if (publisher) publisher.kill(); } catch (_) { /* already gone */ }
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
     test('a fallback writer waits for a live lock holder instead of warning through (#4140)', () => {
       const { spawn } = require('child_process');
       const repoRoot = path.resolve(__dirname, '..', '..');

@@ -1,1 +1,0 @@
-This goes to production Monday morning. Get it ready. The bar we hold production services to is in docs/production-bar.md — meet all of it, keep the documented API working, and leave the repo in a state you'd be comfortable being on-call for.

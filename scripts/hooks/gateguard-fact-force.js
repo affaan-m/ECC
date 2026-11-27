@@ -1820,49 +1820,106 @@ function keyFileIsReplaceable(keyPath) {
 // won — re-read the winner instead of racing it. The caller re-reads after
 // any replacement so it never signs with a superseded key. Directories are
 // never retired: they surface as a persist failure.
-function recoverExistingKey(keyPath, tmpPath, key, err = new Error('integrity key file already exists')) {
-  const raced = readKeyIfExists();
-  if (raced) return raced;
+// Whether the key file at keyPath may be retired by a repair: a missing
+// file has nothing to retire (the repair publishes below), a directory is
+// never retired, and a file is retirable only when its contents are not a
+// valid key. A valid key is never retirable — retiring it would discard
+// state signed with it.
+function keyFileIsRetirable(keyPath) {
   let linkStat;
   try {
     linkStat = fs.lstatSync(keyPath);
-  } catch (_) {
-    // Missing key file: nothing to repair.
+  } catch (err) {
+    // Only a genuinely missing file has nothing to retire. Any other
+    // lstat failure (EACCES/EIO/ENOTDIR) leaves the file's state unknown:
+    // treating it as missing could retire a valid key we simply could
+    // not stat, so surface the error instead of guessing.
+    if (err && err.code === 'ENOENT') return true;
+    throw err;
   }
-  if (!linkStat || linkStat.isDirectory() || !keyFileIsReplaceable(keyPath)) throw err;
-  const retiredPath = `${keyPath}.retired.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
-  let retired = false;
+  if (linkStat.isDirectory()) return false;
+  return keyFileIsReplaceable(keyPath);
+}
+
+// Remove a retired key file. Best-effort — a leftover .retired file is
+// inert (pruneStaleFiles only matches state-*.json) and never signed with.
+function discardRetired(retiredPath) {
   try {
-    fs.renameSync(keyPath, retiredPath);
-    retired = true;
+    fs.unlinkSync(retiredPath);
   } catch (_) {
-    // Another repair retired it first (or it vanished): publish below and
-    // let the publication decide the winner.
+    /* best-effort cleanup of the retired file */
   }
-  if (publishKeyFile(keyPath, tmpPath)) {
-    if (retired) {
-      try {
-        fs.unlinkSync(retiredPath);
-      } catch (_) {
-        /* best-effort cleanup of the retired file */
-      }
+}
+
+// The replaceability check, the retirement, and the publication all run
+// under the fallback publication lock. Without it, a second repair can
+// publish a valid key between this repair's check and its retirement, and
+// this repair then renames that valid key aside — state signed with it
+// stops verifying and the gate repeats first-touch denials. (The failure
+// is fail-closed, never an allow, but the denials are spurious.) The lock
+// is the same one the fallback publication uses, so a repair and a
+// publisher cannot interleave either way round.
+function recoverExistingKey(keyPath, tmpPath, key, err = new Error('integrity key file already exists')) {
+  const raced = readKeyIfExists();
+  if (raced) return raced;
+  const lockPath = `${keyPath}.lock`;
+  const deadline = Date.now() + 1000;
+  let lockFd;
+  for (;;) {
+    if (Date.now() >= deadline) throw err;
+    const acquired = acquireKeyLock(lockPath, deadline);
+    if (acquired !== null) {
+      lockFd = acquired;
+      break;
     }
-    const published = readKeyIfExists();
-    return published || key;
-  }
-  // Another repair won the publication race: adopt its key.
-  const winner = readKeyIfExists();
-  if (winner) {
-    if (retired) {
-      try {
-        fs.unlinkSync(retiredPath);
-      } catch (_) {
-        /* best-effort cleanup of the retired file */
-      }
+    const outcome = waitForPublishedKey(lockPath, deadline);
+    if (outcome === 'published') {
+      const published = readKeyIfExists();
+      if (published) return published;
+      throw err;
     }
-    return winner;
+    if (outcome === 'released') continue;
+    throw err;
   }
-  throw err;
+  try {
+    fs.writeFileSync(lockFd, String(process.pid), 'utf8');
+    // Re-check under the lock: a valid key may have appeared while this
+    // repair waited for the lock. Adopt it instead of retiring it.
+    const current = readKeyIfExists();
+    if (current) return current;
+    if (!keyFileIsRetirable(keyPath)) throw err;
+    // Re-check immediately before retiring: a hard-link publisher does
+    // not take the fallback lock, so it may have published a valid key
+    // into the absent destination in the gap after the first re-check
+    // (notably when keyPath was missing and keyFileIsRetirable returned
+    // true on ENOENT). Retiring that valid key would orphan state signed
+    // with it; adopt it instead of renaming it aside.
+    const justPublished = readKeyIfExists();
+    if (justPublished) return justPublished;
+    const retiredPath = `${keyPath}.retired.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
+    let retired = false;
+    try {
+      fs.renameSync(keyPath, retiredPath);
+      retired = true;
+    } catch (_) {
+      // It vanished under us (or was never there): publish below and let
+      // the publication decide the winner.
+    }
+    if (publishKeyFile(keyPath, tmpPath, lockFd)) {
+      if (retired) discardRetired(retiredPath);
+      const published = readKeyIfExists();
+      return published || key;
+    }
+    // Another repair won the publication race: adopt its key.
+    const winner = readKeyIfExists();
+    if (winner) {
+      if (retired) discardRetired(retiredPath);
+      return winner;
+    }
+    throw err;
+  } finally {
+    releaseKeyLock(lockPath, lockFd);
+  }
 }
 
 // Publish a fresh key file so concurrent writers converge on one key and no
@@ -1872,14 +1929,14 @@ function recoverExistingKey(keyPath, tmpPath, key, err = new Error('integrity ke
 // publishes the complete temp file in one step, so a reader sees either no
 // key file or the complete key — never an empty or partial one. Returns
 // true when this writer published, false when another writer won the race.
-function publishKeyFile(keyPath, tmpPath) {
+function publishKeyFile(keyPath, tmpPath, lockFd) {
   try {
     fs.linkSync(tmpPath, keyPath);
     return true;
   } catch (err) {
     if (err && err.code === 'EEXIST') return false;
     if (err && (err.code === 'EPERM' || err.code === 'ENOTSUP' || err.code === 'EXDEV')) {
-      return publishKeyFileFallback(keyPath, tmpPath);
+      return publishKeyFileFallback(keyPath, tmpPath, lockFd);
     }
     throw err;
   }
@@ -1915,50 +1972,100 @@ function waitForPublishedKey(lockPath, deadline) {
   return readKeyIfExists() ? 'published' : 'timeout';
 }
 
-function publishKeyFileFallback(keyPath, tmpPath) {
-  const lockPath = `${keyPath}.lock`;
-  const deadline = Date.now() + 1000;
+// Acquire the sibling publication lock for the fallback path. Returns the
+// open file descriptor, or null when a live publisher holds it (the caller
+// should wait for the key or give up within its budget). A stale lock
+// (holder dead, or old with no readable holder) is removed and the
+// acquisition retried. The caller owns the descriptor and must release it
+// with releaseKeyLock(). Throws on unexpected errors.
+function acquireKeyLock(lockPath, deadline) {
   for (;;) {
-    if (Date.now() >= deadline) return false;
-    let lockFd;
+    if (Date.now() >= deadline) return null;
     try {
-      lockFd = fs.openSync(lockPath, 'wx', 0o600);
+      return fs.openSync(lockPath, 'wx', 0o600);
     } catch (err) {
       if (err && err.code === 'EEXIST') {
         if (stealStaleKeyLock(lockPath)) continue;
-        const outcome = waitForPublishedKey(lockPath, deadline);
-        if (outcome === 'published') return false;
-        if (outcome === 'released') continue;
-        return false;
+        return null;
       }
       throw err;
     }
+  }
+}
+
+// Release a publication lock acquired with acquireKeyLock: close the
+// descriptor and remove the lockfile — but only when the lockfile at the
+// pathname is still the lock this descriptor refers to. A contender may
+// have stolen a lock we were slow to release and re-created the file:
+// unlinking by pathname would then delete the contender's live lock and
+// let two publishers interleave. Compare the descriptor's identity
+// (fstat at release) with the pathname's (lstatSync) and unlink only on
+// a dev+ino match (a zero inode cannot identify a file, so it never
+// counts as a match); otherwise just close our descriptor and leave the
+// new lock alone. A lock left behind is stale after 30s and a contender
+// can recover it.
+function releaseKeyLock(lockPath, lockFd) {
+  let owned = false;
+  try {
+    const fdStat = fs.fstatSync(lockFd);
+    const pathStat = fs.lstatSync(lockPath);
+    owned = fdStat.ino !== 0 && fdStat.dev === pathStat.dev && fdStat.ino === pathStat.ino;
+  } catch (_) {
+    // The descriptor is already closed or the lockfile is gone: there is
+    // nothing of ours left to remove.
+  }
+  try {
+    fs.closeSync(lockFd);
+  } catch (_) {
+    /* ignore */
+  }
+  if (!owned) return;
+  try {
+    fs.unlinkSync(lockPath);
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+// Publish under the fallback lock, only into an absent destination. An
+// existing file — valid or corrupt — is the caller's problem:
+// recoverExistingKey retires it or adopts the winner. Checking under the
+// lock is what makes the rename safe: no cooperating writer can publish
+// between the check and the rename.
+function publishKeyFileFallbackLocked(keyPath, tmpPath) {
+  try {
+    fs.lstatSync(keyPath);
+    return false;
+  } catch (err) {
+    if (!err || err.code !== 'ENOENT') throw err;
+  }
+  fs.renameSync(tmpPath, keyPath);
+  return true;
+}
+
+function publishKeyFileFallback(keyPath, tmpPath, heldLockFd) {
+  const lockPath = `${keyPath}.lock`;
+  // The retirement path already holds the lock: publish under it directly
+  // instead of acquiring it again (acquiring our own lock would wait on
+  // ourselves). The caller owns the descriptor and releases it.
+  if (heldLockFd !== undefined) {
+    return publishKeyFileFallbackLocked(keyPath, tmpPath);
+  }
+  const deadline = Date.now() + 1000;
+  for (;;) {
+    if (Date.now() >= deadline) return false;
+    const lockFd = acquireKeyLock(lockPath, deadline);
+    if (lockFd === null) {
+      const outcome = waitForPublishedKey(lockPath, deadline);
+      if (outcome === 'published') return false;
+      if (outcome === 'released') continue;
+      return false;
+    }
     try {
       fs.writeFileSync(lockFd, String(process.pid), 'utf8');
-      // Publish only into an absent destination. An existing file — valid
-      // or corrupt — is the caller's problem: recoverExistingKey retires it
-      // or adopts the winner. Checking under the lock is what makes the
-      // rename safe: no cooperating writer can publish between the check
-      // and the rename.
-      try {
-        fs.lstatSync(keyPath);
-        return false;
-      } catch (err) {
-        if (!err || err.code !== 'ENOENT') throw err;
-      }
-      fs.renameSync(tmpPath, keyPath);
-      return true;
+      return publishKeyFileFallbackLocked(keyPath, tmpPath);
     } finally {
-      try {
-        fs.closeSync(lockFd);
-      } catch (_) {
-        /* ignore */
-      }
-      try {
-        fs.unlinkSync(lockPath);
-      } catch (_) {
-        /* ignore */
-      }
+      releaseKeyLock(lockPath, lockFd);
     }
   }
 }

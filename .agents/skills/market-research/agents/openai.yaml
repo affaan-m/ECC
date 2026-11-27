@@ -1,7 +1,0 @@
-interface:
-  display_name: "Market Research"
-  short_description: "Source-attributed market research"
-  brand_color: "#2563EB"
-  default_prompt: "Use $market-research to research markets with source-attributed findings."
-policy:
-  allow_implicit_invocation: true

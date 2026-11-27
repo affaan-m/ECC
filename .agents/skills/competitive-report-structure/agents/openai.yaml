@@ -1,7 +1,0 @@
-interface:
-  display_name: "Competitive Report Structure"
-  short_description: "Assemble scored cards into a decision-grade competitive report"
-  brand_color: "#10B981"
-  default_prompt: "Use $competitive-report-structure to assemble a competitive benchmarking report."
-policy:
-  allow_implicit_invocation: true

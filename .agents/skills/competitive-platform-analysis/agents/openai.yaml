@@ -1,7 +1,0 @@
-interface:
-  display_name: "Competitive Platform Analysis"
-  short_description: "Scope and tier a competitor set before benchmarking"
-  brand_color: "#0EA5E9"
-  default_prompt: "Use $competitive-platform-analysis to scope and categorize a competitor set."
-policy:
-  allow_implicit_invocation: true
