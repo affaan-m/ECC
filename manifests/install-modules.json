@@ -655,7 +655,8 @@
         "skills/brand-discovery",
         "skills/competitive-platform-analysis",
         "skills/competitive-report-structure",
-        "skills/marketing-campaign"
+        "skills/marketing-campaign",
+        "skills/launch-readiness-audit"
       ],
       "targets": [
         "claude",
