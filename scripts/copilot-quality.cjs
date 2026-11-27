@@ -257,6 +257,7 @@ function assertUnchanged(file, original, directories) {
 }
 
 function writeFix(file, original, replacement, directories) {
+  if (replacement.length > MAX_SOURCE_BYTES) fail('formatted-file-too-large');
   const staging = path.join(path.dirname(file), '.ecc-quality-' + crypto.randomBytes(12).toString('hex'));
   const mode = original.state.mode & 0o777;
   if (!sourceDirectoriesUnchanged(directories)) fail('file-changed');

@@ -21,6 +21,10 @@ The launcher treats any applicable `package.yaml` as potential configuration whe
 
 A check leaves the file alone. Add --fix only when you want to replace it with successful formatter output. The result reports fixed: true only after it writes different bytes. Exit 0 means the file matched or was fixed, exit 1 indicates a formatting difference or formatter failure, and exit 2 means that the launcher could not perform the check. Read the JSON reason for a nonzero exit.
 
+The launcher handles source files up to 1 MiB. If formatting would produce a
+larger file, `--fix` returns `formatted-file-too-large` and preserves the
+original file.
+
 Save and finish editing the file before running --fix. The launcher checks that the file and its parent directories still match before publishing the replacement. A save that lands between the final check and the rename can still be overwritten. If a directory moves during staging, a temporary `.ecc-quality-*` file may remain in the original directory.
 
 Run the repository's lint, typecheck, and test commands separately. This launcher runs on explicit request and does not register hooks.

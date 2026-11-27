@@ -76,6 +76,10 @@ if (input === 'fixture failure') {
   process.exitCode = 2;
 } else if (input === 'fixture output limit') {
   process.stdout.write('x'.repeat(3 * 1024 * 1024));
+} else if (input === 'fixture above source limit') {
+  process.stdout.write('x'.repeat(1024 * 1024 + 1));
+} else if (input === 'fixture at source limit') {
+  process.stdout.write('x'.repeat(1024 * 1024));
 } else if (input === 'fixture empty output') {
   process.exitCode = 0;
 } else if (input === 'fixture concurrent edit') {
@@ -160,6 +164,7 @@ function verifyInstalledQuality(root, packageRoot, env) {
   for (const [contents, status, reason] of [
     ['fixture failure', 1, 'formatter-failed'],
     ['fixture output limit', 2, 'formatter-output-limit'],
+    ['fixture above source limit', 2, 'formatted-file-too-large'],
     ['fixture empty output', 2, 'invalid-formatter-output'],
   ]) {
     fs.writeFileSync(target, contents);
@@ -168,6 +173,15 @@ function verifyInstalledQuality(root, packageRoot, env) {
     assert.equal(failed.fixed, false);
     assert.equal(fs.readFileSync(target, 'utf8'), contents);
   }
+
+  fs.writeFileSync(target, 'fixture above source limit');
+  assert.equal(invoke(['--file', file], 1).reason, 'formatting-difference');
+  assert.equal(fs.readFileSync(target, 'utf8'), 'fixture above source limit');
+
+  fs.writeFileSync(target, 'fixture at source limit');
+  assert.equal(invoke(['--file', file, '--fix']).fixed, true);
+  assert.equal(fs.statSync(target).size, 1024 * 1024);
+  assert.equal(invoke(['--file', file]).status, 'passed');
 
   fs.writeFileSync(target, 'fixture concurrent edit');
   const changed = invoke(['--file', file, '--fix'], 2);
