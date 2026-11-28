@@ -476,6 +476,32 @@ test('skills-directory ECC plugins fail closed before marketplace or plugin muta
   });
 });
 
+test('enabled account-synced ECC offers the supported disable command before any mutation', () => {
+  withFixture({ plugins: [{ id: 'ecc@synced', scope: 'synced', enabled: true }] }, fixture => {
+    assert.throws(
+      () => setupClaudePlugin(setupOptions(fixture, { scope: 'user' })),
+      error => {
+        assert.strictEqual(error.code, 'DUPLICATE_ECC_PLUGIN');
+        assert.match(error.message, /claude plugin disable ecc@synced/);
+        assert.deepStrictEqual(error.recovery, ['claude plugin disable ecc@synced']);
+        return true;
+      }
+    );
+    assert.deepStrictEqual(mutationCalls(readCalls(fixture)), []);
+  });
+});
+
+test('disabled account-synced ECC allows a verified local install and stays disabled', () => {
+  const synced = { id: 'ecc@synced', scope: 'synced', enabled: false };
+  withFixture({ plugins: [synced] }, fixture => {
+    const result = setupClaudePlugin(setupOptions(fixture, { scope: 'local' }));
+    assert.strictEqual(result.action, 'installed');
+    assert.strictEqual(result.scope, 'local');
+    const state = JSON.parse(fs.readFileSync(fixture.statePath, 'utf8'));
+    assert.deepStrictEqual(state.plugins.find(plugin => plugin.id === synced.id), synced);
+  });
+});
+
 test('manual plugin layouts fail closed before provider mutation', () => {
   withFixture({}, fixture => {
     const manualManifest = path.join(
@@ -508,7 +534,12 @@ test('duplicate ECC plugin scopes fail closed before mutation', () => {
 });
 
 test('malformed plugin JSON and malformed plugin entries fail closed', () => {
-  for (const pluginListResponses of [['{not-json'], [[{ id: 'ecc@ecc', enabled: true }]]]) {
+  for (const pluginListResponses of [
+    ['{not-json'],
+    [[{ id: 'ecc@ecc', enabled: true }]],
+    [[{ id: 'ecc@ecc', scope: 'synced', enabled: true }]],
+    [[{ id: 'ecc@synced', scope: 'synced', enabled: 'false' }]],
+  ]) {
     withFixture({ pluginListResponses }, fixture => {
       assertThrowsContaining(
         () => setupClaudePlugin(setupOptions(fixture, { scope: 'user' })),
