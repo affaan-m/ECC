@@ -703,7 +703,8 @@
         "skills/token-card",
         "skills/unified-notifications-ops",
         "skills/workspace-surface-audit",
-        "skills/mailtrap-email-integration"
+        "skills/mailtrap-email-integration",
+        "skills/agent-phone-numbers"
       ],
       "targets": [
         "claude",

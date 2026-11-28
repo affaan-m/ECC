@@ -176,6 +176,7 @@
     },
     "exclude": {
       "agent-payment-x402": "venture-specific x402 payments; wallet and network runtime",
+      "agent-phone-numbers": "wraps Landline.sh SaaS API; needs API key and network calls",
       "agent-sort": "ECC install planner over the full ECC catalog; not portable",
       "agentic-os": "Claude-Code-only persistent OS mechanics (slash commands, memory, schedules)",
       "ai-regression-testing": "workflow creates Claude Code custom slash commands (.claude/commands)",

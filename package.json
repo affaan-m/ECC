@@ -423,6 +423,7 @@
     "skills/accessibility/",
     "skills/agent-eval/",
     "skills/agent-payment-x402/",
+    "skills/agent-phone-numbers/",
     "skills/agent-self-evaluation/",
     "skills/architecture-decision-records/",
     "skills/autonomous-agent-harness/",
