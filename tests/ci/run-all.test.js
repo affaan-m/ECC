@@ -289,7 +289,7 @@ const tests = [
     for (const stdout of [
       'Passed: 0, Failed: 1\n  4 passed, 0 failed',
       '  0 passed, 1 failed\n=== Results: 4 passed, 0 failed ===',
-      'Assertion expected: 99 passed, 7 failed\n║  Files: 9 passed, 1 failed  ║\n  4 passed, 0 failed\n',
+      '  4 passed, 0 failed\nAssertion expected: 99 passed, 7 failed\n║  Files: 9 passed, 1 failed  ║\n',
     ]) {
       const result = run({ status: 0, stdout });
       assert.strictEqual(result.status, 0, stdout);
