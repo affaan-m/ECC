@@ -128,6 +128,21 @@ function resolveEccRoot(options = {}) {
     }
   }
 
+  // Source checkout — running inside an ECC clone resolves to it even when
+  // ~/.claude exists but is not a usable root (e.g., scripts-only installs
+  // that fail the probe but still contain the probe file). Command commands
+  // execute with cwd = wherever the user invoked them, so probing cwd keeps
+  // `node scripts/…` invocations working from a fresh clone (#4112 review).
+  // Skipped when the caller pins homeDir/configDir/envRoot — those are test
+  // seams, and a pinned home must not be overridden by wherever the test
+  // happens to run from.
+  if (options.homeDir === undefined && options.configDir === undefined && options.envRoot === undefined) {
+    const cwd = path.resolve(process.cwd());
+    if (isRoot(cwd)) {
+      return cwd;
+    }
+  }
+
   // Missing cache locations are independent; unreadable/corrupt locations must surface.
   const directories = (dir) => {
     try { return fs.readdirSync(dir, { withFileTypes: true }); }

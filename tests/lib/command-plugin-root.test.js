@@ -105,7 +105,7 @@ test('resolveEccRoot module covers current and legacy marketplace plugin roots',
   assert.ok(INLINE_RESOLVE.includes("scripts','lib','resolve-ecc-root"));
 });
 
-for (const name of ['auto-update', 'instinct-status', 'skill-health', 'skill-host-compat']) {
+for (const name of ['auto-update', 'instinct-status', 'skill-health', 'skill-host-compat', 'epic-claim', 'epic-decompose', 'epic-publish', 'epic-review', 'epic-sync', 'epic-unblock', 'epic-validate', 'harness-audit']) {
   const doc = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', `${name}.md`), 'utf8');
   const assignments = doc.split('\n').filter(line => line.startsWith('ECC_ROOT='));
   for (const [index, assignment] of assignments.entries()) {
@@ -259,6 +259,40 @@ test('inline resolver copies in commands and hooks match canonical buildInlineRe
     buildInlineResolve({ probe: 'scripts/auto-update.js' }),
     'commands/auto-update.md inline resolver drifted from canonical buildInlineResolve'
   );
+
+  // #4112 commands declare a script-specific probe so the resolver accepts a
+  // partial install that ships the probed script but not the default probes.
+  for (const cmdName of ['epic-claim', 'epic-decompose', 'epic-publish', 'epic-review', 'epic-sync', 'epic-unblock', 'epic-validate']) {
+    const doc = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', `${cmdName}.md`), 'utf8');
+    const matches = doc.match(/\(function\(\)\{var p=require\(.+?return d\}\)\(\)/g) || [];
+    assert.strictEqual(matches.length, 1, `Expected 1 inline resolver in commands/${cmdName}.md`);
+    assert.strictEqual(
+      matches[0],
+      buildInlineResolve({ probe: 'scripts/github-coordination.js' }),
+      `commands/${cmdName}.md inline resolver drifted from canonical buildInlineResolve`
+    );
+  }
+  const harnessDoc = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'harness-audit.md'), 'utf8');
+  const harnessMatches = harnessDoc.match(/\(function\(\)\{var p=require\(.+?return d\}\)\(\)/g) || [];
+  assert.strictEqual(harnessMatches.length, 1, 'Expected 1 inline resolver in commands/harness-audit.md');
+  assert.strictEqual(
+    harnessMatches[0],
+    buildInlineResolve({ probe: 'scripts/harness-audit.js' }),
+    'commands/harness-audit.md inline resolver drifted from canonical buildInlineResolve'
+  );
+
+  // Localized mirrors carry the same resolver; they are not linted by
+  // validate-commands but drift here would silently break non-English installs.
+  for (const doc of ['docs/ja-JP/commands/harness-audit.md', 'docs/zh-CN/commands/harness-audit.md']) {
+    const text = fs.readFileSync(path.join(__dirname, '..', '..', doc), 'utf8');
+    const matches = text.match(/\(function\(\)\{var p=require\(.+?return d\}\)\(\)/g) || [];
+    assert.strictEqual(matches.length, 1, `Expected 1 inline resolver in ${doc}`);
+    assert.strictEqual(
+      matches[0],
+      buildInlineResolve({ probe: 'scripts/harness-audit.js' }),
+      `${doc} inline resolver drifted from canonical buildInlineResolve`
+    );
+  }
 
   for (const hookFile of ['hooks.json', 'codex-hooks.json']) {
     const config = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'hooks', hookFile), 'utf8'));
