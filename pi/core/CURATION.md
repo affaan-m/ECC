@@ -1,6 +1,6 @@
 # Curation
 
-pi/core includes 138 of 328 skills and 24 of 99 commands from the root of ECC.
+pi/core includes 138 of 329 skills and 24 of 99 commands from the root of ECC.
 Everything excluded is listed here with its reason.
 
 ## Rules
@@ -20,6 +20,7 @@ Exclude anything that:
 | Skill | Reason |
 |---|---|
 | `agent-payment-x402` | venture-specific x402 payments; wallet and network runtime |
+| `agent-phone-numbers` | wraps Landline.sh SaaS API; needs API key and network calls |
 | `agent-sort` | ECC install planner over the full ECC catalog; not portable |
 | `agentic-os` | Claude-Code-only persistent OS mechanics (slash commands, memory, schedules) |
 | `ai-regression-testing` | workflow creates Claude Code custom slash commands (.claude/commands) |
