@@ -54,8 +54,10 @@ const DEFAULT_SKILL_PROBE = path.join('skills', 'continuous-learning-v2');
  *   1. CLAUDE_PLUGIN_ROOT env var (set by Claude Code for hooks, or by user)
  *   2. Standard install location (~/.claude/) — when scripts exist there
  *   3. Known plugin roots under ~/.claude/plugins/ (current + legacy slugs)
- *   4. Plugin cache auto-detection — scans ~/.claude/plugins/cache/{ecc,everything-claude-code}/
- *   5. Fallback to ~/.claude/ (original behaviour)
+ *   4. Current working directory — a source checkout containing the probes
+ *      (skipped when the caller pins homeDir/configDir/envRoot)
+ *   5. Plugin cache auto-detection — scans ~/.claude/plugins/cache/{ecc,everything-claude-code}/
+ *   6. Fallback to ~/.claude/ (original behaviour)
  *
  * @param {object} [options]
  * @param {string} [options.homeDir]  Override home directory (for testing)
@@ -125,6 +127,21 @@ function resolveEccRoot(options = {}) {
   for (const candidate of legacyPluginRoots) {
     if (isRoot(candidate)) {
       return candidate;
+    }
+  }
+
+  // Source checkout — running inside an ECC clone resolves to it even when
+  // ~/.claude exists but is not a usable root (e.g., scripts-only installs
+  // that fail the probe but still contain the probe file). Command commands
+  // execute with cwd = wherever the user invoked them, so probing cwd keeps
+  // `node scripts/…` invocations working from a fresh clone (#4112 review).
+  // Skipped when the caller pins homeDir/configDir/envRoot — those are test
+  // seams, and a pinned home must not be overridden by wherever the test
+  // happens to run from.
+  if (options.homeDir === undefined && options.configDir === undefined && options.envRoot === undefined) {
+    const cwd = path.resolve(process.cwd());
+    if (isRoot(cwd)) {
+      return cwd;
     }
   }
 

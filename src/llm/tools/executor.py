@@ -196,6 +196,10 @@ async def _generate_serially(provider: Any, input: LLMInput) -> LLMOutput:
     try:
         # Cross-loop futures queue callers without occupying executor threads.
         await asyncio.shield(asyncio.wrap_future(ticket))
+        # Yield once so a granted permit is observable (and cancellable)
+        # before a worker is submitted; cancellation in that window must
+        # release the permit via the finally below.
+        await asyncio.sleep(0)
         worker: asyncio.Future[LLMOutput] = asyncio.get_running_loop().run_in_executor(
             None, contextvars.copy_context().run, generate
         )
