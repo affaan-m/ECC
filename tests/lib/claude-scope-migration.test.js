@@ -213,6 +213,16 @@ test('all six directed scope pairs migrate destination-first with exact verifica
   }
 });
 
+test('migration preserves a disabled account-synced copy', () => {
+  const synced = { id: 'ecc@synced', scope: 'synced', enabled: false };
+  withFixture({ plugins: [synced, plugin('user')], marketplaces: [marketplace('user')] }, fixture => {
+    const result = migrateClaudePluginScope(migrationOptions(fixture, 'project'));
+    assert.strictEqual(result.action, 'migrated');
+    assert.deepStrictEqual(readCalls(fixture), expectedMigrationCalls('user', 'project'));
+    assert.deepStrictEqual(readState(fixture).plugins, [synced, plugin('project', { version: '2.0.0' })]);
+  });
+});
+
 test('a missing marketplace is added at the destination before plugin installation', () => {
   withFixture({ plugins: [plugin('user')] }, fixture => {
     migrateClaudePluginScope(migrationOptions(fixture, 'project'));

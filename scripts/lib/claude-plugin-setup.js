@@ -90,6 +90,10 @@ function parseJsonArray(stdout, label) {
   return parsed;
 }
 
+function isAccountSyncedEcc(plugin) {
+  return plugin?.id === 'ecc@synced' && plugin.scope === 'synced';
+}
+
 function parsePluginList(stdout) {
   const plugins = parseJsonArray(stdout, 'plugin');
   for (const plugin of plugins) {
@@ -103,7 +107,7 @@ function parsePluginList(stdout) {
     if (!isRelevant) continue;
     if (
       typeof plugin.id !== 'string'
-      || !VALID_SCOPES.has(plugin.scope)
+      || (!VALID_SCOPES.has(plugin.scope) && !isAccountSyncedEcc(plugin))
       || typeof plugin.enabled !== 'boolean'
     ) {
       fail(
@@ -419,16 +423,20 @@ function assertNoConflictingEccPlugins(plugins) {
     typeof plugin?.id === 'string'
     && plugin.id.startsWith('ecc@')
     && plugin.id !== CURRENT_PLUGIN_ID
+    && (!isAccountSyncedEcc(plugin) || plugin.enabled)
   ));
   if (conflictingEcc) {
+    const synced = isAccountSyncedEcc(conflictingEcc);
+    const recovery = synced
+      ? 'claude plugin disable ecc@synced'
+      : `claude plugin uninstall ${conflictingEcc.id} --scope ${conflictingEcc.scope} --keep-data`;
+    const instruction = synced ? `Run \`${recovery}\`` : 'Uninstall it';
     fail(
       'DUPLICATE_ECC_PLUGIN',
-      `${conflictingEcc.id} is already installed and would duplicate ECC surfaces. Uninstall it before setting up ${CURRENT_PLUGIN_ID}.`,
+      `${conflictingEcc.id} is already installed and would duplicate ECC surfaces. ${instruction} before setting up ${CURRENT_PLUGIN_ID}.`,
       {
         observedScopes: [conflictingEcc.scope],
-        recovery: [
-          `claude plugin uninstall ${conflictingEcc.id} --scope ${conflictingEcc.scope} --keep-data`,
-        ],
+        recovery: [recovery],
       }
     );
   }
