@@ -54,8 +54,10 @@ const DEFAULT_SKILL_PROBE = path.join('skills', 'continuous-learning-v2');
  *   1. CLAUDE_PLUGIN_ROOT env var (set by Claude Code for hooks, or by user)
  *   2. Standard install location (~/.claude/) — when scripts exist there
  *   3. Known plugin roots under ~/.claude/plugins/ (current + legacy slugs)
- *   4. Plugin cache auto-detection — scans ~/.claude/plugins/cache/{ecc,everything-claude-code}/
- *   5. Fallback to ~/.claude/ (original behaviour)
+ *   4. Current working directory — a source checkout containing the probes
+ *      (skipped when the caller pins homeDir/configDir/envRoot)
+ *   5. Plugin cache auto-detection — scans ~/.claude/plugins/cache/{ecc,everything-claude-code}/
+ *   6. Fallback to ~/.claude/ (original behaviour)
  *
  * @param {object} [options]
  * @param {string} [options.homeDir]  Override home directory (for testing)
